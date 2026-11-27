@@ -228,13 +228,9 @@ fn choose_model(requested: Option<&str>, kind: Kind, configured: &str) -> Result
 
 /// Logs one question as `kind: "ask"`, the shape every reader of the log counts (`record.rs`).
 /// The request's own kind goes in `requestKind`; `about` is what the Record view groups by.
-fn log_ask(ws: &Path, kind: Kind, about: Option<&str>, model: &str, chars: usize, rung: Option<u8>) {
+fn log_ask(ws: &Path, kind: Kind, about: Option<&str>, model: &str, chars: usize) {
     let about = about.map(String::from).unwrap_or_else(|| if kind == Kind::Conversation { "question".into() } else { kind.name().into() });
-    let mut entry = json!({ "about": about, "requestKind": kind.name(), "model": model, "chars": chars });
-    if let Some(rung) = rung {
-        entry["rung"] = json!(rung);
-    }
-    log_event(ws, "ask", entry);
+    log_event(ws, "ask", json!({ "about": about, "requestKind": kind.name(), "model": model, "chars": chars }));
 }
 
 /// The title bar's counts for the folder: see `record::summary`.
@@ -257,11 +253,9 @@ pub struct Request {
     /// Labels for what was attached, such as "stats/running.py, lines 3–9".
     context: Option<Vec<String>>,
     model: Option<String>,
-    /// What the question was for, in the usage log: question, explain, review, failure, hint,
-    /// lookup. Defaults to the kind.
+    /// What the question was for, in the usage log: question, explain, review, failure, lookup.
+    /// Defaults to the kind.
     about: Option<String>,
-    /// For hints: the rung of the ladder (1–3).
-    rung: Option<u8>,
     /// Kept nowhere: no transcript and no CLI session. Lookups keep a transcript like any other
     /// thread but never a CLI session.
     ephemeral: Option<bool>,
@@ -295,7 +289,7 @@ fn start_request(app: &AppHandle, request: Request) -> Result<(), Failure> {
     let policy = folder_policy(&cfg);
     let model = choose_model(request.model.as_deref(), kind, cfg["model"].as_str().unwrap_or("sonnet"))?;
     let keep = !request.ephemeral.unwrap_or(false);
-    log_ask(&ws, kind, request.about.as_deref(), &model, request.prompt.chars().count(), request.rung);
+    log_ask(&ws, kind, request.about.as_deref(), &model, request.prompt.chars().count());
 
     // From here the thread is this request's: the run before it has stopped and saved its answer,
     // so the transcript stays in order and no two runs race over its session.
@@ -531,11 +525,11 @@ mod tests {
     #[test]
     fn every_kind_of_request_counts_in_the_title_bar_and_the_record() {
         let ws = crate::workspace::tests::temp_dir("asks");
-        log_ask(&ws, Kind::Conversation, None, "sonnet", 10, None);
-        log_ask(&ws, Kind::Conversation, Some("hint"), "sonnet", 10, Some(2));
-        log_ask(&ws, Kind::Lookup, Some("lookup"), "haiku", 10, None);
-        log_ask(&ws, Kind::Review, None, "sonnet", 10, None);
-        log_ask(&ws, Kind::Failure, None, "sonnet", 10, None);
+        log_ask(&ws, Kind::Conversation, None, "sonnet", 10);
+        log_ask(&ws, Kind::Conversation, Some("explain"), "sonnet", 10);
+        log_ask(&ws, Kind::Lookup, Some("lookup"), "haiku", 10);
+        log_ask(&ws, Kind::Review, None, "sonnet", 10);
+        log_ask(&ws, Kind::Failure, None, "sonnet", 10);
         log_event(&ws, "reveal", json!({ "lines": 3 }));
         // A detail that names a kind cannot change what the entry counts as.
         log_event(&ws, "config", json!({ "kind": "ask", "policy": "strict" }));
@@ -547,7 +541,7 @@ mod tests {
         assert_eq!(summary["today"], json!({ "ask": 5, "reveal": 1, "tests": 0 }));
         let record = record::from_log(&text);
         let today = &record.days[0].tally;
-        let expected = [("failure", 1), ("hint", 1), ("lookup", 1), ("question", 1), ("review", 1)];
+        let expected = [("explain", 1), ("failure", 1), ("lookup", 1), ("question", 1), ("review", 1)];
         assert_eq!(today.asks, expected.iter().map(|(k, n)| (k.to_string(), *n)).collect());
         assert_eq!(today.asks.values().sum::<u32>(), 5, "the record's Today is the title bar's");
         std::fs::remove_dir_all(ws).unwrap();

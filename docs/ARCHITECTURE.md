@@ -39,7 +39,7 @@ backend for start-up state. Each area builds its own markup in its `mount()`.
 | `terminal/` | xterm.js and the shell session                                                                                                                                                                   |
 | `tests/`    | Running pytest and showing results                                                                                                                                                               |
 | `language/` | Language servers: starting them, keeping them in step with the open files, problems, definitions and the status-bar item                                                                         |
-| `tutor/`    | The tutor engine client, conversation, lookup bar, hints, history and record, Markdown and math with the hidden-code check, setup                                                                |
+| `tutor/`    | The tutor engine client, conversation, lookup bar, history and record, Markdown and math with the hidden-code check, setup                                                                       |
 
 How areas talk to each other:
 
@@ -131,10 +131,12 @@ const { status, text, error } = await done; // status: 'done' | 'cancelled' | 'e
   in math), and when it exceeds the policy (2 lines on Strict, 12 on Guided) all of it stays
   behind one button that logs the reveal. Anything shown to the student must go through it.
   `message` is `{ revealed: new Set(), streaming }`.
-- **Every request is logged** as `kind: "ask"` in `.longhand/log.jsonl`, with `about`,
-  `requestKind` and, for hints, `rung` (`tutor::log_ask`; `log_event` never lets a detail replace
-  an entry's `kind`). `usageRecord()` returns the folder's use by day. The Record view and the
-  title bar's counts both read the log through `tutor/record.rs`, so they cannot disagree.
+- **Every request is logged** as `kind: "ask"` in `.longhand/log.jsonl`, with `about` and
+  `requestKind` (`tutor::log_ask`; `log_event` never lets a detail replace an entry's `kind`).
+  `usageRecord()` returns the folder's use by day. The Record view and the title bar's counts
+  both read the log through `tutor/record.rs`, so they cannot disagree; clicking the title bar's
+  count opens the Record (the `show-record` command). Entries from older versions (`about:
+"hint"`, a `rung`) are still counted, under their own label.
 - **Speed.** The CLI takes about 0.2–0.5 s to start and the first token follows about 0.5–1 s
   later on haiku. `prepareTutor('lookup')` starts the CLI ahead of a lookup (the lookup bar does
   this when it opens), so only the model's latency remains.
@@ -145,8 +147,11 @@ and checking the CLI, the arguments), `stream.rs` (reading its stream-json), `ru
 request), `threads.rs`, `failure.rs`, `prompt.rs` and `record.rs`. Events arrive as
 `tutor:event` with `{ thread, request, type }`; the client in `tutor/engine.js` sorts them out.
 
-The conversation panel uses one `conv-…` thread at a time and reopens the folder's latest on
-start. It adds context to each question inside `<context>` tags (`tutor/context.js`): the open
+The panel's header holds the policy (Strict or Guided, with its one-line note beneath), History
+and New. Explain, Review and failure help are not buttons in the panel: they live where the work
+is (the selection's actions and ⌘E, ⇧⌘R and the Notes list, the failing test), and the panel's
+empty state names their shortcuts. The conversation panel uses one `conv-…` thread at a time and
+reopens the folder's latest on start. It adds context to each question inside `<context>` tags (`tutor/context.js`): the open
 file, the cursor line and any selection; the row above the question
 box shows these and lets the student leave any out. `evals/` measures how well the prompt holds
 against attempts to get the assignment's code (see `evals/README.md`).
@@ -279,23 +284,25 @@ Deliberately absent: quick fixes, rename, formatting, inlay hints and anything e
 code for the student. Completion inserts the name chosen and nothing more: snippets are not
 offered to the server and the edits a server attaches to an item (added imports) are dropped.
 
+**Python only, for now.** Another language is a `Kind` (with a line in `parse` and an arm in
+`find`) in `lsp/discover.rs`, and its entries in `language/kinds.js`; the rest is shared.
+
 **Nothing runs until the student says so, per folder.** A language server runs the folder's
-code: Pyright and pylsp start the folder's interpreter, rust-analyzer runs build scripts and
-procedural macros, gopls runs `go`, and Longhand prefers a server installed in the folder
-itself. So a folder starts with code checking off. `lsp_start` answers `{ status: 'off' }`
+code: Pyright and pylsp start the folder's interpreter, and Longhand prefers a server installed
+in the folder itself. So a folder starts with code checking off. `lsp_start` answers `{ status: 'off' }`
 without looking for anything, and looking for a server never executes a program that belongs to
 the folder or runs anything inside it. The decision is kept per folder path in the app's own
 `state.json` (`prefs.rs`, `codeChecking`), never in the folder, and the check is in `lsp.rs`, so
 the page cannot start a server for a folder that was not turned on. Once it is on, the folder is
-trusted: its `.venv` and `node_modules/.bin` servers are used, and the servers run its code.
+trusted: its `.venv` servers are used, and the servers run its code.
 
 **The backend is a transport** (`lsp.rs` and `lsp/`). It knows nothing of the protocol beyond its
 framing.
 
 - `lsp_consent()` answers `'on'`, `'off'` or `null` (not decided) for the open folder, and
   `lsp_consent_set(on)` records the decision; turning it off stops the folder's servers.
-- `lsp_start(kind, look)` finds and starts the server for `python`, `clang` (C and C++), `java`,
-  `typescript` (and JavaScript), `rust` or `go` in the open folder, one per kind. It answers
+- `lsp_start(kind, look)` finds and starts the server for `python` in the open folder, one per
+  kind. It answers
   `{ status: 'started', id, server, path, root, python }`, `{ status: 'missing' }`,
   `{ status: 'failed', message }` or `{ status: 'off' }`. `look` says what to do about the search
   path after a miss: `remembered` uses the one already read, `fresh` asks the login shell again
@@ -305,18 +312,13 @@ framing.
   `lsp:exit` (`{ id, code, stderr }`, not sent for a server Longhand stopped on request).
 - `lsp/discover.rs` decides which executable. Python looks in the folder's own environment first
   (`.venv/bin`, `venv/bin`, then an active `VIRTUAL_ENV`), then the search path, for
-  `basedpyright-langserver`, `pyright-langserver` and `pylsp` in that order. The others are
-  `clangd` (also through `xcrun`), `jdtls`, `typescript-language-server` (the folder's
-  `node_modules/.bin` first), `rust-analyzer` and `gopls` (also in `~/go/bin`). The search path
-  is the login shell's (`lsp/search_path.rs`), which also supplies `JAVA_HOME`, `GOPATH`,
-  `GOROOT`, `CARGO_HOME` and `RUSTUP_HOME` for the servers. Relative entries of the path are
-  never searched, so the folder supplies a server only from the places named above.
-- For Rust, a rustup proxy is never run, because a proxy downloads the toolchain a folder's
-  `rust-toolchain.toml` names. The folder's toolchain is worked out from rustup's files and the
-  server is the `rust-analyzer` inside it; a toolchain that is not installed, or has no
-  `rust-analyzer` component, means no server. Servers are started with `RUSTUP_AUTO_INSTALL=0`.
-- Probes (`lsp/probe.rs`: the login shell, `xcrun`, `go env`) run in their own process group
-  with a time limit, and the whole group is killed when it passes.
+  `basedpyright-langserver`, `pyright-langserver` and `pylsp` in that order. Looking only checks
+  which files exist; it runs nothing. The search path is the login shell's PATH
+  (`lsp/search_path.rs`), followed by `/opt/homebrew/bin`, `/usr/local/bin` and `~/.local/bin`.
+  Relative entries of the path are never searched, so the folder supplies a server only from the
+  places named above.
+- Asking the login shell (`lsp/probe.rs`) runs in its own session with a time limit, and the
+  whole group is killed when it passes.
 - The Python server is started with the folder's environment active (`VIRTUAL_ENV`, its `bin`
   first on the path), which is what makes `import torch` resolve against the project's `.venv`.
 - `lsp/process.rs` runs one server: a reader thread decoding frames (`lsp/framing.rs`, 64 MB a
@@ -337,9 +339,10 @@ for hover, completion and signature help.
   same way. `environment.js` follows the folder's Python environment and `install.js` looks
   again for a missing server.
 - `consent.js` is the asking: with code checking undecided, the first file a server could check
-  brings one notification, and the status bar says "Code checking is off", which opens the sheet
-  that turns it on. Keep Off is remembered and asks nothing again; File > Code Checking for This
-  Folder… opens the same sheet to turn it off or on later.
+  brings one notification, which opens the sheet that turns it on. Keep Off is remembered and
+  asks nothing again; File > Code Checking for This Folder… opens the same sheet to turn it off
+  or on later, and there it also says when a server is not installed, with a way to the install
+  sheet.
 - `documents.js` is the library's `Workspace`. The editor has one view and a state per file, so
   it reads the text of each open file from the editor (`fileState`), unsaved edits included, and
   sends changes 300 ms after the typing pauses or just before any request. An edit never begins
@@ -354,10 +357,13 @@ for hover, completion and signature help.
 - `definition.js` handles Go to Definition (F12, or ⌘-click) and Go Back (⌃-). A definition
   outside the open folder is named in the status bar and not opened: the editor shows only the
   folder's files.
-- `status.js` is the status-bar item: the count of problems (a click goes to the next), or one
-  quiet line when a server is missing or stopped. For a missing server the sheet behind it has
-  the one install command and Put in Terminal, which types the command into a terminal without
-  running it. A missing server is looked for again when the window regains focus and when
+- `status.js` is the status-bar item: the count of problems when there are any (a click goes to
+  the next), or a warning when a server would not start or was given up on. Otherwise it is
+  hidden: nothing while a server starts, when a file has no problems, when checking is off, or
+  when no server is installed. A missing server is said once per folder, in a notification
+  (remembered in local storage as `longhand.missingServerTold`), whose sheet has the one install
+  command and Put in Terminal, which types the command into a terminal without running it. A
+  missing server is looked for again when the window regains focus and when
   another file of its kind opens (both `remembered`: the login shell is not run again), for
   three minutes after Put in Terminal (`fresh`), and on Check Again (`now`).
 - Pyright asks the editor which Python to use (`workspace/configuration`); the answer is the
@@ -378,8 +384,8 @@ and change an open file whether or not its tab is showing. Without a server, or 
 without one, completion falls back to the editor's own (Python names, words in the file).
 
 Tests: `tests/mock/language.js` is a scripted server behind the same commands and events.
-`cargo test` starts a real `clangd` when one is installed, and a real Python server when
-`LONGHAND_TEST_PYTHON_FOLDER` names a folder whose `.venv` has one and the `attrs` package.
+`cargo test` starts a real Python server when `LONGHAND_TEST_PYTHON_FOLDER` names a folder
+whose `.venv` has one and the `attrs` package.
 
 ## The test panel
 

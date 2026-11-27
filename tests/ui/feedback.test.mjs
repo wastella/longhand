@@ -479,7 +479,7 @@ uiTest('the checkpoint answer gets a short reply on the same thread, counted as 
   assert.deepEqual([sent.kind, sent.about, sent.thread], ['failure', 'checkpoint', thread]);
   assert.match(await text(page, '#tests-detail .fb-checkpoint .msg.tutor'), /old mean/);
 
-  await page.click('#show-record');
+  await page.click('#reliance');
   await page.waitForSelector('#record-body .record-day');
   assert.match(await text(page, '#record-body'), /1 test failure · 1 checkpoint/);
 });
@@ -527,7 +527,7 @@ uiTest('every way of asking is counted in the Record view under its own name', a
   await page.keyboard.press('Enter');
   await page.waitForSelector('.cm-note .fb-thread .msg.tutor');
   await idle(page);
-  await page.click('#show-record');
+  await page.click('#reliance');
   await page.waitForSelector('#record-body .record-day');
   assert.match(await text(page, '#record-body .record-day:not(.total)'), /1 review · 1 reply to a note/);
 });

@@ -11,10 +11,10 @@ const KINDS = [
   ['review-reply', 'reply to a note', 'replies to notes'],
   ['failure', 'test failure', 'test failures'],
   ['checkpoint', 'checkpoint', 'checkpoints'],
-  ['hint', 'hint', 'hints'],
   ['lookup', 'lookup', 'lookups'],
+  // Earlier versions had a hint ladder; folders that used it still have these in their log.
+  ['hint', 'hint', 'hints'],
 ];
-const RUNG_NAMES = ['', 'orientation', 'key idea', 'similar example'];
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
@@ -26,7 +26,6 @@ export function describe(tally) {
     .filter(([key]) => !known.has(key))
     .reduce((sum, [, n]) => sum + n, 0);
   if (other) parts.push(plural(other, 'other question', 'other questions'));
-  if (tally.hintRung) parts.push(`hints up to step ${tally.hintRung} (${RUNG_NAMES[tally.hintRung] || 'beyond'})`);
   if (tally.reveals) parts.push(plural(tally.reveals, 'code reveal', 'code reveals'));
   return parts.join(' · ') || 'No tutor use';
 }
@@ -55,7 +54,7 @@ export const storageNote = () =>
 const body = h('div', { id: 'record-body' });
 export const recordView = h(
   'div',
-  { id: 'record', class: 'tutor-view', hidden: true },
+  { id: 'record', class: 'tutor-view', hidden: true, tabindex: '-1', 'aria-label': 'Your record' },
   h('p', { class: 'record-intro' }, 'Your own use of the tutor in this folder, by day.'),
   body,
   storageNote(),
@@ -63,7 +62,7 @@ export const recordView = h(
 
 export async function showRecord() {
   const record = await usageRecord();
-  if (!record.days.length) return body.replaceChildren(emptyState('Nothing yet. Questions, hints and code reveals appear here by day.'));
+  if (!record.days.length) return body.replaceChildren(emptyState('Nothing yet. Questions and code reveals appear here by day.'));
   body.replaceChildren(
     h('div', { class: 'record-day total' }, h('div', { class: 'record-date' }, 'All days'), h('div', {}, describe(record.total))),
     ...record.days.map((day) => h('div', { class: 'record-day' }, h('div', { class: 'record-date' }, dayName(day.date)), h('div', {}, describe(day)))),

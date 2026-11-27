@@ -31,10 +31,9 @@ pub fn counted(entry: &Value) -> Option<Counted> {
 #[derive(Serialize, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Tally {
-    /// Questions by what they were about: question, explain, review, failure, hint, lookup.
+    /// Questions by what they were about: question, explain, review, failure, lookup (and hint,
+    /// in logs from before the hint ladder was removed).
     pub asks: BTreeMap<String, u32>,
-    /// The highest rung of the hint ladder asked for (0 when none).
-    pub hint_rung: u8,
     pub reveals: u32,
     /// Test runs. Not tutor use, so not shown in the record, but counted in the title bar.
     #[serde(skip)]
@@ -61,8 +60,6 @@ impl Tally {
             Counted::Ask => {
                 let about = entry["about"].as_str().unwrap_or("question").to_string();
                 *self.asks.entry(about).or_default() += 1;
-                let rung = entry["rung"].as_u64().unwrap_or(0).min(u8::MAX as u64) as u8;
-                self.hint_rung = self.hint_rung.max(rung);
             }
             Counted::Reveal => self.reveals += 1,
             Counted::Tests => self.tests += 1,
@@ -125,7 +122,7 @@ mod tests {
     }
 
     #[test]
-    fn use_is_grouped_by_day_with_the_highest_hint_rung() {
+    fn use_is_grouped_by_day_and_old_hints_still_count() {
         let log = [
             format!(r#"{{"t":"{}","kind":"ask","about":"lookup"}}"#, at(26, 9)),
             format!(r#"{{"t":"{}","kind":"ask","about":"hint","rung":2}}"#, at(27, 10)),
@@ -140,10 +137,10 @@ mod tests {
         assert_eq!(record.days.iter().map(|d| d.date.as_str()).collect::<Vec<_>>(), ["2026-11-27", "2026-11-26"]);
         let today = &record.days[0].tally;
         assert_eq!(today.asks, BTreeMap::from([("hint".to_string(), 2), ("question".to_string(), 1)]));
-        assert_eq!((today.hint_rung, today.reveals), (2, 1));
+        assert_eq!(today.reveals, 1);
         assert_eq!(record.total.asks["lookup"], 1);
         let json = serde_json::to_value(&record).unwrap();
-        assert_eq!(json["days"][0]["hintRung"], 2);
+        assert_eq!(json["days"][0]["asks"]["hint"], 2);
         assert_eq!(json["days"][1]["date"], "2026-11-26");
     }
 

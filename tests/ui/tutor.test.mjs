@@ -249,34 +249,42 @@ uiTest(
   },
 );
 
-uiTest('the hint ladder climbs one explicit step at a time and the record shows how far', async (page) => {
-  await page.click('#stuck');
-  assert.equal(await isHidden(page, '#hints'), false);
-  await page.type('#input', 'the softmax overflow');
-  await page.click('#hints .rung:nth-child(1)');
-  await page.waitForFunction(() => window.__asked.length === 1 && !document.querySelector('#send').hidden);
-  let sent = await lastAsked(page);
-  assert.deepEqual([sent.about, sent.rung], ['hint', 1]);
-  assert.match(sent.prompt, /softmax overflow[\s\S]*orientation only/);
-  assert.match(await text(page, '#chat .msg.user'), /^Hint 1 · Orientation: the softmax overflow/);
-  await page.click('#hints .rung:nth-child(2)');
-  await page.waitForFunction(() => window.__asked.length === 2 && !document.querySelector('#send').hidden);
-  sent = await lastAsked(page);
-  assert.equal(sent.rung, 2);
-  assert.match(sent.prompt, /Do not describe the steps of my code/);
-  assert.equal(await count(page, '#hints .rung.reached'), 2);
-
-  await page.click('#show-record');
+uiTest('the usage count in the title bar opens the record, even with the panel hidden', async (page) => {
+  await askTutor(page, 'What is a residual stream?');
+  await page.evaluate(() => window.__emit('menu', 'toggle-tutor'));
+  assert.equal(await isHidden(page, '#tutor'), true);
+  await page.click('#reliance');
+  assert.equal(await isHidden(page, '#tutor'), false);
   await page.waitForSelector('#record .record-day');
-  assert.match(await text(page, '#record'), /Today[\s\S]*2 hints · hints up to step 2 \(key idea\)/);
+  assert.equal(await isHidden(page, '#chat'), true);
   assert.doesNotMatch(await text(page, '#record'), /streak|score|great/i);
-  // The title bar and the record count the same log: the fixture's 3 earlier questions and 2 hints.
-  assert.match(await text(page, '#record'), /Today3 questions · 2 hints/);
-  assert.equal(await text(page, '#reliance'), 'Today: 5 questions');
+  // The title bar and the record count the same log: the fixture's 3 earlier questions and this one.
+  assert.match(await text(page, '#record'), /Today4 questions/);
+  assert.equal(await text(page, '#reliance'), 'Today: 4 questions');
   assert.match(await text(page, '#record .storage-note'), /kept in this folder, in \.longhand\/threads\/.*Git ignores them.*delete/);
   await page.keyboard.press('Escape');
   assert.equal(await isHidden(page, '#chat'), false);
+  await page.click('#reliance');
+  assert.equal(await isHidden(page, '#record'), false);
+  await page.click('#reliance');
+  assert.equal(await isHidden(page, '#chat'), false, 'a second click goes back to the conversation');
 });
+
+uiTest('the panel header holds the policy, History and New, and nothing above the question box', async (page) => {
+  assert.deepEqual(await page.$$eval('#tutor .pane-head button', (nodes) => nodes.map((n) => n.textContent)), ['Strict', 'Guided', 'History', 'New']);
+  assert.equal(await count(page, '#quick, #hints, #stuck, #show-record'), 0);
+  assert.match(await text(page, '#chat .empty'), /review of the open file press ⇧⌘R/);
+});
+
+uiTest(
+  'hints asked for by older versions still show in the record',
+  async (page) => {
+    await page.click('#reliance');
+    await page.waitForSelector('#record .record-day');
+    assert.match(await text(page, '#record'), /2 hints/);
+  },
+  { tutor: { pastDays: [{ date: '2026-01-05', asks: { hint: 2 }, reveals: 0 }] } },
+);
 
 uiTest('the lookup bar answers in a popover that is not part of the conversation', async (page) => {
   await page.evaluate(() => window.__emit('menu', 'lookup'));
@@ -315,18 +323,14 @@ uiTest('every kind of question moves the title bar, which agrees with the record
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => document.querySelector('#reliance').textContent === 'Today: 5 questions');
   await page.keyboard.press('Escape');
-  await page.click('#stuck');
-  await page.type('#input', 'the overflow');
-  await page.click('#hints .rung:nth-child(1)');
-  await page.waitForFunction(() => document.querySelector('#reliance').textContent === 'Today: 6 questions');
   assert.deepEqual(
     await page.evaluate(() => window.__log.filter((e) => e.kind === 'ask').map((e) => e.about)),
-    ['question', 'question', 'question', 'question', 'lookup', 'hint'],
+    ['question', 'question', 'question', 'question', 'lookup'],
     'each question is logged as an ask, whatever its kind',
   );
-  await page.click('#show-record');
+  await page.click('#reliance');
   await page.waitForSelector('#record .record-day');
-  assert.match(await text(page, '#record'), /Today4 questions · 1 hint · 1 lookup/);
+  assert.match(await text(page, '#record'), /Today4 questions · 1 lookup/);
 });
 
 uiTest('lookups go through the hidden-code check too', async (page) => {

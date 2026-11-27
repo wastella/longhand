@@ -1,16 +1,16 @@
-// The status bar's one word on the language server for the file in the editor, and the small
-// sheet behind it: the problem count while a server runs, and when none is installed or it will
-// not run, a quiet line that opens an explanation with the one command that fixes it. Until the
-// student has turned code checking on for the folder, the line says that it is off.
+// The status bar's word on the file in the editor: the count of its problems when it has any,
+// or a warning when its language server will not run. Otherwise it says nothing. A server that
+// is not installed is mentioned once per folder in a notification, whose sheet has the one
+// command that installs it; File > Code Checking for This Folder… leads there again later.
 
 import { nextDiagnostic } from '@codemirror/lint';
 import { h, spacer } from '../dom.js';
+import { state } from '../state.js';
 import { activeFile, fileState, fileView } from '../editor/index.js';
 import { notify, openSheet, showStatus } from '../shell/index.js';
 import { typeInTerminal } from '../terminal/index.js';
 import { KINDS, languageOf } from './kinds.js';
 import { countProblems, problemAt } from './problems.js';
-import { showCheckingSheet } from './consent.js';
 import { expectInstall } from './install.js';
 import { checking, isEnabled, lookAgain, serverOf, startAgain } from './servers.js';
 
@@ -20,8 +20,10 @@ export const item = h('button', { id: 'status-language', class: 'status-item', t
 
 /** What a click on the item does now. */
 let act = () => {};
-/** Kinds whose giving up has been announced, so each is announced once. */
+/** What has been announced this session, so each is said once: 'stopped:<kind>'. */
 const announced = new Set();
+/** Where the missing servers already announced are remembered, across sessions: ['<folder>|<kind>']. */
+const TOLD_MISSING = 'longhand.missingServerTold';
 /** Whether the status message is a problem's, to be cleared when the cursor leaves it. */
 let showingProblem = false;
 
@@ -49,23 +51,16 @@ function nextProblem(path) {
 export function renderStatus() {
   const file = activeFile();
   const language = file && languageOf(file.path);
-  if (!language || !isEnabled() || checking() === undefined) return void (item.hidden = true);
-  if (checking() !== 'on')
-    return show('Code checking is off', { tip: 'Errors are not underlined in this folder. Click to turn code checking on.', run: showCheckingSheet });
-  const server = serverOf(language.kind);
-  if (!server) return void (item.hidden = true);
+  const server = language && isEnabled() && checking() === 'on' && serverOf(language.kind);
+  if (!server || server.status === 'starting' || server.status === 'missing') return void (item.hidden = true);
   const { name } = language;
   const explain = () => showServerSheet(language.kind);
-  if (server.status === 'starting') return show(`${name}: starting…`, { tip: 'The language server is starting.' });
-  if (server.status === 'missing')
-    return show(`${name}: no language server`, { tip: 'Errors are not underlined. Click to see how to turn that on.', run: explain });
   if (server.status === 'failed') return show(`${name}: language server did not start`, { tone: 'warning', tip: 'Click to see why.', run: explain });
   if (server.status === 'stopped') return show(`${name}: language server stopped`, { tone: 'warning', tip: 'Click to see why.', run: explain });
   const { errors, warnings } = countProblems(fileState(file.path));
-  const checkedBy = `Checked by ${server.name}`;
-  if (!errors && !warnings) return show('No problems', { tip: `${checkedBy}.` });
+  if (!errors && !warnings) return void (item.hidden = true);
   const counts = [errors && plural(errors, 'error'), warnings && plural(warnings, 'warning')].filter(Boolean).join(', ');
-  show(counts, { tone: errors ? 'danger' : 'warning', tip: `${checkedBy}. Click to go to the next one.`, run: () => nextProblem(file.path) });
+  show(counts, { tone: errors ? 'danger' : 'warning', tip: `Checked by ${server.name}. Click to go to the next one.`, run: () => nextProblem(file.path) });
 }
 
 /** Says in the status bar what the problem under the cursor is, for reading it without the mouse. */
@@ -78,12 +73,38 @@ export function describeProblemAtCursor(cursor) {
   showingProblem = Boolean(problem);
 }
 
-/** Tells the student once when a server was given up on; the status bar alone is easy to miss. */
-export function announceStopped(kind) {
+function toldMissing() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(TOLD_MISSING)) || []);
+  } catch {
+    return new Set();
+  }
+}
+
+/** Says once per folder that no server is installed: the status bar stays quiet about it. */
+function announceMissing(kind) {
+  const key = `${state.workspace?.path}|${kind}`;
+  const told = toldMissing();
+  if (!state.workspace || told.has(key)) return;
+  told.add(key);
+  try {
+    localStorage.setItem(TOLD_MISSING, JSON.stringify([...told]));
+  } catch {
+    // Not remembered: it is said again next time, which is harmless.
+  }
+  notify({
+    message: `No ${KINDS[kind].label} language server is installed, so errors are not underlined.`,
+    action: { label: 'How to Install…', run: () => showServerSheet(kind) },
+  });
+}
+
+/** Tells the student when a server is missing (once per folder) or was given up on (once). */
+export function announce(kind) {
   const status = serverOf(kind)?.status;
-  if (status !== 'stopped') return void (status === 'running' && announced.delete(kind));
-  if (announced.has(kind)) return;
-  announced.add(kind);
+  if (status === 'missing') return announceMissing(kind);
+  if (status !== 'stopped') return void (status === 'running' && announced.delete(`stopped:${kind}`));
+  if (announced.has(`stopped:${kind}`)) return;
+  announced.add(`stopped:${kind}`);
   notify({
     message: `The ${KINDS[kind].label} language server keeps stopping, so errors are no longer underlined.`,
     action: { label: 'Details', run: () => showServerSheet(kind) },

@@ -15,6 +15,7 @@
 //       before lsp_start has answered, each the first `crashes` times it is started (every
 //       time when absent).
 //   languageTiming: { ... }                         overrides the interface's waits (language/servers.js)
+//   missingServerTold: false                        the student has not yet been told a server is missing
 // Hooks: window.__lsp = { checking, installed, started: [{ id, kind }], stopped: [id], looks: [{ kind, look }],
 //   received: [{ id, ...message }], docs: { uri: { text, version, languageId } }, acked: { id: bytes },
 //   delivered: { id: bytes }, saved: [uri], settings: {}, answers: { name: response },
@@ -25,6 +26,10 @@
 
 const mock = window.__mock;
 const root = mock.workspace.path;
+// A missing server is mentioned once per folder (language/status.js). The mock starts as if that
+// had happened, so tests of other areas are not about it; `missingServerTold: false` starts afresh.
+if (mock.options.missingServerTold === false) localStorage.removeItem('longhand.missingServerTold');
+else localStorage.setItem('longhand.missingServerTold', JSON.stringify([`${root}|python`]));
 const lsp = (window.__lsp = {
   checking: mock.options.codeChecking || 'on',
   installed: { ...mock.options.languageServers },

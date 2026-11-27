@@ -163,9 +163,9 @@ fn group_alive(pgid: i32) -> bool {
 }
 
 /// Starts `command` as a language server speaking over its standard input and output, in a
-/// process group of its own so that whatever it starts (jdtls starts java, the TypeScript
-/// server starts tsserver) can be stopped with it. `sink` gets each message in order, then one
-/// `Exit` unless the server was stopped with `stop`.
+/// process group of its own so that whatever it starts (worker processes, an interpreter) can be
+/// stopped with it. `sink` gets each message in order, then one `Exit` unless the server was
+/// stopped with `stop`.
 pub fn spawn(mut command: Command, sink: impl FnMut(Event) + Send + 'static) -> std::io::Result<Server> {
     let mut child = command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).process_group(0).spawn()?;
     let pipes = (child.stdin.take(), child.stdout.take(), child.stderr.take());

@@ -42,7 +42,15 @@ function introduction() {
     h(
       'ul',
       {},
-      h('li', {}, 'Reviews and explanations of your code appear as notes in the margin beside it.'),
+      h(
+        'li',
+        {},
+        'For a review of the open file press ',
+        h('kbd', {}, '⇧⌘R'),
+        ', or select code and press ',
+        h('kbd', {}, '⌘E'),
+        ' to have it explained. Both answer in notes in the margin beside your code.',
+      ),
       h('li', {}, 'Help with a failing test appears beneath the test.'),
       h('li', {}, 'For a quick fact without leaving the editor, press ', h('kbd', {}, '⇧⌘K'), '.'),
     ),
@@ -172,20 +180,18 @@ function send(request) {
 }
 
 /**
- * Sends `question` with the editor's context. `about` is what the usage log files it under
- * (question, hint). `shown`
- * replaces the question in the transcript, and `rung` marks a hint. Returns false when the
- * question could not be sent (empty, an answer is still coming, or no folder is open).
+ * Sends `question` with the editor's context. Returns false when the question could not be sent
+ * (empty, an answer is still coming, or no folder is open).
  */
-export function ask(question, about = 'question', { shown, rung } = {}) {
+export function ask(question) {
   question = question.trim();
   if (!question || current || !state.workspace) return false;
   thread ??= newThreadId();
   const { omit } = takeContext();
   const { prompt, labels } = buildPrompt(question, omit);
   if (chat.querySelector('.empty')) chat.replaceChildren();
-  chat.append(studentMessage(shown || question, labels));
-  send({ thread, prompt, question: shown || question, context: labels, about, rung });
+  chat.append(studentMessage(question, labels));
+  send({ thread, prompt, question, context: labels, about: 'question' });
   return true;
 }
 

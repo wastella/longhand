@@ -1,11 +1,28 @@
 // Asking before any language server runs. A server runs the folder's code, so a folder the
 // student has just downloaded gets none until they turn code checking on for it. The asking is
-// quiet: a line in the status bar (status.js) and one notification, never a dialog on opening.
+// quiet: one notification, never a dialog on opening. File > Code Checking for This Folder…
+// opens the same sheet later, and says there when a server is not installed.
 
 import { h, spacer } from '../dom.js';
 import { state } from '../state.js';
 import { notify, openSheet } from '../shell/index.js';
-import { checking, hasCheckableFiles, isEnabled, setChecking } from './servers.js';
+import { KINDS } from './kinds.js';
+import { checking, hasCheckableFiles, isEnabled, serverOf, setChecking } from './servers.js';
+import { showServerSheet } from './status.js';
+
+/** A line for each server that is needed but not installed, leading to how to install it. */
+function missingServers(close) {
+  return Object.keys(KINDS)
+    .filter((kind) => serverOf(kind)?.status === 'missing')
+    .map((kind) =>
+      h(
+        'p',
+        { class: 'language-note' },
+        `No ${KINDS[kind].label} language server is installed, so errors are not underlined yet. `,
+        h('button', { class: 'button small', type: 'button', onclick: () => (close(), showServerSheet(kind)) }, 'How to Install…'),
+      ),
+    );
+}
 
 /** Whether this folder's notification has been shown, so it is shown once. */
 let mentioned = false;
@@ -20,9 +37,9 @@ export function showCheckingSheet() {
     setChecking(value);
   };
   const button = (label, run, primary) => h('button', { class: primary ? 'button primary' : 'button', type: 'button', onclick: run }, label);
-  const tools = 'runs language tools on this folder, including the folder’s own Python environment and build scripts';
+  const tools = 'runs language tools on this folder, including the folder’s own Python environment';
   const body = on
-    ? [h('p', {}, `Code checking is on for this folder: Longhand underlines errors as you type, which ${tools}.`)]
+    ? [h('p', {}, `Code checking is on for this folder: Longhand underlines errors as you type, which ${tools}.`), ...missingServers(() => sheet.close())]
     : [
         h('p', {}, `Checking code as you type ${tools}. Only turn it on for folders you trust.`),
         h('p', { class: 'language-note' }, 'With it on, Longhand underlines errors, shows documentation and can take you to where a name is defined.'),

@@ -20,7 +20,7 @@ function isValid(setting, value) {
  * { value, label }) or 'toggle' (on or off). `default` is used until the student changes it.
  * Register while mounting; the saved value is announced with settings:changed once settings load.
  *
- *   registerSetting({ id: 'tutor.sound', label: 'Sound when an answer ends', type: 'toggle', default: false })
+ *   registerSetting({ id: 'language.servers', label: 'Check code as I type', type: 'toggle', default: true })
  */
 export function registerSetting({ id, label, description, type, options, default: fallback }) {
   if (settings.has(id)) throw new Error(`Setting "${id}" is already registered`);
