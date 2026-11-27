@@ -44,11 +44,28 @@ const failures = () => [...runner.results.errors, ...runner.results.tests].filte
 /** Runs `targets` (node ids or paths; every test when empty), saving open files first. */
 async function runTests(targets) {
   if (!state.workspace) return;
-  // Tests run against what is on disk.
-  await saveAll();
+  // Tests run against what is on disk, so a file that could not be saved would mean testing
+  // the old code without a word: say so instead.
+  const saved = await saveAll();
   showBottomPane('tests');
+  if (!saved) return runner.refuse(targets, NOT_SAVED);
   await runner.start(targets);
 }
+
+const NOT_SAVED = {
+  kind: 'not-saved',
+  title: 'The tests did not run: a file could not be saved',
+  detail:
+    'They would have tested the version on disk, not your edits. The editor says what went wrong with the save; fix that (or undo the edits), then run the tests again.',
+};
+
+/**
+ * Whether a change on disk can change test results: Python code and test configuration, not
+ * caches, environments or Longhand's own files (a run writes .pytest_cache and __pycache__).
+ */
+const SKIPPED_DIRS = /(^|\/)(\.longhand|\.git|\.pytest_cache|__pycache__|\.venv|venv|\.mypy_cache|\.ruff_cache|node_modules|\.tox)(\/|$)/;
+const AFFECTS_TESTS = /\.(py|pyi|pyx|toml|cfg|ini|lock)$|(^|\/)requirements[^/]*\.txt$/;
+const affectsTests = (path) => path === '' || (!SKIPPED_DIRS.test(path) && AFFECTS_TESTS.test(path));
 
 function runFile() {
   const path = activeFile()?.path;
@@ -310,7 +327,12 @@ export function mount() {
   registerCommand('run-tests-file', () => runFile());
   registerCommand('rerun-failed-tests', () => rerunFailed());
   registerCommand('cancel-tests', () => runner.cancel());
-  on('editor:saved', runner.markStale);
+  on('editor:saved', (path) => runner.markStale(path, 'saved'));
+  // A git checkout, a formatter, a script: changes outside the editor count too.
+  on('files:changed', (paths) => {
+    const hit = paths.filter(affectsTests);
+    if (hit.length) runner.markStale(hit.length === 1 ? hit[0] : '', 'changed');
+  });
   on('workspace:opened', () => {
     disposeAll();
     Object.assign(view, { selectedId: null, output: false, focusKey: null, shown: null });

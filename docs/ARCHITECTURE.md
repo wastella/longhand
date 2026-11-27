@@ -254,8 +254,12 @@ cancelled, complete, problem, summary, total, collected, duration, tests, errors
 
 In the interface, `runner.js` keeps the current run and the latest results, merged across runs
 so running one file keeps the others' results; `model.js` reads node ids, merges and groups
-results; `list.js` and `detail.js` draw the two sides. Saving a file (`editor:saved`) marks
-results that ran before it as possibly out of date.
+results; `list.js` and `detail.js` draw the two sides. Saving a file (`editor:saved`), or a
+change on disk outside the editor (`files:changed`) to Python code or test configuration, marks
+results that ran before it as possibly out of date; caches, environments and `.longhand/` are
+left out, since a run writes `.pytest_cache` and `__pycache__` itself. A run starts by saving
+every open file; if any save fails, it does not start and the panel says why, rather than
+testing the old code on disk.
 
 What `tests/index.js` offers other areas:
 

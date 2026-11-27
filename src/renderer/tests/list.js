@@ -96,12 +96,17 @@ export function summary({ run, results, tests, errors, onShowOutput, onRunStale,
       );
     }
     if (results.stale.size) {
-      const file = results.staleFile?.split('/').pop();
+      const file = results.staleFile?.path?.split('/').pop();
+      const when = results.stale.size === tests.length + errors.length ? 'this run' : 'some of these ran';
+      const what =
+        results.staleFile?.how === 'changed'
+          ? `${file ? `${file} changed` : 'Files changed'} on disk after ${when}.`
+          : `You saved ${file || 'a file'} after ${when}.`;
       lines.push(
         h(
           'div',
           { class: 'tests-summary-stale' },
-          h('span', {}, `You saved ${file || 'a file'} after ${results.stale.size === tests.length + errors.length ? 'this run' : 'some of these ran'}.`),
+          h('span', {}, what),
           h('button', { type: 'button', class: 'ghost', id: 'tests-run-stale', onclick: onRunStale }, 'Run again'),
         ),
       );

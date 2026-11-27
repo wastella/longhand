@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { withDummyPanel } from '../../scripts/scenarios/tests-failure-panel.mjs';
-import { count, openFromTree, text, uiTest } from './helpers.mjs';
+import { count, openFromTree, sleep, text, uiTest } from './helpers.mjs';
 
 const runAll = (page) => page.evaluate(() => window.__emit('menu', 'run-tests'));
 const menu = (page, id) => page.evaluate((command) => window.__emit('menu', command), id);
@@ -126,9 +126,11 @@ uiTest('a test that no longer exists drops out after a complete run, but not aft
   assert.deepEqual(await page.evaluate(() => window.__panels.disposed), [], 'a stopped run disposes nothing');
   await setOptions(page, { testsHangAfter: null });
   await menu(page, 'rerun-failed-tests');
+  await page.waitForFunction(() => window.__panels.disposed.length === 1);
   await finished(page);
   assert.deepEqual(await lastRun(page), ['tests/test_running.py::test_variance']);
-  assert.deepEqual(await shownStatuses(page), ['PASSED tests/test_running.py::test_mean']);
+  // test_mean keeps its result, still out of date: the stopped run never reached it.
+  assert.deepEqual(await shownStatuses(page), ['PASSED tests/test_running.py::test_mean stale']);
   assert.deepEqual(await page.evaluate(() => window.__panels.disposed), [['tests/test_running.py::test_variance', 'dummy-panel']]);
 });
 
@@ -272,6 +274,37 @@ uiTest(
   },
   { testsProblem: 'collect-error' },
 );
+
+uiTest(
+  'a file that cannot be saved stops the run, rather than testing the old code',
+  async (page) => {
+    await runAll(page);
+    await finished(page);
+    await openFromTree(page, 'stats/running.py');
+    await page.click('.cm-content');
+    await page.keyboard.type('# fix');
+    const runs = await page.evaluate(() => window.__testRuns.length);
+    await runAll(page);
+    await page.waitForSelector('.tests-problem');
+    assert.equal(await text(page, '.tests-problem-title'), 'The tests did not run: a file could not be saved');
+    assert.equal(await page.evaluate(() => window.__testRuns.length), runs, 'pytest was not started');
+    assert.equal(await text(page, '#tests-badge'), '1 failing', 'the earlier results stay');
+  },
+  { readOnly: ['stats/running.py'] },
+);
+
+uiTest('results go stale when code changes on disk outside the editor, but not for caches', async (page) => {
+  await runAll(page);
+  await finished(page);
+  const batch = (paths) => page.evaluate((paths) => window.__emit('files:changed', { root: '/demo/running-stats', paths }), paths);
+  await batch(['.pytest_cache/v/cache/lastfailed', 'tests/__pycache__/test_running.cpython-312.pyc', '.longhand/log.jsonl', 'notes.md']);
+  await sleep(100);
+  assert.equal(await count(page, '#tests-rows .test.stale'), 0);
+  await batch(['stats/running.py']);
+  await page.waitForSelector('#tests-run-stale');
+  assert.equal(await count(page, '#tests-rows .test.stale'), 2);
+  assert.match(await text(page, '.tests-summary-stale'), /running\.py changed on disk after this run/);
+});
 
 uiTest('results go stale when a file is saved after the run', async (page) => {
   await openFromTree(page, 'stats/running.py');

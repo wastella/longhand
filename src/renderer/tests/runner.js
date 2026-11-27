@@ -126,7 +126,8 @@ function end(done) {
   run.current = null;
   const fresh = [...(done.tests || []), ...(done.errors || [])];
   // A run that never reached pytest leaves the earlier results as they were.
-  if (fresh.length || done.collected) {
+  const reached = Boolean(fresh.length || done.collected || done.cancelled);
+  if (reached) {
     const gone = goneAfter(done);
     const tests = mergeRun(results.tests, done.tests || [], targets, gone.test);
     const errors = mergeRun(results.errors, done.errors || [], targets, gone.error);
@@ -145,9 +146,9 @@ function end(done) {
   Object.assign(results, {
     ran: true,
     problem: done.problem || null,
-    summary: done.summary || '',
+    summary: reached || !done.refused ? done.summary || '' : results.summary,
     cancelled: Boolean(done.cancelled),
-    complete: Boolean(done.complete),
+    complete: reached ? Boolean(done.complete) : results.complete,
     targets,
     output: done.output ?? run.output,
     command: done.command || run.command,
@@ -156,14 +157,24 @@ function end(done) {
   finished(done);
 }
 
-/** A file was saved: results that ran before it may no longer hold. */
-export function markStale(path) {
-  if (run.active) savedDuringRun = path;
+/**
+ * A file was saved (`how` 'saved') or changed on disk outside the editor ('changed'; `path` ''
+ * when it could be anything): results that ran before it may no longer hold.
+ */
+export function markStale(path, how = 'saved') {
+  if (run.active) savedDuringRun = { path, how };
   const all = [...results.tests, ...results.errors];
   if (!all.length) return;
   for (const test of all) results.stale.add(test.id);
-  results.staleFile = path;
+  results.staleFile = { path, how };
   notify('stale');
+}
+
+/** A run that was asked for but not started, for `problem`; the earlier results stay as they were. */
+export function refuse(targets, problem) {
+  if (run.active) return;
+  Object.assign(run, { targets, output: '', command: '' });
+  end({ problem, refused: true });
 }
 
 /** Forgets everything, for a newly opened folder. The backend has stopped the run already. */
