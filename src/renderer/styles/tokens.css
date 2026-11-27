@@ -76,6 +76,7 @@
   --row-height: 23px; /* a file tree row */
   --files-width: 220px;
   --tutor-width: 400px;
+  --palette-width: 560px; /* quick open and other lookups */
   --bottom-height: 240px;
   --splitter-size: 5px;
   --z-splitter: 5;

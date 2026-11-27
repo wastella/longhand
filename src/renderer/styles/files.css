@@ -1,40 +1,89 @@
-/* The files sidebar: tree, naming field, find in files and the context menu. */
+/* The files sidebar: tree, naming field, find in files and the context menu. Quick open uses
+   the shared .palette in base.css. */
 
 #tree {
   flex: 1;
   overflow: auto;
   padding-bottom: var(--space-6);
+  outline: none;
 }
-.node {
+.node,
+.tree-more {
   height: var(--row-height);
   padding-right: var(--space-4);
 }
 .node.active {
   color: var(--color-text-strong);
 }
-.node .twist {
+#tree:focus .focused {
+  outline: 1px solid var(--focus-ring-color);
+  outline-offset: -1px;
+}
+.node .twist,
+.tree-more .twist {
   width: var(--space-7);
   flex: none;
   text-align: center;
   color: var(--color-text-muted);
   font-size: var(--text-2xs);
 }
-.node .label {
+.node .label,
+.tree-more .label {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .node.dir .label {
   color: var(--color-text-secondary);
 }
+/* Generated and git-ignored entries: still there, but stepping back. */
+.node.quiet .label,
+.node.quiet.dir .label {
+  color: var(--color-text-muted);
+}
+.node.quiet.active .label {
+  color: var(--color-text);
+}
+.tree-more .label {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.tree-more:hover .label {
+  color: var(--color-text);
+}
 
+.tree-empty {
+  padding-top: var(--space-2);
+}
+.tree-empty .empty-state {
+  margin: 0;
+}
+.tree-empty-action {
+  margin: 0 var(--space-6);
+}
+
+.naming-row {
+  padding: var(--space-1) var(--space-4) var(--space-1) 0;
+}
 .new-name {
   display: block;
-  width: calc(100% - var(--space-8));
-  margin: var(--space-2) var(--space-4);
+  width: 100%;
   font: var(--text-sm) var(--font-mono);
   border-color: var(--color-accent);
   border-radius: var(--radius-sm);
   padding: 3px var(--space-3);
+}
+.naming-row.invalid .new-name {
+  border-color: var(--color-danger);
+}
+.name-problem:empty {
+  display: none;
+}
+.name-problem {
+  padding: var(--space-2) var(--space-1) var(--space-1);
+  font-size: var(--text-xs);
+  line-height: var(--leading-ui);
+  color: var(--color-danger);
+  white-space: normal;
 }
 
 #search {
@@ -43,29 +92,83 @@
   flex-direction: column;
   min-height: 0;
 }
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-1) var(--space-4) var(--space-2);
+}
 #search-input {
-  margin: var(--space-1) var(--space-4) var(--space-3);
+  flex: 1;
+  min-width: 0;
   font: var(--text-sm) var(--font-ui);
   border-radius: var(--radius-md);
   padding: var(--space-2) 7px;
+}
+.search-toggle {
+  flex: none;
+  font: var(--text-xs) var(--font-mono);
+  padding: var(--space-1) var(--space-2);
+}
+#search-word {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.search-toggle[aria-pressed='true'] {
+  color: var(--color-text-strong);
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-strong);
+}
+.search-toggle:focus-visible,
+.tree-empty-action:focus-visible {
+  outline: 1px solid var(--focus-ring-color);
+  outline-offset: -1px;
+}
+#search-summary {
+  padding: 0 var(--space-6) var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+#search-summary:empty {
+  display: none;
 }
 #search-results {
   flex: 1;
   overflow: auto;
   padding-bottom: var(--space-6);
+  outline: none;
 }
 .hit-file {
-  padding: var(--space-3) var(--space-5) var(--space-1);
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-6) var(--space-1);
   font-size: var(--text-xs);
-  color: var(--color-text-muted);
+}
+.hit-name {
+  flex: none;
+  color: var(--color-text-secondary);
+}
+.hit-dir {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--color-text-muted);
+}
+.hit-count {
+  margin-left: auto;
+  padding-left: var(--space-3);
+  color: var(--color-text-muted);
+}
+.hit-group.collapsed .hit {
+  display: none;
 }
 .hit {
   gap: var(--space-4);
   padding: var(--space-1) var(--space-5) var(--space-1) var(--space-7);
   font: var(--text-mono-sm) var(--font-mono);
+}
+#search-results:focus .hit.active {
+  outline: 1px solid var(--focus-ring-color);
+  outline-offset: -1px;
 }
 .hit-line {
   color: var(--color-text-muted);
@@ -77,25 +180,40 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.hit-match {
+  color: var(--color-text-strong);
+  background: var(--color-selection);
+  border-radius: var(--radius-xs);
+}
 
 .ctx-menu {
   position: fixed;
   z-index: var(--z-overlay);
-  min-width: 170px;
+  min-width: 190px;
   padding: var(--space-2);
   background: var(--color-surface-hover);
   border: 1px solid var(--color-border-overlay);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-overlay);
+  outline: none;
 }
 .ctx-item {
+  display: flex;
+  gap: var(--space-8);
   padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-sm);
   cursor: default;
 }
-.ctx-item:hover {
+.ctx-hint {
+  margin-left: auto;
+  color: var(--color-text-muted);
+}
+.ctx-item.active {
   background: var(--color-accent);
   color: var(--color-on-accent);
+}
+.ctx-item.active .ctx-hint {
+  color: inherit;
 }
 .ctx-menu hr {
   border: none;

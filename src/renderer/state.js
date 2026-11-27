@@ -12,9 +12,11 @@
 //   auth:changed       { installed, loggedIn, plan }              the tutor's connection status is known
 //   panel:toggled      { id, visible }                            a side or bottom panel was shown or hidden
 //   text-size:changed  size in px                                 the code text size changed
+//   files:changed      [path]                                     files changed on disk outside the editor (the
+//                                                                 terminal, git, a script); paths are relative,
+//                                                                 and '' means anything may have changed
 //
 // Reserved for work in progress, so areas agree on the names before they exist:
-//   files:changed      [path]                                     files changed on disk outside the editor
 //   theme:changed      'dark' | 'light'                           the colour theme changed; re-read tokens
 
 export const state = {
