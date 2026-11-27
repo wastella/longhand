@@ -2,13 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'" />
     <title>Longhand</title>
     <link rel="stylesheet" href="xterm.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header id="titlebar">
+    <header id="titlebar" data-tauri-drag-region>
       <span id="ws-name">Longhand</span>
       <span class="spacer"></span>
       <span id="reliance" title="Your own record of tutor use in this folder. Stored in .longhand/log.jsonl"></span>

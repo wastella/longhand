@@ -43,8 +43,9 @@ select {
 #titlebar {
   height: 38px; flex: none; display: flex; align-items: center; gap: 14px;
   padding: 0 14px 0 84px; border-bottom: 1px solid var(--line);
-  -webkit-app-region: drag; font-size: 12px;
+  font-size: 12px; cursor: default;
 }
+#titlebar > * { pointer-events: none; }
 #ws-name { font-weight: 600; }
 #reliance, #auth { color: var(--dim); }
 #auth.ok::before, #auth.bad::before { content: '●'; margin-right: 5px; }
@@ -97,7 +98,8 @@ select {
 .tab-btn { background: none; border: none; color: var(--dim); padding: 2px 8px; border-radius: 4px; }
 .tab-btn.active { color: var(--text); background: var(--bg-3); }
 .bottom-pane { flex: 1; min-height: 0; }
-#terminal { padding: 4px 0 0 10px; }
+#terminal { overflow: hidden; }
+#terminal .xterm { padding: 4px 0 0 10px; }
 #tests { display: flex; }
 #tests-list { width: 46%; overflow: auto; border-right: 1px solid var(--line); user-select: text; }
 #tests-detail { flex: 1; margin: 0; padding: 8px 12px; overflow: auto; font: 12px/1.5 var(--mono); white-space: pre-wrap; user-select: text; color: #c3c6cf; }
@@ -153,3 +155,5 @@ select {
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #3a3c45; border-radius: 5px; border: 2px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
+
+.new-name { display: block; width: calc(100% - 16px); margin: 4px 8px; font: 12px var(--mono); color: var(--text); background: var(--bg); border: 1px solid var(--accent); border-radius: 4px; padding: 3px 6px; outline: none; user-select: text; }

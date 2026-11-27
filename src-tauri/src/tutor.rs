@@ -121,7 +121,7 @@ pub fn tutor_ask(app: AppHandle, state: State<AppState>, prompt: String, kind: S
     let cfg = read_config(&ws);
     let policy = cfg["policy"].as_str().unwrap_or("strict").to_string();
     let model = cfg["model"].as_str().unwrap_or("sonnet").to_string();
-    log_event(&ws, "ask", json!({ "kind": kind, "chars": prompt.chars().count() }));
+    log_event(&ws, "ask", json!({ "about": kind, "chars": prompt.chars().count() }));
     cancel(&state);
 
     let mut args: Vec<String> = [

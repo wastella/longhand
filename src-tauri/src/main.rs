@@ -177,6 +177,8 @@ async fn app_init(app: AppHandle) -> Value {
         "auth": tutor::auth_status(),
         "smoke": std::env::var("LONGHAND_SMOKE").is_ok(),
         "smokeDir": std::env::var("LONGHAND_SMOKE_DIR").ok(),
+        // `longhand path/to/folder` opens that folder straight away.
+        "openDir": std::env::args().nth(1).filter(|a| Path::new(a).is_dir()),
     })
 }
 
