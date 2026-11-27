@@ -334,7 +334,8 @@ cell (opening a notebook from anywhere must not run its code) and stopped when i
 when another folder opens, and on quit. At most 3 run at once. The kernel is ipykernel in the
 folder's own Python: from the login shell, `uv run python` when the folder has a
 `pyproject.toml` or `uv.lock`, `python3` otherwise, running a small helper
-(`notebook/kernel.py`, written to a temporary folder) with the notebook's folder as the working
+(`notebook/kernel.py`, passed with `-c` through the environment, so there is no file of it
+anyone could change) with the notebook's folder as the working
 directory. The helper uses jupyter_client to start the kernel and relays its messages as
 line-delimited JSON over stdio (the protocol is at the top of `kernel.py`), so the app needs
 no ZeroMQ. jupyter_client comes with ipykernel, so the one thing a folder needs is ipykernel;
@@ -348,7 +349,9 @@ after installing finds it.
 - `notebook_ack(id, bytes)`: the interface has handled that many bytes; reading pauses while
   too much is unacknowledged, as for terminals.
 - `notebook_stop(id)` stops the helper's process group and the kernel's (jupyter_client starts
-  it in a session of its own), so whatever the kernel started goes too.
+  it in a session of its own; the helper names it as soon as it exists, before the kernel is
+  ready), so whatever the kernel started goes too. The helper also shuts the kernel down on
+  SIGTERM.
 - Events: `notebook:message` `{ id, message, bytes }` for each helper line, and `notebook:exit`
   `{ id, code, signal, problem, kernel }` when the helper ends, with `problem`
   (`{ kind, title, detail, fix }`) when it never got a kernel running and `kernel`
@@ -357,9 +360,15 @@ after installing finds it.
 The helper caps a single output's stream text at 1 MB and rich data at 5 MB, runs cells with
 `stop_on_error` (cells queued behind an error are not run, as in Jupyter) and without stdin:
 code that calls `input()` fails with one line saying notebooks in Longhand cannot ask for
-input. `notebook/kernel.js` keeps the queue, the running cell, durations and the kernel's
-state; Interrupt sends SIGINT through jupyter_client and offers a restart if Python has not
-stopped after 5 seconds.
+input. Its output is written by a thread of its own: while more than 2 MB waits for the window,
+further stream text is counted rather than kept (one line says how much), and commands are read
+on another thread, so Interrupt works however much a cell prints. Interrupt sends SIGINT to the
+kernel's process group, as jupyter_client does, and the notebook offers a restart if Python has
+not stopped after 5 seconds. `notebook/kernel.js` keeps the queue, the running cell, durations
+and the kernel's state, and starts one kernel at a time: a kernel stopped while it was starting
+is stopped again once the backend has it, and messages from a kernel that is no longer the
+notebook's are ignored. In the interface a cell keeps its last 199 outputs (one line counts the
+rest), outputs are drawn once per frame, and HTML over 1 MB is not drawn.
 
 ## Language servers
 

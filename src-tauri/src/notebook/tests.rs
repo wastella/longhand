@@ -1,4 +1,5 @@
 use super::*;
+use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver};
 use std::time::Instant;
 
@@ -10,9 +11,8 @@ fn scratch(name: &str) -> PathBuf {
 
 #[test]
 fn the_script_runs_the_folders_python_with_quoted_paths() {
-    let helper = Path::new("/tmp/it's here/longhand_kernel.py");
-    assert_eq!(script(true, helper, Path::new("/w/hw 1")), r"exec uv run python -u '/tmp/it'\''s here/longhand_kernel.py' '/w/hw 1'");
-    assert!(script(false, helper, Path::new("/w")).starts_with("exec python3 -u "));
+    assert_eq!(script(true, Path::new("/w/it's hw 1")), r#"exec uv run python -u -c "$LONGHAND_KERNEL_HELPER" '/w/it'\''s hw 1'"#);
+    assert!(script(false, Path::new("/w")).starts_with("exec python3 -u -c "));
     let dir = scratch("uv");
     assert!(!uses_uv(&dir));
     std::fs::write(dir.join("pyproject.toml"), "").unwrap();
@@ -20,42 +20,67 @@ fn the_script_runs_the_folders_python_with_quoted_paths() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
-/// Held by tests that use the installed helper, since one of them removes it.
-static HELPER_FILE: Mutex<()> = Mutex::new(());
-
 #[test]
-fn the_helper_is_written_once_and_rewritten_if_removed() {
-    let _file = HELPER_FILE.lock().unwrap_or_else(|e| e.into_inner());
-    let path = install_helper().unwrap();
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), HELPER);
-    std::fs::remove_file(&path).unwrap();
-    assert_eq!(install_helper().unwrap(), path);
-    assert!(path.exists());
+fn the_helper_reaches_python_through_the_environment_not_a_file() {
+    let command = command("/bin/sh", Path::new("/"), "true", false);
+    let helper = command.get_envs().find(|(name, _)| *name == "LONGHAND_KERNEL_HELPER").and_then(|(_, value)| value);
+    assert_eq!(helper.map(|v| v.to_string_lossy().into_owned()), Some(HELPER.to_string()));
 }
 
-/// A Python whose ipykernel loads: $LONGHAND_TEST_KERNEL_PYTHON, or python3 when it has one.
+#[test]
+fn no_more_than_the_cap_of_kernels_start() {
+    let mut running = HashMap::new();
+    for i in 0..MAX_KERNELS {
+        assert!(admit(&running, &format!("nb-{i}")).is_ok());
+        let child = Command::new("true").stdin(Stdio::piped()).spawn().unwrap();
+        let kernel = Kernel {
+            pgid: 0,
+            kernel: Arc::default(),
+            stdin: {
+                let mut child = child;
+                child.stdin.take().unwrap()
+            },
+            flow: Arc::default(),
+        };
+        running.insert(format!("nb-{i}"), kernel);
+    }
+    let refused = admit(&running, "nb-more").unwrap_err();
+    assert!(refused.starts_with("At most 3 notebooks can run Python at once. Close another notebook's tab"), "{refused}");
+    running.remove("nb-0");
+    assert!(admit(&running, "nb-1").unwrap_err().contains("already running"));
+    assert!(admit(&running, "nb-more").is_ok());
+}
+
+/// A Python whose ipykernel loads: $LONGHAND_TEST_KERNEL_PYTHON (which must work: CI sets it so
+/// these tests run there), or python3 when it has one.
 fn kernel_python() -> Option<String> {
-    let candidate = std::env::var("LONGHAND_TEST_KERNEL_PYTHON").unwrap_or_else(|_| "python3".into());
-    let found =
-        Command::new(&candidate).args(["-c", "import sys, ipykernel.kernelapp, jupyter_client; print(sys.executable)"]).output().ok()?;
-    found.status.success().then(|| String::from_utf8_lossy(&found.stdout).trim().to_string())
+    let chosen = std::env::var("LONGHAND_TEST_KERNEL_PYTHON").ok();
+    let candidate = chosen.clone().unwrap_or_else(|| "python3".into());
+    let found = Command::new(&candidate).args(["-c", "import sys, ipykernel.kernelapp, jupyter_client; print(sys.executable)"]).output();
+    let works = found.as_ref().is_ok_and(|f| f.status.success());
+    assert!(works || chosen.is_none(), "LONGHAND_TEST_KERNEL_PYTHON={candidate} cannot load ipykernel: {found:?}");
+    works.then(|| String::from_utf8_lossy(&found.unwrap().stdout).trim().to_string())
 }
 
 struct Helper {
     child: Child,
     stdin: ChildStdin,
     lines: Receiver<Value>,
-    first: Option<Value>,
+    /// While true, the helper's output is not read, as when the window is behind.
+    paused: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Helper {
     /// Runs the helper as the app does (its own process group, the notebook's folder), with `python` and its `args`.
     fn start(python: &str, args: &[&str], cwd: &Path) -> Helper {
-        let file = HELPER_FILE.lock().unwrap_or_else(|e| e.into_inner());
-        let helper = install_helper().unwrap();
+        Helper::start_with(python, args, cwd, &[])
+    }
+
+    fn start_with(python: &str, args: &[&str], cwd: &Path, envs: &[(&str, &str)]) -> Helper {
         let mut child = Command::new(python)
+            .envs(envs.iter().copied())
             .args(args)
-            .arg(&helper)
+            .args(["-c", HELPER])
             .arg(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -66,15 +91,22 @@ impl Helper {
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
         let (send, lines) = channel();
+        let paused = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let gate = paused.clone();
         std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            let mut reader = BufReader::new(stdout);
+            loop {
+                while gate.load(std::sync::atomic::Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    return;
+                }
                 let _ = send.send(serde_json::from_str(&line).unwrap());
             }
         });
-        // Python has read the helper once it speaks or ends; until then it must stay in place.
-        let first = lines.recv_timeout(Duration::from_secs(60)).ok();
-        drop(file);
-        Helper { child, stdin, lines, first }
+        Helper { child, stdin, lines, paused }
     }
 
     fn say(&mut self, message: Value) {
@@ -82,16 +114,9 @@ impl Helper {
     }
 
     /// Messages until one of `kind` (for `run`, when given) arrives; panics after 60 seconds.
-    fn until(&mut self, kind: &str, run: Option<&str>) -> Vec<Value> {
+    fn until(&self, kind: &str, run: Option<&str>) -> Vec<Value> {
         let start = Instant::now();
         let mut seen = Vec::new();
-        if let Some(first) = self.first.take() {
-            let done = first["type"] == kind && run.is_none_or(|r| first["run"] == r);
-            seen.push(first);
-            if done {
-                return seen;
-            }
-        }
         while start.elapsed() < Duration::from_secs(60) {
             let Ok(message) = self.lines.recv_timeout(Duration::from_secs(1)) else { continue };
             let done = message["type"] == kind && run.is_none_or(|r| message["run"] == r);
@@ -190,6 +215,63 @@ fn stopping_a_notebook_ends_the_helper_and_the_kernel() {
     std::thread::sleep(Duration::from_millis(200));
     assert!(unsafe { libc::kill(-helper_group, 0) } != 0, "the helper's group is gone");
     assert!(unsafe { libc::kill(-kernel, 0) } != 0, "the kernel's group is gone");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn stopping_before_the_kernel_is_ready_ends_it_too() {
+    let Some(python) = kernel_python() else {
+        eprintln!("skipped: no Python with ipykernel here (set LONGHAND_TEST_KERNEL_PYTHON)");
+        return;
+    };
+    let dir = scratch("early");
+    let mut helper = Helper::start(&python, &["-u"], &dir);
+    // The kernel's process is named before it is ready, so the app can stop its group at once.
+    let said = helper.until("kernel", None);
+    assert!(said.iter().all(|m| m["type"] != "ready"), "{said:?}");
+    let kernel = said.last().unwrap()["kernel"].as_i64().expect("the kernel's pid") as i32;
+    // Even stopping only the helper's group (SIGTERM) takes the kernel with it.
+    stop_group_now(helper.child.id() as i32, Duration::from_secs(5));
+    let _ = helper.child.wait();
+    let start = Instant::now();
+    while unsafe { libc::kill(kernel, 0) } == 0 && start.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(unsafe { libc::kill(kernel, 0) } != 0, "the kernel is gone");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn an_interrupt_works_while_the_window_is_behind_on_a_flood_of_output() {
+    let Some(python) = kernel_python() else {
+        eprintln!("skipped: no Python with ipykernel here (set LONGHAND_TEST_KERNEL_PYTHON)");
+        return;
+    };
+    let dir = scratch("flood");
+    // A small backlog, so a few of the kernel's (already capped) messages are enough to fill it.
+    let mut helper = Helper::start_with(&python, &["-u"], &dir, &[("LONGHAND_KERNEL_BACKLOG", "100000")]);
+    helper.until("ready", None);
+    helper.say(json!({ "op": "execute", "run": "a", "code": "while True:\n    print('x' * 1000, flush=True)" }));
+    helper.until("start", Some("a"));
+    // Stop reading, as the app does while the window catches up; the pipe fills.
+    helper.paused.store(true, std::sync::atomic::Ordering::SeqCst);
+    std::thread::sleep(Duration::from_secs(3));
+    helper.say(json!({ "op": "interrupt" }));
+    std::thread::sleep(Duration::from_secs(1));
+    helper.paused.store(false, std::sync::atomic::Ordering::SeqCst);
+    let run = helper.until("done", Some("a"));
+    assert_eq!(run.last().unwrap()["status"], "error");
+    let out = outputs(&run);
+    assert!(out.iter().any(|o| o["ename"] == "KeyboardInterrupt"), "interrupted");
+    assert!(
+        out.iter().any(|o| o["text"].as_str().is_some_and(|t| t.contains("while the window caught up"))),
+        "says what was left out: {} outputs, {:?}",
+        out.len(),
+        out.iter().map(|o| (o["output_type"].clone(), o["text"].as_str().map(str::len))).collect::<Vec<_>>()
+    );
+    // And the kernel still runs cells afterwards.
+    helper.say(json!({ "op": "execute", "run": "b", "code": "1 + 1" }));
+    assert_eq!(outputs(&helper.until("done", Some("b")))[0]["data"]["text/plain"], "2");
     std::fs::remove_dir_all(dir).unwrap();
 }
 

@@ -1,7 +1,7 @@
 //! Notebook kernels: one Python kernel per open notebook, in the folder's own environment.
 //!
-//! The kernel is ipykernel, started by a small helper (notebook/kernel.py) that runs with the
-//! folder's Python, found as the test runner finds it (`uv run python` when the folder has a
+//! The kernel is ipykernel, started by a small helper (notebook/kernel.py, passed to Python with
+//! `-c` so it is never a file anyone else could change) that runs with the folder's Python, found as the test runner finds it (`uv run python` when the folder has a
 //! pyproject.toml or uv.lock, `python3` otherwise), from the student's login shell. The helper
 //! speaks jupyter_client to the kernel and line-delimited JSON to us over stdio (its protocol is
 //! at the top of kernel.py), so this side needs no ZeroMQ. Each line goes to the interface as
@@ -25,14 +25,13 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const HELPER: &str = include_str!("notebook/kernel.py");
-const HELPER_NAME: &str = "longhand_kernel.py";
 /// How many notebooks may have a kernel at once. Each holds its own Python with everything it
 /// imported (a PyTorch kernel takes hundreds of megabytes), so a few is plenty.
 pub const MAX_KERNELS: usize = 3;
@@ -69,42 +68,53 @@ pub fn stop_all(app: &AppHandle) {
     }
 }
 
-/// Stops every kernel and waits until they are gone, for quitting; then removes the helper.
+/// Stops every kernel and waits until they are gone, for quitting.
 pub fn shutdown(app: &AppHandle) {
     let kernels: Vec<Kernel> = app.state::<Kernels>().0.lock().unwrap().drain().map(|(_, k)| k).collect();
     for group in kernels.iter().flat_map(Kernel::groups) {
         stop_group_now(group, STOP_GRACE);
     }
-    let _ = std::fs::remove_dir_all(helper_dir());
 }
 
-fn helper_dir() -> PathBuf {
-    std::env::temp_dir().join(format!("longhand-notebook-{}", std::process::id()))
-}
-
-/// Writes the helper where Python can run it, once per app run.
-fn install_helper() -> std::io::Result<PathBuf> {
-    static INSTALLED: OnceLock<PathBuf> = OnceLock::new();
-    if let Some(path) = INSTALLED.get() {
-        if path.exists() {
-            return Ok(path.clone());
+/// Removes the helper copies early builds wrote to the temporary folder (`longhand-notebook-<pid>`),
+/// once per run. Only folders of this user's that hold nothing but the helper are touched.
+fn remove_old_helpers() {
+    static DONE: Once = Once::new();
+    DONE.call_once(|| {
+        let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let ours = entry.file_name().to_string_lossy().starts_with("longhand-notebook-")
+                && std::fs::read_dir(&path).map(|files| files.flatten().all(|f| f.file_name() == "longhand_kernel.py")).unwrap_or(false);
+            if ours {
+                let _ = std::fs::remove_dir_all(path);
+            }
         }
-    }
-    let dir = helper_dir();
-    std::fs::create_dir_all(&dir)?;
-    let path = dir.join(HELPER_NAME);
-    std::fs::write(&path, HELPER)?;
-    Ok(INSTALLED.get_or_init(|| path.clone()).clone())
+    });
 }
 
 pub(crate) fn uses_uv(folder: &Path) -> bool {
     folder.join("pyproject.toml").is_file() || folder.join("uv.lock").is_file()
 }
 
-/// The command the helper's shell runs: the folder's Python with the helper and the notebook's folder.
-fn script(uv: bool, helper: &Path, cwd: &Path) -> String {
+/// The command the helper's shell runs: the folder's Python with the helper (from the
+/// environment, see `command`) and the notebook's folder.
+fn script(uv: bool, cwd: &Path) -> String {
     let python = if uv { "uv run python" } else { "python3" };
-    format!("exec {python} -u {} {}", shell_quote(&helper.to_string_lossy()), shell_quote(&cwd.to_string_lossy()))
+    format!("exec {python} -u -c \"$LONGHAND_KERNEL_HELPER\" {}", shell_quote(&cwd.to_string_lossy()))
+}
+
+/// Whether one more kernel may start as `id`: at most MAX_KERNELS run at once, one per id.
+fn admit(running: &HashMap<String, Kernel>, id: &str) -> R<()> {
+    if running.len() >= MAX_KERNELS {
+        return Err(format!(
+            "At most {MAX_KERNELS} notebooks can run Python at once. Close another notebook's tab, then run this cell again."
+        ));
+    }
+    if running.contains_key(id) {
+        return Err(format!("A kernel called {id} is already running"));
+    }
+    Ok(())
 }
 
 /// The helper's process: the login shell, so tools resolve as in the terminal, handing over to
@@ -115,6 +125,7 @@ fn command(shell: &str, folder: &Path, script: &str, uv: bool) -> Command {
         .args(["-lc", "exec /bin/sh -c \"$LONGHAND_KERNEL_SCRIPT\""])
         .current_dir(folder)
         .env("LONGHAND_KERNEL_SCRIPT", script)
+        .env("LONGHAND_KERNEL_HELPER", HELPER)
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -135,19 +146,12 @@ pub fn notebook_start(app: AppHandle, state: State<AppState>, kernels: State<Ker
     let folder = workspace(&state)?;
     let file = resolve_in(&folder, &path)?;
     let cwd = file.parent().map(Path::to_path_buf).unwrap_or_else(|| folder.clone());
-    let helper = install_helper().map_err(|e| format!("Could not prepare the kernel: {e}"))?;
+    remove_old_helpers();
     let uv = uses_uv(&folder);
     let mut map = kernels.0.lock().unwrap();
-    if map.len() >= MAX_KERNELS {
-        return Err(format!(
-            "At most {MAX_KERNELS} notebooks can run Python at once. Close another notebook's tab (or shut its kernel down), then run this cell again."
-        ));
-    }
-    if map.contains_key(&id) {
-        return Err(format!("A kernel called {id} is already running"));
-    }
+    admit(&map, &id)?;
     let mut child =
-        command(&login_shell(), &folder, &script(uv, &helper, &cwd), uv).spawn().map_err(|e| format!("Could not start the shell: {e}"))?;
+        command(&login_shell(), &folder, &script(uv, &cwd), uv).spawn().map_err(|e| format!("Could not start the shell: {e}"))?;
     let kernel = Kernel {
         pgid: child.id() as i32,
         kernel: Arc::default(),
@@ -182,7 +186,10 @@ fn follow(app: AppHandle, id: String, mut child: Child, flow: Arc<Flow>, kernel_
     for line in reader.split(b'\n').map_while(Result::ok) {
         let Ok(message) = serde_json::from_slice::<Value>(&line) else { continue };
         seen.note(&message);
-        if let Some(pid) = message.get("kernel").and_then(Value::as_i64).filter(|_| message["type"] == "ready") {
+        // The kernel's group, as soon as the helper knows it, so stopping before it is ready ends it too.
+        if let Some(pid) =
+            message.get("kernel").and_then(Value::as_i64).filter(|_| message["type"] == "kernel" || message["type"] == "ready")
+        {
             *kernel_group.lock().unwrap() = Some(pid as i32);
         }
         flow.wait_for_room();
