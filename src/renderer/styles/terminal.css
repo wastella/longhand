@@ -1,12 +1,90 @@
-/* The terminal pane. xterm.js's own colours come from the tokens in terminal/index.js. */
+/* The terminal pane, its tabs in the bottom panel's header and the hint over a hovered link.
+   xterm.js's own colours come from the tokens in terminal/theme.js. */
 
 #terminal {
+  position: relative;
   overflow: hidden;
   background: var(--color-surface);
+}
+.term-view {
+  height: 100%;
+}
+#terminal .xterm {
+  height: 100%;
+  padding: var(--space-2) 0 0 var(--space-5);
 }
 #terminal .xterm-viewport {
   background-color: var(--color-surface) !important;
 }
-#terminal .xterm {
-  padding: var(--space-2) 0 0 var(--space-5);
+
+/* Header: [1 ×] [2 ×]  +  Restart. Each tab is a number with its own close button. */
+#terminal-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+#terminal-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-right: var(--space-2);
+}
+.term-tab {
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+}
+.term-tab:hover,
+.term-tab.active {
+  background: var(--color-surface-hover);
+}
+.term-tab button {
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.term-tab-name {
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
+}
+.term-tab-close {
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+  visibility: hidden;
+}
+.term-tab.active .term-tab-name {
+  color: var(--color-text);
+}
+.term-tab.exited .term-tab-name {
+  text-decoration: line-through;
+}
+.term-tab:hover .term-tab-close,
+.term-tab.active .term-tab-close,
+.term-tab-close:focus-visible {
+  visibility: visible;
+}
+.term-tab-close:hover {
+  color: var(--color-text);
+}
+.term-tab button:focus-visible,
+#terminal-actions > button:focus-visible {
+  outline: 1px solid var(--focus-ring-color);
+  outline-offset: -1px;
+}
+
+.term-link-hint {
+  position: absolute;
+  z-index: var(--z-overlay);
+  max-width: 70%;
+  padding: var(--space-1) var(--space-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-overlay);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-overlay);
 }

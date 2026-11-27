@@ -1,51 +1,19 @@
-// The terminal: xterm.js on top of a login shell the backend runs in the open folder.
+// The terminal: up to four login shells in the open folder, each in its own xterm.js view, in
+// the bottom panel. Other areas import from this file only.
 
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
 import { invoke, listen } from '../backend.js';
-import { h, token } from '../dom.js';
 import { on } from '../state.js';
-import { addBottomPane, showBottomPane } from '../shell/index.js';
+import { addBottomPane, registerCommand, registerLeaveGuard, showBottomPane } from '../shell/index.js';
+import { runningCommands } from './leave-guard.js';
+import { runFile } from './run-file.js';
+import { stopEarlierShells } from './session.js';
+import { actions, activeSession, addTerminal, pane, resetTerminals, sessionById, sessions } from './terminals.js';
+import { terminalFontSize, terminalTheme } from './theme.js';
 
-const pane = h('div', { id: 'terminal', class: 'bottom-pane' });
-const fitAddon = new FitAddon();
-let xterm;
-/** The backend's id for the running shell; 0 while none is running. */
-let shellId = 0;
-
-// xterm draws its own colours, so it takes the token values rather than CSS.
-const theme = () => ({
-  background: token('--color-surface'),
-  foreground: token('--color-text'),
-  cursor: token('--color-accent'),
-  selectionBackground: token('--color-selection'),
-});
-
-function fit() {
-  if (pane.hidden || !pane.offsetHeight) return;
-  try {
-    fitAddon.fit();
-  } catch {
-    // The pane can be mid-layout (zero-sized); the ResizeObserver fits it once it settles.
-  }
-}
-
-async function start() {
-  fit();
-  xterm.reset();
-  shellId = await invoke('term_start', { cols: xterm.cols, rows: xterm.rows });
-}
-
-function onExit({ id }) {
-  if (id !== shellId) return;
-  shellId = 0;
-  xterm.write('\r\n\x1b[2m[shell exited; press any key to restart]\x1b[0m\r\n');
-  const once = xterm.onKey(() => (once.dispose(), start()));
-}
-
-/** Sends `text` to the shell as if typed (end it with \r to run it). Resolves once the shell has it. */
+/** Sends `text` to the terminal in front as if typed (end it with \r to run it). Resolves once the shell has it. */
 export async function sendToTerminal(text) {
-  if (shellId) await invoke('term_input', { id: shellId, data: text });
+  const id = activeSession()?.id;
+  if (id) await invoke('term_input', { id, data: text });
 }
 
 /** Brings the terminal to the front, then types `text` into it for the student to run. */
@@ -54,24 +22,34 @@ export function typeInTerminal(text) {
   sendToTerminal(text);
 }
 
-/** The terminal's size in characters, as { cols, rows }. */
-export const terminalSize = () => ({ cols: xterm.cols, rows: xterm.rows });
+/** The size in characters of the terminal in front, as { cols, rows }. */
+export function terminalSize() {
+  const { cols, rows } = activeSession().xterm;
+  return { cols, rows };
+}
 
 export function mount() {
-  addBottomPane({ name: 'terminal', label: 'Terminal', body: pane, onShow: () => requestAnimationFrame(() => (fit(), xterm.focus())) });
-  xterm = new Terminal({ fontFamily: token('--font-mono'), fontSize: 12, theme: theme(), cursorBlink: true, scrollback: 5000 });
-  xterm.loadAddon(fitAddon);
-  xterm.open(pane);
-  xterm.onData((data) => shellId && invoke('term_input', { id: shellId, data }));
-  xterm.onResize(({ cols, rows }) => shellId && invoke('term_resize', { id: shellId, cols, rows }));
-  new ResizeObserver(fit).observe(pane);
+  stopEarlierShells();
+  addBottomPane({ name: 'terminal', label: 'Terminal', body: pane, actions, onShow: () => activeSession().show() });
+  addTerminal({ start: false });
 
-  listen('term:data', ({ id, data }) => id === shellId && xterm.write(data));
-  listen('term:exit', onExit);
-  on('workspace:opened', start);
-  on('panel:toggled', ({ id, visible }) => id === 'bottom' && visible && requestAnimationFrame(fit));
-  on('text-size:changed', (size) => {
-    xterm.options.fontSize = size - 1;
-    fit();
+  listen('term:data', ({ id, data, bytes }) => sessionById(id)?.receive(data, bytes));
+  listen('term:exit', ({ id, code }) => sessionById(id)?.exitedWith(code));
+
+  registerCommand('run-file', runFile);
+  registerCommand('new-terminal', () => {
+    showBottomPane('terminal');
+    addTerminal();
   });
+  registerLeaveGuard(runningCommands);
+
+  on('workspace:opened', resetTerminals);
+  on('panel:toggled', ({ id, visible }) => id === 'bottom' && visible && activeSession().fitSoon());
+  on('text-size:changed', (size) => sessions.forEach((s) => s.setFontSize(terminalFontSize(size))));
+  on('theme:changed', () => {
+    const theme = terminalTheme();
+    sessions.forEach((s) => s.setTheme(theme));
+  });
+  // The monospace font may finish loading after the first measurement.
+  document.fonts?.ready.then(() => sessions.forEach((s) => s.fitSoon()));
 }

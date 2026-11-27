@@ -77,9 +77,16 @@ fn main() {
             system::confirm,
             system::open_external,
             system::smoke_result,
+            // The terminals (term.rs).
             term::term_start,
+            term::term_reset,
             term::term_input,
             term::term_resize,
+            term::term_ack,
+            term::term_close,
+            term::term_busy,
+            term::term_run_command,
+            term::term_resolve,
             pytest::tests_run,
             pytest::tests_cancel,
             tutor::auth_status,
@@ -87,6 +94,13 @@ fn main() {
             tutor::tutor_cancel,
             tutor::tutor_reset,
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to start Longhand");
+        .build(tauri::generate_context!())
+        .expect("failed to start Longhand")
+        .run(|app, event| {
+            // Quitting from the menu may skip the window's Destroyed event; the terminals'
+            // processes must not outlive the app either way.
+            if let tauri::RunEvent::Exit = event {
+                term::kill(&app.state::<AppState>());
+            }
+        });
 }

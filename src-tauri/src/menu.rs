@@ -32,6 +32,10 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
         .fullscreen()
         .build()?;
     let run = SubmenuBuilder::new(app, "Run")
+        // The terminal's items.
+        .item(&item("run-file", "Run File", "CmdOrCtrl+R")?)
+        .item(&item("new-terminal", "New Terminal", "Ctrl+Shift+`")?)
+        .separator()
         .item(&item("run-tests-file", "Run Tests in Current File", "CmdOrCtrl+T")?)
         .item(&item("run-tests", "Run All Tests", "CmdOrCtrl+Shift+T")?)
         .build()?;
