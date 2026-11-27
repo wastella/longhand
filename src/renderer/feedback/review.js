@@ -35,6 +35,7 @@ export async function reviewFile() {
   if (!state.workspace) return;
   const file = activeFile();
   if (!file) return showStatus('Open the file you want reviewed');
+  if (file.cursorLine == null) return showStatus('Review works on code files; it does not cover notebooks yet');
   if (review?.status === 'running') return showStatus(`Already reviewing ${fileName(review.path)}`);
   const { path } = file;
   if (!(await save(path)) && activeFile()?.dirty)

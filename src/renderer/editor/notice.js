@@ -48,26 +48,41 @@ export function renderBanner(host, doc, actions) {
   );
 }
 
-/** The notice shown instead of the editor for `doc.notice`: { kind, size?, message? }. */
-export function renderFileNotice(host, doc, { onClose }) {
+/**
+ * The notice shown instead of the editor for `doc.notice`: { kind, size?, limit?, message? }, or
+ * { kind: 'custom', title, detail } from a custom editor, which offers to open the file as text.
+ */
+export function renderFileNotice(host, doc, { onClose, onOpenAsText }) {
   const name = nameOf(doc.path);
-  const { kind, size } = doc.notice;
+  const { kind, size, limit } = doc.notice;
+  const notebook = doc.path.endsWith('.ipynb');
   const [title, detail] = {
     binary: [
       `${name} is not a text file`,
       `It holds ${formatSize(size)} of binary data, such as a dataset or a model checkpoint. Load it from Python instead.`,
     ],
-    tooLarge: [
-      `${name} is too large to edit here`,
-      `It is ${formatSize(size)}. Longhand opens text files up to 3 MB so the editor stays responsive. To look inside, try head or less in the terminal.`,
-    ],
+    tooLarge: notebook
+      ? [
+          `${name} is too large to open here`,
+          `It is ${formatSize(size)}. Longhand opens notebooks up to ${formatSize(limit)}; most of a notebook this size is saved output. To clear it, run jupyter nbconvert --clear-output --inplace "${name}" in the terminal.`,
+        ]
+      : [
+          `${name} is too large to edit here`,
+          `It is ${formatSize(size)}. Longhand opens text files up to 3 MB so the editor stays responsive. To look inside, try head or less in the terminal.`,
+        ],
     notText: [`${name} is not UTF-8 text`, 'Saving it from here could change its contents, so Longhand leaves it alone.'],
     error: [`${name} could not be opened`, doc.notice.message],
+    custom: [doc.notice.title, doc.notice.detail],
   }[kind];
   host.replaceChildren(
     h('h2', {}, title),
     h('p', {}, detail),
     h('p', { class: 'notice-path' }, doc.path),
-    h('button', { type: 'button', onclick: onClose }, 'Close tab'),
+    h(
+      'div',
+      { class: 'notice-actions' },
+      kind === 'custom' && h('button', { type: 'button', onclick: onOpenAsText }, 'Open as Text'),
+      h('button', { type: 'button', onclick: onClose }, 'Close tab'),
+    ),
   );
 }

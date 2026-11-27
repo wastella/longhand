@@ -183,6 +183,10 @@
   font-family: var(--font-mono);
   font-size: var(--text-mono-sm);
 }
+.editor-notice .notice-actions {
+  display: flex;
+  gap: var(--space-3);
+}
 
 /* ---- find, replace and go to line ---- */
 

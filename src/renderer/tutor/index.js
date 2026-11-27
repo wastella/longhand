@@ -17,6 +17,9 @@ import { isConnected, setupBox, showSetup } from './setup.js';
 export { tutorRequest, prepareTutor, listThreads, loadThread, usageRecord } from './engine.js';
 export { ask } from './conversation.js';
 export { renderAnswer } from './markdown.js';
+// For notebooks' Markdown cells, so math and Python look as they do in answers.
+export { drawFormulas, loadMathStyles, mathExtension } from './math.js';
+export { highlightBlocks } from './highlight.js';
 export { hideCodeAcross } from './hidden-code.js';
 export { failureText, failureView } from './errors.js';
 

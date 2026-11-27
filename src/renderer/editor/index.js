@@ -15,7 +15,8 @@ import { applyTheme, attach, close, enterFolder, fileGone, isWithin, open, refre
 import { registerSelectionAction } from './selection-actions.js';
 import { setThemeMode } from './theme.js';
 
-export { open as openFile, movePaths } from './session.js';
+export { open as openFile, movePaths, registerCustomEditor } from './session.js';
+export { createCellState, refreshCellTheme } from './setup.js';
 export { save, saveAll } from './disk.js';
 export { registerSelectionAction };
 
@@ -28,10 +29,14 @@ const DISK_CHECK_MS = 5000;
 
 /**
  * The file shown in the editor, or null:
- * { path, dirty, cursorLine, selection: { fromLine, toLine, text } | null }
+ * { path, dirty, cursorLine, selection: { fromLine, toLine, text } | null }. For a file a custom
+ * editor shows (a notebook), cursorLine and selection are null and `place` says where the
+ * student is in it ("cell 3 of 12"), or is null.
  */
 export function activeFile() {
   const { view, active, docs } = session;
+  const custom = active && docs.get(active).kind === 'custom' ? docs.get(active) : null;
+  if (custom) return { path: active, dirty: custom.dirty, cursorLine: null, selection: null, place: custom.custom.place() };
   if (!view || !active || docs.get(active).kind !== 'text') return null;
   const { doc, selection } = view.state;
   const sel = selection.main;

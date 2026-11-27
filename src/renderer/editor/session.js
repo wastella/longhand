@@ -4,11 +4,13 @@
 // CodeMirror `state`, the text last read or written (`saved`), the version on disk that text
 // came from (`stamp`: { mtime, size }), the file's `format`, `missing` once it has been deleted
 // underneath the editor, and `saves`, counting the saves started. A file the editor will
-// not open (binary, too large) is a 'notice' doc with the reason in `notice`. Insertion order of
-// `session.docs` is tab order.
+// not open (binary, too large) is a 'notice' doc with the reason in `notice`. A file another
+// area shows in its own way (a notebook) is a 'custom' doc: it has `stamp`, `format`, `saves`
+// and `missing` like a text doc, and `custom`, the object that draws and holds it (see
+// registerCustomEditor). Insertion order of `session.docs` is tab order.
 //
 // Other areas follow the text files through editor:opened, editor:changed, editor:renamed and
-// editor:closed (see state.js).
+// editor:closed (see state.js); custom docs are not text files and are not announced.
 
 import { EditorView } from '@codemirror/view';
 import { confirm, invoke } from '../backend.js';
@@ -20,7 +22,7 @@ import { languageSupport } from './languages.js';
 import { currentThemeMode, isStale, themeMode } from './theme.js';
 import { goTo } from './go-to-line.js';
 import { forgetAllNotes, moveNotes, releaseDetached, syncNotes } from './notes.js';
-import { fromDisk } from './line-endings.js';
+import { fromDisk, toDisk } from './line-endings.js';
 import { renderTabBar, wireTabBar } from './tab-bar.js';
 import { renderBanner, renderFileNotice } from './notice.js';
 import { flushTabs, recallTabs, rememberTabs } from './restore.js';
@@ -40,6 +42,25 @@ export const session = {
 let ui;
 let bannerActions;
 const loading = new Map();
+/** Custom editors by file extension, and the paths the student chose to open as plain text instead. */
+const customEditors = new Map();
+const asText = new Set();
+
+/**
+ * Shows files ending in `.extension` with `open(file)` instead of CodeMirror. `file` is
+ * { path, text, format, changed }; call `changed()` after every edit. It returns { notice } to
+ * show a notice instead ({ kind: 'custom', title, detail }, offering to open the file as text),
+ * or an editor: { dom, snapshot() → { text, mark }, markSaved(mark), dirty(), version(),
+ * load(text) (replaces the content with the disk's, as saved; returns a notice if it cannot) → null | notice, show(), hide(), rename(path), close(), running(), place() }.
+ */
+export function registerCustomEditor(extension, open) {
+  customEditors.set(extension, open);
+}
+
+const customFor = (path) => !asText.has(path) && customEditors.get(path.split('.').pop().toLowerCase());
+
+/** Whether a doc holds content the student edits and saves (text or custom). */
+export const isEditable = (doc) => doc.kind === 'text' || doc.kind === 'custom';
 
 /** `elements`: { tabBar, banner, host, notice }; `actions`: the banner's handlers, given the doc. */
 export function attach(elements, actions) {
@@ -68,11 +89,28 @@ export function renderChrome() {
 
 /** Recomputes whether a doc differs from the file on disk. */
 export function refreshDirty(doc) {
-  const dirty = doc.kind === 'text' && (doc.missing || !stateOf(doc).doc.eq(doc.saved));
+  const dirty = isEditable(doc) && (doc.missing || (doc.kind === 'custom' ? doc.custom.dirty() : !stateOf(doc).doc.eq(doc.saved)));
   if (dirty === doc.dirty) return;
   doc.dirty = dirty;
   renderChrome();
 }
+
+/**
+ * What saving `doc` now would write: { text, saved() }, where saved() records that this
+ * version (not whatever the student typed while it was being written) is the one on disk.
+ */
+export function contentToWrite(doc) {
+  if (doc.kind === 'custom') {
+    const { text, mark } = doc.custom.snapshot();
+    return { text, saved: () => doc.custom.markSaved(mark) };
+  }
+  const state = stateOf(doc);
+  return { text: toDisk(state), saved: () => (doc.saved = state.doc) };
+}
+
+/** A value that stays the same while the doc's content does, for noticing edits made during a slow read. */
+export const versionOf = (doc) => (doc.kind === 'custom' ? doc.custom.version() : stateOf(doc).doc);
+export const sameVersion = (doc, version) => (doc.kind === 'custom' ? doc.custom.version() === version : stateOf(doc).doc.eq(version));
 
 /** Applies a transaction to a doc, whether or not it is the one on screen. */
 export function updateDoc(doc, spec) {
@@ -112,7 +150,9 @@ function publishCursor() {
 
 function remember() {
   if (session.restoring || !app.workspace) return;
-  const files = [...session.docs.values()].filter((doc) => doc.kind === 'text').map((doc) => ({ path: doc.path, cursor: stateOf(doc).selection.main.head }));
+  const files = [...session.docs.values()]
+    .filter(isEditable)
+    .map((doc) => ({ path: doc.path, cursor: doc.kind === 'text' ? stateOf(doc).selection.main.head : 0 }));
   rememberTabs(app.workspace.path, files, session.active);
 }
 
@@ -129,12 +169,44 @@ function textDoc(path, file, cursor) {
 
 const noticeDoc = (path, notice) => ({ path, kind: 'notice', notice, dirty: false, banner: null });
 
+function customDoc(path, file, open) {
+  const doc = { path, kind: 'custom', stamp: stampOf(file), format: file.format, saves: 0, dirty: false, missing: false, banner: null };
+  const custom = open({ path, text: file.text, format: file.format, changed: () => doc.custom === custom && refreshDirty(doc) });
+  if (custom.notice) return noticeDoc(path, custom.notice);
+  doc.custom = custom;
+  ui.host.append(custom.dom);
+  custom.hide();
+  return doc;
+}
+
+/** Lets go of what a doc holds before it closes or changes kind. */
+function release(doc) {
+  if (doc.kind === 'text') releaseDetached(doc.path, stateOf(doc));
+  if (doc.kind === 'custom') {
+    doc.custom.close();
+    doc.custom.dom.remove();
+    doc.custom = null;
+  }
+}
+
+/** Reopens a file its custom editor could not show (a malformed notebook) as plain text, in the same tab. */
+export async function openAsText(path) {
+  if (session.docs.get(path)?.kind !== 'notice') return;
+  asText.add(path);
+  const order = [...session.docs.keys()];
+  session.docs.delete(path);
+  if (!(await load(path))) return;
+  const docs = new Map(session.docs);
+  session.docs.clear();
+  for (const p of [...order, ...docs.keys()]) if (docs.has(p) && !session.docs.has(p)) session.docs.set(p, docs.get(p));
+  activate(path);
+}
+
 /** Turns an open doc into a notice in place, when its file stopped being readable text. */
 export function becomeNotice(doc, notice) {
-  if (doc.kind === 'text') {
-    releaseDetached(doc.path, stateOf(doc));
-    emit('editor:closed', doc.path);
-  }
+  const wasText = doc.kind === 'text';
+  if (isEditable(doc)) release(doc);
+  if (wasText) emit('editor:closed', doc.path);
   Object.assign(doc, noticeDoc(doc.path, notice));
   if (doc.path === session.active) activate(doc.path);
 }
@@ -149,8 +221,9 @@ async function read(path, cursor) {
   }
   if (generation !== session.generation || file.kind === 'missing') return null;
   if (!session.docs.has(path)) {
-    session.docs.set(path, file.kind === 'text' ? textDoc(path, file, cursor) : noticeDoc(path, file));
-    if (file.kind === 'text') emit('editor:opened', path);
+    const custom = file.kind === 'text' && customFor(path);
+    session.docs.set(path, custom ? customDoc(path, file, custom) : file.kind === 'text' ? textDoc(path, file, cursor) : noticeDoc(path, file));
+    if (file.kind === 'text' && !custom) emit('editor:opened', path);
   }
   return session.docs.get(path);
 }
@@ -177,8 +250,9 @@ function stashActive() {
 export function activate(path) {
   stashActive();
   const doc = session.docs.get(path);
+  for (const other of session.docs.values()) if (other !== doc && other.kind === 'custom') other.custom.hide();
   session.active = path;
-  ui.notice.hidden = doc.kind === 'text';
+  ui.notice.hidden = isEditable(doc);
   if (doc.kind === 'text') {
     if (!session.view) session.view = new EditorView({ state: doc.state, parent: ui.host });
     session.view.dom.hidden = false;
@@ -189,9 +263,12 @@ export function activate(path) {
     // A key that opens a file (Enter in the tree, quick open or a name field) must call
     // preventDefault, or it would carry on into the file as a stray line break.
     session.view.focus();
+  } else if (doc.kind === 'custom') {
+    if (session.view) session.view.dom.hidden = true;
+    doc.custom.show();
   } else {
     if (session.view) session.view.dom.hidden = true;
-    renderFileNotice(ui.notice, doc, { onClose: () => close(doc.path) });
+    renderFileNotice(ui.notice, doc, { onClose: () => close(doc.path), onOpenAsText: () => openAsText(doc.path) });
   }
   renderChrome();
   emit('editor:active', path);
@@ -202,6 +279,7 @@ export function activate(path) {
 function showNothing() {
   session.active = null;
   if (session.view) session.view.dom.hidden = true;
+  for (const doc of session.docs.values()) if (doc.kind === 'custom') doc.custom.hide();
   ui.notice.hidden = true;
   renderChrome();
   emit('editor:active', null);
@@ -221,17 +299,26 @@ export async function open(path, line, column) {
   return true;
 }
 
+/** What closing `doc` would lose, as a question and the button that goes ahead. */
+function closeQuestion(doc) {
+  const running = doc.kind === 'custom' && doc.custom.running();
+  if (!doc.dirty) return [`${doc.path} is still running. Close it and stop it?`, 'Close and Stop'];
+  if (running) return [`${doc.path} has unsaved changes and is still running. Close it without saving and stop it?`, 'Close Without Saving'];
+  return [`${doc.path} has unsaved changes. Close it without saving?`, 'Close Without Saving'];
+}
+
 /** Closes a tab, asking first if it has unsaved changes (unless `force`). Resolves false if it stayed open. */
 export async function close(path, force = false) {
   const doc = session.docs.get(path);
   if (!doc) return false;
-  if (doc.dirty && !force && !(await confirm(`${doc.path} has unsaved changes. Close it without saving?`, 'Close Without Saving'))) return false;
+  if (!force && (doc.dirty || (doc.kind === 'custom' && doc.custom.running())) && !(await confirm(...closeQuestion(doc)))) return false;
   // The tab may have been renamed or closed while the question was up.
   if (session.docs.get(doc.path) !== doc) return false;
   const order = [...session.docs.keys()];
   const i = order.indexOf(doc.path);
   // Undo goes with the tab, so notes whose code was deleted cannot come back any more.
-  if (doc.kind === 'text') releaseDetached(doc.path, stateOf(doc));
+  release(doc);
+  asText.delete(doc.path);
   session.docs.delete(doc.path);
   if (doc.kind === 'text') emit('editor:closed', doc.path);
   if (session.active !== doc.path) {
@@ -270,6 +357,7 @@ export function movePaths(from, to) {
     if (!isWithin(path, from)) return [path, doc];
     doc.path = to + path.slice(from.length);
     if (doc.kind === 'text') renamed.push({ from: path, to: doc.path });
+    if (doc.kind === 'custom') doc.custom.rename(doc.path);
     return [doc.path, doc];
   });
   moveNotes(from, to);
@@ -292,7 +380,9 @@ export function movePaths(from, to) {
 function reset() {
   flushTabs();
   session.generation++;
+  for (const doc of session.docs.values()) if (doc.kind === 'custom') release(doc);
   session.docs.clear();
+  asText.clear();
   forgetAllNotes();
   showNothing();
 }
