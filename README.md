@@ -13,8 +13,8 @@ work is learning to write it yourself. Longhand keeps the parts of AI help that 
 (explaining concepts, looking up APIs, explaining errors, reviewing what you wrote) and leaves out
 the parts that replace it.
 
-> **Status:** early (0.1). macOS only. It works, it is tested, and it is small. See the
-> [roadmap](#roadmap) for what is missing.
+> **Status:** in development, not yet released. macOS only. See the [roadmap](#roadmap) for what
+> is missing.
 
 ## What it does
 
@@ -36,18 +36,11 @@ the parts that replace it.
 
 ## Install
 
-1. Download the latest `.dmg` from [Releases](https://github.com/wastella/longhand/releases) and
-   drag Longhand to Applications.
-2. The app is not yet notarized by Apple, so the first launch is blocked. Open
-   **System Settings → Privacy & Security** and choose **Open Anyway**, or run:
+There is no packaged release yet. For now, [build from source](#build-from-source).
 
-   ```bash
-   xattr -dr com.apple.quarantine /Applications/Longhand.app
-   ```
-
-3. For the tutor, install [Claude Code](https://claude.com/claude-code) and log in once by running
-   `claude` in a terminal. Longhand shows these steps itself if the tutor is not connected. The
-   editor, terminal and tests work without it.
+For the tutor, install [Claude Code](https://claude.com/claude-code) and log in once by running
+`claude` in a terminal. Longhand shows these steps itself if the tutor is not connected. The
+editor, terminal and tests work without it.
 
 The test panel runs `uv run pytest` when the folder has a `pyproject.toml`, and
 `python3 -m pytest` otherwise.
