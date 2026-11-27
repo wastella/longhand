@@ -116,7 +116,7 @@ uiTest(
     assert.deepEqual(await page.evaluate(() => window.__cancelled), []);
     await page.evaluate(() => window.__finishClone());
     await page.waitForFunction(() =>
-      [...document.querySelectorAll('.notice')].some((n) => n.textContent.includes('Cloned into /Users/student/assignment1-basics')),
+      [...document.querySelectorAll('.notice')].some((n) => /Cloned into \/Users\/student\/(courses\/)?assignment1-basics/.test(n.textContent)),
     );
     assert.equal(await text(page, '#ws-name'), 'Longhand', 'the folder is offered, not opened over what the student is doing');
   },
