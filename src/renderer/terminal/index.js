@@ -6,6 +6,7 @@ import { on } from '../state.js';
 import { addBottomPane, registerCommand, registerLeaveGuard, showBottomPane } from '../shell/index.js';
 import { runningCommands } from './leave-guard.js';
 import { runFile } from './run-file.js';
+import { stopEarlierShells } from './session.js';
 import { actions, activeSession, addTerminal, pane, resetTerminals, sessionById, sessions } from './terminals.js';
 import { terminalFontSize, terminalTheme } from './theme.js';
 
@@ -28,6 +29,7 @@ export function terminalSize() {
 }
 
 export function mount() {
+  stopEarlierShells();
   addBottomPane({ name: 'terminal', label: 'Terminal', body: pane, actions, onShow: () => activeSession().show() });
   addTerminal({ start: false });
 

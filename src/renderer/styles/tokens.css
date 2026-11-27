@@ -25,9 +25,10 @@
   --color-scrollbar: #3a3c45;
   --focus-ring-color: var(--color-accent);
 
-  /* The terminal's 16 ANSI colours, tuned to read on --color-surface. "Black" stays visible on
-     the dark surface and bright black is the dim grey that shell hints and tqdm use. */
-  --color-ansi-black: #3a3c45;
+  /* The terminal's 16 ANSI colours, tuned to read on --color-surface. "Black" is a grey that
+     stays legible as text (3.5:1) and apart from the selection; bright black, the dim grey of
+     shell hints and tqdm, is 5.6:1. */
+  --color-ansi-black: #6e717e;
   --color-ansi-red: #e07a7a;
   --color-ansi-green: #7fbf7f;
   --color-ansi-yellow: #d9c05b;
@@ -35,7 +36,7 @@
   --color-ansi-magenta: #c595d9;
   --color-ansi-cyan: #6fc0c0;
   --color-ansi-white: #c3c6cf;
-  --color-ansi-bright-black: #767986;
+  --color-ansi-bright-black: #9295a1;
   --color-ansi-bright-red: #f09c9c;
   --color-ansi-bright-green: #a2d6a2;
   --color-ansi-bright-yellow: #ecd67e;

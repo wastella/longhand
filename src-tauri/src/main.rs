@@ -79,6 +79,7 @@ fn main() {
             system::smoke_result,
             // The terminals (term.rs).
             term::term_start,
+            term::term_reset,
             term::term_input,
             term::term_resize,
             term::term_ack,

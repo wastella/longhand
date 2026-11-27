@@ -7,16 +7,20 @@ import { h } from '../dom.js';
 import { openFile } from '../editor/index.js';
 import { findLocations } from './locations.js';
 
+/** Wrapped rows looked at on each side of the hovered one; a location longer than this is not one. */
+const NEARBY_ROWS = 8;
+
 /**
- * The logical line through buffer row `y` (rows joined where the terminal wrapped them), with
- * the cell under each character of its text, since wide characters take two cells.
+ * The logical line through buffer row `y` (rows joined where the terminal wrapped them, at most
+ * NEARBY_ROWS either side), with the cell under each character of its text, since wide
+ * characters take two cells.
  */
 function logicalLine(buffer, y) {
   let first = y;
-  while (first > 0 && buffer.getLine(first)?.isWrapped) first--;
+  while (first > 0 && y - first < NEARBY_ROWS && buffer.getLine(first)?.isWrapped) first--;
   let text = '';
   const cells = [];
-  for (let row = first; row === first || buffer.getLine(row)?.isWrapped; row++) {
+  for (let row = first; row === first || (row - y <= NEARBY_ROWS && buffer.getLine(row)?.isWrapped); row++) {
     const line = buffer.getLine(row);
     if (!line) break;
     for (let x = 0; x < line.length; x++) {
@@ -82,9 +86,13 @@ export function addLinks(session, container) {
   });
 
   // Hyperlinks programs print with OSC 8 (ls --hyperlink, rich) open the same way as typed URLs.
+  // Only web links: xterm.js shows no link for any other scheme while allowNonHttpProtocols is
+  // off, and the checks here keep a hint or a click from ever promising one.
+  const isWeb = (uri) => /^https?:\/\//i.test(uri);
   xterm.options.linkHandler = {
-    activate: (event, uri) => /^https?:\/\//.test(uri) && invoke('open_external', { url: uri }),
-    hover: (event, uri) => hint.show(event, `Open ${uri} in the browser`),
+    allowNonHttpProtocols: false,
+    activate: (event, uri) => isWeb(uri) && invoke('open_external', { url: uri }),
+    hover: (event, uri) => isWeb(uri) && hint.show(event, `Open ${uri} in the browser`),
     leave: hint.hide,
   };
 }

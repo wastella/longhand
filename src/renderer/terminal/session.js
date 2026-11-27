@@ -15,6 +15,17 @@ import { codeSize, terminalFontSize, terminalTheme } from './theme.js';
 const pageKey = Date.now().toString(36);
 let started = 0;
 
+/** A shell counts as ready once its output has paused this long (its prompt is up). */
+const PROMPT_QUIET_MS = 200;
+/** Or this long after starting, whatever it printed, so a silent shell cannot hold Run File up. */
+const READY_TIMEOUT_MS = 10000;
+
+// Shells left running by an earlier load of this page (a reload) are stopped before any starts.
+let cleared = Promise.resolve();
+export function stopEarlierShells() {
+  cleared = invoke('term_reset');
+}
+
 /** Lines kept above the screen; enough for a long traceback, bounded so heavy output cannot balloon memory. */
 const SCROLLBACK = 5000;
 
@@ -26,6 +37,8 @@ export class TerminalSession {
     /** The backend's id for the running shell, or null while none runs. */
     this.id = null;
     this.exited = false;
+    /** Resolves when the shell has printed its prompt; see start(). */
+    this.ready = Promise.resolve();
     this.element = h('div', { class: 'term-view', hidden: true });
     this.fitAddon = new FitAddon();
     this.xterm = new Terminal({
@@ -78,7 +91,10 @@ export class TerminalSession {
     this.element.hidden = true;
   }
 
-  /** Starts a fresh shell in the open folder. */
+  /**
+   * Starts a fresh shell in the open folder. Resolves once it is started; `ready` resolves
+   * later, when the shell has printed its prompt (or failed to start).
+   */
   async start() {
     this.stop();
     this.fit();
@@ -86,19 +102,31 @@ export class TerminalSession {
     this.exited = false;
     const id = `${pageKey}-${++started}`;
     this.id = id;
+    this.ready = new Promise((resolve) => (this.markReady = resolve));
+    this.readyTimer = setTimeout(() => this.settle(), READY_TIMEOUT_MS);
     this.onChange();
     try {
+      await cleared;
       await invoke('term_start', { id, cols: this.xterm.cols, rows: this.xterm.rows });
     } catch (e) {
       if (this.id !== id) return;
       this.id = null;
       this.xterm.write(`\x1b[31m${e}\x1b[0m\r\n`);
-      this.offerRestart('');
+      this.offerRestart('[The terminal could not start. Press any key to try again.]');
     }
+  }
+
+  /** Resolves `ready`. */
+  settle() {
+    clearTimeout(this.readyTimer);
+    clearTimeout(this.quietTimer);
+    this.markReady?.();
+    this.markReady = null;
   }
 
   /** Stops the shell and everything running in it. */
   stop() {
+    this.settle();
     this.restartKey?.dispose();
     this.restartKey = null;
     if (this.id) invoke('term_close', { id: this.id });
@@ -109,17 +137,22 @@ export class TerminalSession {
   receive(data, bytes) {
     const id = this.id;
     this.xterm.write(data, () => invoke('term_ack', { id, bytes }));
+    if (this.markReady) {
+      clearTimeout(this.quietTimer);
+      this.quietTimer = setTimeout(() => this.settle(), PROMPT_QUIET_MS);
+    }
   }
 
   /** The shell exited by itself (exit, Ctrl+D, a crash). */
   exitedWith(code) {
     this.id = null;
-    this.offerRestart(code ? ` with code ${code}` : '');
+    this.offerRestart(`[The shell exited${code ? ` with code ${code}` : ''}. Press any key to start a new one.]`);
   }
 
-  offerRestart(how) {
+  offerRestart(message) {
     this.exited = true;
-    this.xterm.write(`\r\n\x1b[2m[The shell exited${how}. Press any key to start a new one.]\x1b[0m\r\n`);
+    this.settle();
+    this.xterm.write(`\r\n\x1b[2m${message}\x1b[0m\r\n`);
     this.restartKey = this.xterm.onKey(() => this.start());
     this.onChange();
   }

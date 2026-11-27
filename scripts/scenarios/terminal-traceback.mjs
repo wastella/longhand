@@ -13,10 +13,11 @@ const traceback = [
 export const options = { termOutput: traceback };
 
 /**
- * Moves the mouse over `text` in the terminal in front (the middle of its first character) and
- * returns that point. Also used by tests/ui/terminal.test.mjs.
+ * Moves the mouse over `text` in the terminal in front (the middle of its first character),
+ * waits for the link hint unless `hint` is false, and returns that point. Also used by
+ * tests/ui/terminal.test.mjs.
  */
-export async function hoverTerminalText(page, text) {
+export async function hoverTerminalText(page, text, { hint = true } = {}) {
   const handle = await page.waitForFunction(
     (text) => {
       const view = [...document.querySelectorAll('#terminal .term-view')].find((v) => !v.hidden);
@@ -42,7 +43,7 @@ export async function hoverTerminalText(page, text) {
   const point = await handle.jsonValue();
   await page.mouse.move(point.x - 40, point.y);
   await page.mouse.move(point.x, point.y);
-  await page.waitForSelector('.term-link-hint:not([hidden])');
+  if (hint) await page.waitForSelector('.term-link-hint:not([hidden])');
   return point;
 }
 

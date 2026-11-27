@@ -205,9 +205,57 @@ uiTest(
     await page.waitForFunction(() => window.__term.started.length === 2 && window.__term.input[window.__term.started[1]].length);
     assert.equal(await sent(page, 1), '\x05\x15python3 stats/running.py\r');
     assert.equal(await sent(page, 0), '');
+    // The command is typed only once the new shell has printed its prompt.
+    const calls = await page.evaluate(() => window.__term.calls);
+    const id = await page.evaluate(() => window.__term.started[1]);
+    assert.ok(calls.indexOf(`output ${id}`) >= 0 && calls.indexOf(`output ${id}`) < calls.indexOf(`input ${id}`), calls.join(', '));
   },
   { termBusy: ['uv run python train.py'] },
 );
+
+uiTest(
+  'Run File says so when the terminal cannot start, rather than that every terminal is busy',
+  async (page) => {
+    await openFromTree(page, 'stats/running.py');
+    await page.waitForFunction(() => document.querySelector('#terminal .xterm-rows').textContent.includes('could not start'));
+    await page.evaluate(() => window.__emit('menu', 'run-file'));
+    await page.waitForFunction(() => document.querySelector('#status-msg').textContent);
+    assert.equal(await text(page, '#status-msg'), 'The terminal could not start. Press Restart to try again.');
+  },
+  { termStartError: 'Could not start the shell: no such file' },
+);
+
+uiTest(
+  'Run File refuses a file name with control characters, which the shell would take as keys',
+  async (page) => {
+    await ready(page);
+    await page.evaluate(() => [...document.querySelectorAll('#tree .node')].find((n) => n.dataset.path.includes('\x03')).click());
+    await page.waitForSelector('.cm-content');
+    await page.evaluate(() => window.__emit('menu', 'run-file'));
+    await page.waitForFunction(() => document.querySelector('#status-msg').textContent);
+    assert.match(await text(page, '#status-msg'), /control character.*Rename the file/);
+    assert.equal(await sent(page), '');
+  },
+  { files: { 'a\x03touch PWNED\r.py': 'print(1)\n' } },
+);
+
+uiTest('shells left by an earlier load of the page are stopped before the first starts', async (page) => {
+  await ready(page);
+  const calls = await page.evaluate(() => window.__term.calls.filter((c) => c === 'reset' || c === 'start'));
+  assert.deepEqual(calls, ['reset', 'start']);
+});
+
+uiTest('only web links from OSC 8 hyperlinks are offered', async (page) => {
+  await ready(page);
+  await page.evaluate(() =>
+    window.__termWrite('\x1b]8;;file:///etc/passwd\x07local-file\x1b]8;;\x07 and \x1b]8;;https://example.com/\x07the-site\x1b]8;;\x07\r\n'),
+  );
+  await hoverTerminalText(page, 'local-file', { hint: false });
+  await sleep(200);
+  assert.equal(await count(page, '.term-link-hint:not([hidden])'), 0);
+  await hoverTerminalText(page, 'the-site');
+  assert.equal(await text(page, '.term-link-hint:not([hidden])'), 'Open https://example.com/ in the browser');
+});
 
 uiTest(
   'file locations in output open in the editor, and web links in the browser',
@@ -216,6 +264,15 @@ uiTest(
     await ready(page);
     const python = await hoverTerminalText(page, 'running.py", line 19');
     assert.equal(await text(page, '.term-link-hint:not([hidden])'), 'Open stats/running.py, line 19');
+    // The underline covers the path only, not the quotes around it.
+    const underlined = await page.evaluate(() => {
+      const row = [...document.querySelectorAll('#terminal .xterm-rows > div')].find((r) => r.textContent.includes('line 19'));
+      return [...row.querySelectorAll('span')]
+        .filter((n) => n.style.textDecoration === 'underline')
+        .map((n) => n.textContent)
+        .join('');
+    });
+    assert.equal(underlined, '/demo/running-stats/stats/running.py');
     await page.mouse.click(python.x, python.y);
     await page.waitForFunction(() => document.querySelector('#status-pos').textContent.startsWith('Ln 19'));
     assert.equal(await text(page, '#status-file'), 'stats/running.py');
@@ -232,6 +289,26 @@ uiTest(
   },
   tracebackOutput,
 );
+
+uiTest('finding links in a very long line stays fast', async (page) => {
+  const slowest = await page.evaluate(async () => {
+    const { findLocations } = await import(new URL('../src/renderer/terminal/locations.js', location.href));
+    const lines = ['https://x/' + ')'.repeat(30000), 'File "'.repeat(10000), 'a.py:1 '.repeat(10000), '/a'.repeat(20000) + '.p', 'a.b'.repeat(20000)];
+    return Math.max(
+      ...lines.map((line) => {
+        const start = performance.now();
+        findLocations(line);
+        return performance.now() - start;
+      }),
+    );
+  });
+  assert.ok(slowest < 50, `took ${slowest} ms`);
+  // And hovering a long wrapped line in the terminal finds its link.
+  await ready(page);
+  await page.evaluate(() => window.__termWrite('https://x/' + ')'.repeat(500) + '\r\n'));
+  await hoverTerminalText(page, 'https://x/');
+  assert.equal(await text(page, '.term-link-hint:not([hidden])'), 'Open https://x/ in the browser');
+});
 
 uiTest('finds locations and links in a line of output', async (page) => {
   const found = await page.evaluate(async () => {
