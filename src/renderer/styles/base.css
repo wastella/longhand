@@ -1,0 +1,141 @@
+/* Resets, utilities and the shared components described in docs/DESIGN.md. */
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: var(--text-md) / var(--leading-ui) var(--font-ui);
+  overflow: hidden;
+  user-select: none;
+}
+[hidden] {
+  display: none !important;
+}
+
+.spacer {
+  flex: 1;
+}
+.dim {
+  color: var(--color-text-muted);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* Buttons: default, .primary (one per view at most) and .ghost (quiet, in headers). */
+button {
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 3px var(--space-5);
+  cursor: pointer;
+}
+button:hover {
+  border-color: var(--color-border-strong);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button.primary {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-color: var(--color-accent);
+  font-weight: var(--weight-strong);
+}
+button.ghost {
+  background: none;
+  border-color: transparent;
+  color: var(--color-text-muted);
+  padding: var(--space-1) 7px;
+}
+button.ghost:hover {
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+}
+
+select {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+}
+
+/* Text input: sunk into the surface, with focus shown as an accent border. Size it per use. */
+.text-input {
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  outline: none;
+  user-select: text;
+}
+.text-input:focus {
+  border-color: var(--focus-ring-color);
+}
+
+/* List row: one clickable line in a list (file tree, test results, search hits). */
+.list-row {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.list-row:hover,
+.list-row.active {
+  background: var(--color-surface-hover);
+}
+
+/* Pane header: the quiet uppercase row at the top of a panel. */
+.pane-head {
+  height: var(--pane-head-height);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) 0 var(--space-6);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--color-text-muted);
+}
+.pane-head button,
+.pane-head select {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Empty state: a short muted line where a list has nothing to show. */
+.empty-state {
+  color: var(--color-text-muted);
+  padding: var(--space-5) var(--space-6);
+}
+
+::-webkit-scrollbar {
+  width: var(--space-5);
+  height: var(--space-5);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar);
+  border-radius: var(--radius-md);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

@@ -1,0 +1,83 @@
+/* Design tokens. Every colour, size and radius in the other stylesheets comes from here; see
+   docs/DESIGN.md. Colours are roles, not hues, so a theme is one block that redefines them. */
+
+/* Colour roles: the dark theme. A light theme would redefine these, and only these, under its own selector. */
+:root {
+  color-scheme: dark;
+
+  --color-surface: #1c1d21; /* the editor, terminal and bottom panel */
+  --color-surface-raised: #222329; /* side panels and the tab bar */
+  --color-surface-hover: #2a2c33; /* hovered or selected rows, buttons, user messages */
+  --color-surface-sunken: #17181b; /* code blocks in tutor answers */
+  --color-border: #33353d;
+  --color-border-strong: #4a4d58; /* a hovered button's border */
+  --color-border-overlay: #454853; /* menus floating above the layout */
+  --color-text: #d7d9de;
+  --color-text-strong: #fff; /* the selected file in the tree */
+  --color-text-secondary: #c3c6cf; /* folder names, test output */
+  --color-text-muted: #8a8d98; /* labels, hints, secondary information */
+  --color-accent: #d9a35b; /* the one accent: primary actions, focus, unsaved marks */
+  --color-on-accent: #1c1d21; /* text on an accent background */
+  --color-success: #7fbf7f;
+  --color-danger: #e07a7a;
+  --color-warning: #d9c05b;
+  --color-selection: #3d4150; /* selected text in the terminal */
+  --color-scrollbar: #3a3c45;
+  --focus-ring-color: var(--color-accent);
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+:root {
+  /* Type */
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --code-size: 13px; /* set at run time by View > Bigger Text / Smaller Text */
+  --text-2xs: 9px; /* disclosure triangles */
+  --text-xs: 11px; /* pane headers, hints, small buttons */
+  --text-mono-sm: 11.5px; /* monospace beside --text-xs prose */
+  --text-sm: 12px; /* secondary text, test output, inline code */
+  --text-md: 13px; /* body */
+  --text-lg: 14px; /* section headings inside a pane */
+  --text-display: 26px; /* the welcome screen's title */
+  --leading-ui: 1.45;
+  --leading-output: 1.5; /* monospace output such as test tracebacks */
+  --leading-reading: 1.55; /* code and tutor answers */
+  --weight-strong: 600;
+  --tracking-label: 0.06em; /* uppercase pane titles */
+
+  /* Spacing: --space-N is 2N px. Odd pixel values inside compact controls are deliberate
+     optical adjustments and stay with their component. */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 14px;
+  --space-8: 16px;
+  --space-9: 18px;
+  --space-10: 20px;
+
+  /* Radii */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 5px; /* buttons and inputs */
+  --radius-lg: 6px;
+  --radius-xl: 7px; /* menus and the question box */
+  --radius-2xl: 8px;
+  --radius-round: 50%;
+
+  /* Layout */
+  --titlebar-height: 38px;
+  --titlebar-inset: 84px; /* room for the window buttons */
+  --pane-head-height: 30px;
+  --tab-bar-height: 32px;
+  --status-height: 24px;
+  --row-height: 23px; /* a file tree row */
+  --files-width: 220px;
+  --tutor-width: 400px;
+  --bottom-height: 240px;
+  --splitter-size: 5px;
+  --z-splitter: 5;
+  --z-overlay: 50;
+}
