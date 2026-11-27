@@ -38,4 +38,3 @@ runs pytest, and asks the tutor two questions (this uses your Claude subscriptio
 - `src/renderer/` – interface (CodeMirror 6, xterm.js), bundled by `build.mjs` into `dist/`
 - `src-tauri/src/` – Rust backend: `main.rs` (files, config, log, menu), `term.rs`,
   `pytest.rs`, `tutor.rs`, and `tutor-prompt.md`
-- `reports/`, `research_notes/` – the design research behind it
