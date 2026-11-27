@@ -534,7 +534,7 @@ mod tests {
         assert_eq!(report.locate("pkg/m.py"), (Some("pkg/m.py".into()), true));
         assert_eq!(report.locate("/work/course/tests/t.py"), (Some("tests/t.py".into()), true));
         assert_eq!(report.locate("../../usr/lib/python3/json/x.py"), (None, false));
-        assert_eq!(report.locate(".venv/lib/python3.12/site-packages/torch/nn.py").1, false);
+        assert!(!report.locate(".venv/lib/python3.12/site-packages/torch/nn.py").1);
         assert_eq!(report.locate("<frozen importlib._bootstrap>"), (None, false));
     }
 
