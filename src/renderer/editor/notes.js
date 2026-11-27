@@ -18,9 +18,13 @@ import { RangeSet, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, EditorView, GutterMarker, WidgetType, gutter } from '@codemirror/view';
 import { h, spacer } from '../dom.js';
 
-/** path -> Map(key -> note), where a note is { key, source, id, fromLine, toLine, body, onOrphaned }. */
+/** path -> Map(key -> note), where a note is { key, source, id, fromLine, toLine, body, kind, head, actions, onOrphaned }. */
 const registry = new Map();
 const keyOf = (source, id) => `${source}\u0000${id}`;
+/** Kinds of note with their own colour in the gutter; any other note is drawn neutral. */
+const KINDS = new Set(['bug', 'fragile', 'good']);
+/** Overlapping notes sit side by side in the gutter, up to this many lanes. */
+const LANES = 3;
 let onRegistryChange = () => {};
 
 const replaceNotes = StateEffect.define();
@@ -51,7 +55,8 @@ function validate(note) {
 export function putNotes(source, path, notes, onOrphaned) {
   notes.forEach(validate);
   const byKey = new Map([...(registry.get(path) || [])].filter(([, note]) => note.source !== source));
-  for (const { id, fromLine, toLine, body } of notes) byKey.set(keyOf(source, id), { key: keyOf(source, id), source, id, fromLine, toLine, body, onOrphaned });
+  for (const { id, fromLine, toLine, body, kind, head, actions } of notes)
+    byKey.set(keyOf(source, id), { key: keyOf(source, id), source, id, fromLine, toLine, body, kind: KINDS.has(kind) ? kind : '', head, actions, onOrphaned });
   if (byKey.size) registry.set(path, byKey);
   else registry.delete(path);
   onRegistryChange(path);
@@ -132,17 +137,26 @@ function rangeFor(doc, fromLine, toLine) {
   return { from: doc.line(fromLine).from, to: doc.line(Math.min(toLine, doc.lines)).to };
 }
 
+/** One line's marks: a bar per note covering the line, in that note's lane. */
 class NoteMark extends GutterMarker {
-  constructor(kind, title) {
+  constructor(bars, title) {
     super();
-    this.kind = kind;
+    this.bars = bars; // [{ lane, classes }]
     this.title = title;
+    this.signature = bars.map((b) => `${b.lane}:${b.classes}`).join('|');
   }
   eq(other) {
-    return other.kind === this.kind && other.title === this.title;
+    return other.signature === this.signature && other.title === this.title;
   }
   toDOM() {
-    return h('div', { class: `cm-note-mark ${this.kind}`, title: this.title });
+    return h(
+      'div',
+      { class: 'cm-note-marks', title: this.title },
+      Array.from({ length: Math.max(...this.bars.map((b) => b.lane)) + 1 }, (_, lane) => {
+        const bar = this.bars.find((b) => b.lane === lane);
+        return h('div', { class: bar ? `cm-note-mark ${bar.classes}` : 'cm-note-mark empty' });
+      }),
+    );
   }
 }
 
@@ -172,7 +186,15 @@ class NoteWidget extends WidgetType {
       h(
         'div',
         { class: 'cm-note', role: 'note', 'aria-label': `Note on ${this.lines.toLowerCase()}`, 'data-note': this.note.id },
-        h('div', { class: 'cm-note-head' }, h('span', { class: 'cm-note-lines' }, this.lines), spacer(), collapse),
+        h(
+          'div',
+          { class: 'cm-note-head' },
+          h('span', { class: 'cm-note-lines' }, this.lines),
+          this.note.head || null,
+          spacer(),
+          this.note.actions || null,
+          collapse,
+        ),
         h('div', { class: 'cm-note-body' }, this.note.body),
       ),
     );
@@ -205,18 +227,23 @@ const describeLines = (first, last) => (first === last ? `Line ${first}` : `Line
 
 /** The decorations and gutter marks for `notes`, with `open` holding the keys of opened ones. */
 function draw(doc, notes, open) {
-  const lineState = new Map(); // line number -> { open, start, end, title }
+  const lineState = new Map(); // line number -> { open, title, bars: [{ lane, classes }] }
   const widgets = [];
+  const laneEnds = []; // lane -> the last line taken in it so far
   notes.forEach(({ note, from, to }, i) => {
     const first = doc.lineAt(from).number;
     const last = doc.lineAt(to).number;
     const isOpen = open.has(note.key);
+    // Notes are in start order, so the first lane free by this note's first line is the lowest.
+    let lane = laneEnds.findIndex((end) => end < first);
+    if (lane < 0) lane = Math.min(laneEnds.length, LANES - 1);
+    laneEnds[lane] = Math.max(laneEnds[lane] || 0, last);
     for (let n = first; n <= last; n++) {
-      const line = lineState.get(n) || { open: false, start: false, end: false, title: '' };
+      const line = lineState.get(n) || { open: false, title: '', bars: [] };
       line.open ||= isOpen;
-      line.start ||= n === first;
-      line.end ||= n === last;
       line.title ||= `Note on ${describeLines(first, last).toLowerCase()}: click to ${isOpen ? 'hide' : 'show'}`;
+      const classes = [n === first && 'start', n === last && 'end', isOpen && 'open', note.kind].filter(Boolean).join(' ');
+      if (!line.bars.some((b) => b.lane === lane)) line.bars.push({ lane, classes });
       lineState.set(n, line);
     }
     if (isOpen)
@@ -227,8 +254,7 @@ function draw(doc, notes, open) {
   for (const [n, line] of [...lineState].sort((a, b) => a[0] - b[0])) {
     const { from } = doc.line(n);
     lines.push(Decoration.line({ class: line.open ? 'cm-note-line open' : 'cm-note-line' }).range(from));
-    const kind = [line.start && 'start', line.end && 'end', line.open && 'open'].filter(Boolean).join(' ');
-    marks.push(new NoteMark(kind, line.title).range(from));
+    marks.push(new NoteMark(line.bars, line.title).range(from));
   }
   return { decorations: Decoration.set([...lines, ...widgets], true), marks: RangeSet.of(marks) };
 }
@@ -399,12 +425,16 @@ export function moveToNote(view, dir) {
   return true;
 }
 
-/** Opens the note with registry key `key` (closing the others), and scrolls it into view. */
-export function openNoteAt(view, key) {
+/**
+ * Opens the note with registry key `key` (closing the others), and scrolls it into view. The
+ * cursor moves to the note's first line unless `keepCursor`.
+ */
+export function openNoteAt(view, key, { keepCursor = false } = {}) {
   const entry = view.state.field(notesField).notes.find((n) => n.note.key === key);
   if (!entry) return false;
   const start = view.state.doc.lineAt(entry.from).from;
-  view.dispatch({ selection: { anchor: start }, effects: [openOnly.of(key), EditorView.scrollIntoView(start, { y: 'start', yMargin: 80 })] });
+  const effects = [openOnly.of(key), EditorView.scrollIntoView(start, { y: 'start', yMargin: 80 })];
+  view.dispatch(keepCursor ? { effects } : { selection: { anchor: start }, effects });
   return true;
 }
 

@@ -10,7 +10,7 @@ import { openGoToLine } from './go-to-line.js';
 import { dropNotes, findNote, listNotes, moveToNote, openNoteAt, putNotes, refreshSpec, watchNotes } from './notes.js';
 import { openReplace } from './search-panel.js';
 import { flushTabs } from './restore.js';
-import { applyTheme, attach, close, enterFolder, fileGone, isWithin, open, session, updateDoc } from './session.js';
+import { applyTheme, attach, close, enterFolder, fileGone, isWithin, open, session, stateOf, updateDoc } from './session.js';
 import { registerSelectionAction } from './selection-actions.js';
 import { setThemeMode } from './theme.js';
 
@@ -52,8 +52,10 @@ export async function closeFilesUnder(path) {
 
 /**
  * Pins notes to line ranges of `path`, replacing the notes `source` (a name such as 'review')
- * had there. Each note is { id, fromLine, toLine, body }, where `body` is a DOM node the editor
- * shows beneath the lines when the note is opened. Lines are 1-based and inclusive. Ranges
+ * had there. Each note is { id, fromLine, toLine, body, kind?, head?, actions? }, where `body` is
+ * a DOM node the editor shows beneath the lines when the note is opened; `head` and `actions`
+ * (DOM nodes) go in the card's top row, after its lines and before Hide; `kind` ('bug',
+ * 'fragile' or 'good') colours its bar in the gutter, which is otherwise neutral. Lines are 1-based and inclusive. Ranges
  * follow the student's edits. When a note's code is deleted it is hidden until undo or a paste
  * of that code brings it back, and removed (calling `onOrphaned(id, path)`) once its tab
  * closes; a note past the end of the file is removed at once, and every note is removed (and
@@ -71,11 +73,20 @@ export function clearNotes(source, path) {
 /** Where `source`'s notes on `path` are now, after the student's edits: [{ id, fromLine, toLine }]. */
 export const notesOn = (source, path) => listNotes(source, path);
 
-/** Opens `path` and the note `id` that `source` pinned there, scrolled into view. Resolves false if there is no such note. */
-export async function showNote(source, path, id) {
+/**
+ * Opens `path` and the note `id` that `source` pinned there, scrolled into view. The cursor moves
+ * to the note unless `keepCursor`. Resolves false if there is no such note.
+ */
+export async function showNote(source, path, id, { keepCursor = false } = {}) {
   const key = findNote(source, path, id);
   if (!key || !(await open(path))) return false;
-  return openNoteAt(session.view, key);
+  return openNoteAt(session.view, key, { keepCursor });
+}
+
+/** The text of `path` as the editor holds it now, unsaved edits included, or null when it is not open as text. */
+export function openText(path) {
+  const doc = session.docs.get(path);
+  return doc?.kind === 'text' ? stateOf(doc).doc.toString() : null;
 }
 
 /** Shows the registry's notes in an open file once they change. */
