@@ -2,17 +2,23 @@
 // definition, and completion that knows the code, for Python, C, C++, Java, JavaScript,
 // TypeScript, Rust and Go. Longhand runs whichever server is installed on the machine and
 // installs none itself. What is deliberately absent: quick fixes, renaming, formatting and
-// anything else that writes the student's code for them.
+// anything else that writes the student's code for them. Nothing runs for a folder until the
+// student has turned code checking on for it (consent.js).
 //
 // Other areas import from this file only.
 
+import { Compartment } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import { hoverTooltips, serverCompletion, signatureHelp } from '@codemirror/lsp-client';
 import { on } from '../state.js';
 import { activeFile, fileView, registerFileExtension } from '../editor/index.js';
+import { closeOnEscape } from '../shell/dismiss.js';
 import { addStatusItem, registerCommand, registerSetting, runCommand } from '../shell/index.js';
+import { mentionChecking, showCheckingSheet } from './consent.js';
 import { clearTrail, clickToDefinition, goBack, goToDefinition, trailRenamed } from './definition.js';
 import { uriOf } from './documents.js';
+import { filesChanged } from './environment.js';
+import { mountInstallWatch } from './install.js';
 import { languageOf } from './kinds.js';
 import { clearProblems, problemLines, watchProblems } from './problems.js';
 import {
@@ -20,13 +26,12 @@ import {
   fileClosed,
   fileOpened,
   fileSaved,
-  filesChanged,
   folderChanged,
   mountServers,
-  recheckMissing,
   serverOf,
   setEnabled,
   timing,
+  watchChecking,
   watchServers,
 } from './servers.js';
 import { announceStopped, describeProblemAtCursor, item, renderStatus } from './status.js';
@@ -34,6 +39,24 @@ import { announceStopped, describeProblemAtCursor, item, renderStatus } from './
 const SETTING = 'language.servers';
 // How long the pointer rests on a name before its documentation shows.
 const HOVER_MS = 400;
+
+// Without the library's keys: ⇧⌘↑ and ⇧⌘↓ select to the start and end of the file.
+const signatures = () => signatureHelp({ keymap: false });
+// The library has no way to put the signature away, so it sits in a slot that Escape empties
+// and refills, which starts it afresh with nothing showing.
+const signatureSlot = new Compartment();
+
+const signatureShown = () => Boolean(document.querySelector('#editor-host .cm-lsp-signature-tooltip'));
+// The completion list closes first when both are up, as it is the one in the way.
+const completionShown = () => Boolean(document.querySelector('#editor-host .cm-tooltip-autocomplete'));
+
+function closeSignature() {
+  const file = activeFile();
+  const view = file && fileView(file.path);
+  if (!view) return;
+  view.dispatch({ effects: signatureSlot.reconfigure([]) });
+  view.dispatch({ effects: signatureSlot.reconfigure(signatures()) });
+}
 
 /** What a file with a running server gets; each part only if the server offers it. */
 function served(server, path, languageId) {
@@ -43,8 +66,7 @@ function served(server, path, languageId) {
     // In place of the editor's own completion of words in the file, not beside it.
     offers.completionProvider ? serverCompletion({ override: true }) : [],
     offers.hoverProvider ? hoverTooltips({ hoverTime: HOVER_MS }) : [],
-    // Without its keys: ⇧⌘↑ and ⇧⌘↓ select to the start and end of the file.
-    offers.signatureHelpProvider ? signatureHelp({ keymap: false }) : [],
+    offers.signatureHelpProvider ? signatureSlot.of(signatures()) : [],
     offers.definitionProvider ? clickToDefinition : [],
     problemLines,
   ];
@@ -82,7 +104,10 @@ export function mount() {
   });
   registerCommand('go-to-definition', definitionOfSelection);
   registerCommand('go-back', goBack);
+  registerCommand('code-checking', showCheckingSheet);
   addStatusItem(item);
+  closeOnEscape(() => signatureShown() && !completionShown(), closeSignature);
+  mountInstallWatch();
 
   const refresh = registerFileExtension(extensionFor);
   registerFileExtension(() => navigationKeys);
@@ -92,6 +117,10 @@ export function mount() {
     announceStopped(kind);
   });
   watchProblems((path) => path === activeFile()?.path && renderStatus());
+  watchChecking(() => {
+    renderStatus();
+    mentionChecking();
+  });
 
   on('editor:opened', fileOpened);
   on('editor:closed', fileClosed);
@@ -114,8 +143,6 @@ export function mount() {
     renderStatus();
   });
   on('settings:changed', ({ id, value }) => id === SETTING && setEnabled(value));
-  // Coming back to the window is when a server installed elsewhere would have appeared.
-  window.addEventListener('focus', recheckMissing);
   // The interface tests shorten the waits; the real app never sets __MOCK__.
   Object.assign(timing, window.__MOCK__?.languageTiming);
 }

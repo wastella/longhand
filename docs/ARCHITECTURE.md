@@ -276,25 +276,47 @@ under the mock backend.
 Errors underlined as the student types, documentation on hover, go to definition and completion
 come from the language servers already on the machine. Longhand never bundles or downloads one.
 Deliberately absent: quick fixes, rename, formatting, inlay hints and anything else that writes
-code for the student.
+code for the student. Completion inserts the name chosen and nothing more: snippets are not
+offered to the server and the edits a server attaches to an item (added imports) are dropped.
+
+**Nothing runs until the student says so, per folder.** A language server runs the folder's
+code: Pyright and pylsp start the folder's interpreter, rust-analyzer runs build scripts and
+procedural macros, gopls runs `go`, and Longhand prefers a server installed in the folder
+itself. So a folder starts with code checking off. `lsp_start` answers `{ status: 'off' }`
+without looking for anything, and looking for a server never executes a program that belongs to
+the folder or runs anything inside it. The decision is kept per folder path in the app's own
+`state.json` (`prefs.rs`, `codeChecking`), never in the folder, and the check is in `lsp.rs`, so
+the page cannot start a server for a folder that was not turned on. Once it is on, the folder is
+trusted: its `.venv` and `node_modules/.bin` servers are used, and the servers run its code.
 
 **The backend is a transport** (`lsp.rs` and `lsp/`). It knows nothing of the protocol beyond its
 framing.
 
-- `lsp_start(kind)` finds and starts the server for `python`, `clang` (C and C++), `java`,
+- `lsp_consent()` answers `'on'`, `'off'` or `null` (not decided) for the open folder, and
+  `lsp_consent_set(on)` records the decision; turning it off stops the folder's servers.
+- `lsp_start(kind, look)` finds and starts the server for `python`, `clang` (C and C++), `java`,
   `typescript` (and JavaScript), `rust` or `go` in the open folder, one per kind. It answers
-  `{ status: 'started', id, server, path, root, python }`, `{ status: 'missing' }` or
-  `{ status: 'failed', message }`. `lsp_send(id, message)` writes one JSON-RPC message,
+  `{ status: 'started', id, server, path, root, python }`, `{ status: 'missing' }`,
+  `{ status: 'failed', message }` or `{ status: 'off' }`. `look` says what to do about the search
+  path after a miss: `remembered` uses the one already read, `fresh` asks the login shell again
+  if it was last asked more than 15 seconds ago, and `now` asks it at once.
+  `lsp_send(id, message)` writes one JSON-RPC message,
   `lsp_stop(id)` ends the server, and the events are `lsp:message` (`{ id, message, bytes }`) and
   `lsp:exit` (`{ id, code, stderr }`, not sent for a server Longhand stopped on request).
 - `lsp/discover.rs` decides which executable. Python looks in the folder's own environment first
   (`.venv/bin`, `venv/bin`, then an active `VIRTUAL_ENV`), then the search path, for
   `basedpyright-langserver`, `pyright-langserver` and `pylsp` in that order. The others are
-  `clangd` (also through `xcrun`), `jdtls`, `typescript-language-server`, `rust-analyzer` (a
-  rustup proxy without the component does not count) and `gopls` (also in `~/go/bin`). The search
-  path is the login shell's (`lsp/search_path.rs`), read again after a miss, so a server
-  installed while Longhand is open is found without restarting. Relative entries are never
-  searched: a folder cannot plant a server.
+  `clangd` (also through `xcrun`), `jdtls`, `typescript-language-server` (the folder's
+  `node_modules/.bin` first), `rust-analyzer` and `gopls` (also in `~/go/bin`). The search path
+  is the login shell's (`lsp/search_path.rs`), which also supplies `JAVA_HOME`, `GOPATH`,
+  `GOROOT`, `CARGO_HOME` and `RUSTUP_HOME` for the servers. Relative entries of the path are
+  never searched, so the folder supplies a server only from the places named above.
+- For Rust, a rustup proxy is never run, because a proxy downloads the toolchain a folder's
+  `rust-toolchain.toml` names. The folder's toolchain is worked out from rustup's files and the
+  server is the `rust-analyzer` inside it; a toolchain that is not installed, or has no
+  `rust-analyzer` component, means no server. Servers are started with `RUSTUP_AUTO_INSTALL=0`.
+- Probes (`lsp/probe.rs`: the login shell, `xcrun`, `go env`) run in their own process group
+  with a time limit, and the whole group is killed when it passes.
 - The Python server is started with the folder's environment active (`VIRTUAL_ENV`, its `bin`
   first on the path), which is what makes `import torch` resolve against the project's `.venv`.
 - `lsp/process.rs` runs one server: a reader thread decoding frames (`lsp/framing.rs`, 64 MB a
@@ -311,10 +333,17 @@ for hover, completion and signature help.
   than three within three minutes and it gives up with one notification and "language server
   stopped" in the status bar, where a sheet shows what the server last printed and offers Start
   Again. The policy lives here rather than in the backend because a restart has to initialize
-  the server and reopen its files.
+  the server and reopen its files. A server that exits before the page has its id is treated the
+  same way. `environment.js` follows the folder's Python environment and `install.js` looks
+  again for a missing server.
+- `consent.js` is the asking: with code checking undecided, the first file a server could check
+  brings one notification, and the status bar says "Code checking is off", which opens the sheet
+  that turns it on. Keep Off is remembered and asks nothing again; File > Code Checking for This
+  Folder… opens the same sheet to turn it off or on later.
 - `documents.js` is the library's `Workspace`. The editor has one view and a state per file, so
   it reads the text of each open file from the editor (`fileState`), unsaved edits included, and
-  sends changes 300 ms after the typing pauses or just before any request. It follows
+  sends changes 300 ms after the typing pauses or just before any request. An edit never begins
+  or ends inside a surrogate pair. It follows
   `editor:opened`, `editor:changed`, `editor:renamed`, `editor:closed` and `editor:saved`; a
   rename closes the file under the old name and opens it under the new one.
 - `problems.js` turns `textDocument/publishDiagnostics` into `@codemirror/lint` diagnostics on
@@ -328,16 +357,19 @@ for hover, completion and signature help.
 - `status.js` is the status-bar item: the count of problems (a click goes to the next), or one
   quiet line when a server is missing or stopped. For a missing server the sheet behind it has
   the one install command and Put in Terminal, which types the command into a terminal without
-  running it. A missing server is looked for again when the window regains focus, when another
-  file of its kind opens, and for three minutes after Put in Terminal.
+  running it. A missing server is looked for again when the window regains focus and when
+  another file of its kind opens (both `remembered`: the login shell is not run again), for
+  three minutes after Put in Terminal (`fresh`), and on Check Again (`now`).
 - Pyright asks the editor which Python to use (`workspace/configuration`); the answer is the
   folder's interpreter. A change to the environment on disk (`.venv`, `uv.lock`,
   `pyproject.toml`, …) makes the interface send `workspace/didChangeConfiguration`, which has
   Pyright look again at what can be imported, and a folder that only now has a `.venv` gets its
   server started again inside it.
-- Server requests the interface does not serve are answered "method not found" by
-  `transport.js`. Documentation from a server is untrusted: it is sanitized, and links and
-  images are dropped.
+- Server requests the interface does not serve (`workspace/applyEdit`, `window/showDocument`,
+  …) are answered "method not found" by `transport.js`, and `window/showMessage` is dropped.
+  The client library has no setting for leaving capabilities out, so `servers.js` removes
+  formatting, rename, references and the like from the `initialize` request as it is sent.
+  Documentation from a server is untrusted: it is sanitized, and links and images are dropped.
 - The setting "Check code as I type" (`language.servers`) turns all of this off.
 
 The editor's side is small: `registerFileExtension(provide)` adds CodeMirror extensions per file

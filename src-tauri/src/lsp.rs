@@ -1,8 +1,14 @@
 //! Language servers: finds the one for a kind of code among what the student has installed
 //! (`discover.rs`), runs it in the open folder (`process.rs`) and carries JSON-RPC messages
 //! between it and the interface (`framing.rs`). The protocol itself lives in the interface
-//! (`src/renderer/editor/`): this side never looks inside a message, and it is the interface
+//! (`src/renderer/language/`): this side never looks inside a message, and it is the interface
 //! that decides whether to start a server again after it exits.
+//!
+//! A language server runs the folder's code: the Python one imports from the folder's
+//! environment, rust-analyzer runs build scripts, jdtls a Gradle build. So nothing is looked
+//! for and nothing is started until the student has turned code checking on for the folder
+//! (`lsp_consent_set`), which is remembered by the folder's path in the app's own data
+//! (`prefs.rs`) and enforced here, whatever the interface asks.
 //!
 //! At most one server runs per kind. Each is named by an id that is never reused, so messages
 //! from a server that was replaced cannot be taken for its successor's.
@@ -13,6 +19,7 @@ mod probe;
 mod process;
 mod search_path;
 
+use crate::prefs;
 use crate::workspace::{workspace, AppState, R};
 use discover::{Found, Kind, Search};
 use process::{Event, Server};
@@ -20,12 +27,15 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-/// The running servers, by id.
+/// The running servers, by id, and the folder they may run for.
 #[derive(Default)]
 pub struct Lsp {
     servers: HashMap<u64, Running>,
+    /// The open folder, once the student has turned code checking on for it.
+    allowed: Option<PathBuf>,
 }
 
 struct Running {
@@ -47,11 +57,30 @@ fn take(state: &AppState, id: u64) -> Option<Server> {
     state.lsp.lock().unwrap().servers.remove(&id).map(|running| running.server)
 }
 
-/// Stops every server, for when another folder opens. Nothing more is heard from them.
-pub fn kill(state: &AppState) {
+/// Stops every server. Nothing more is heard from them.
+fn kill(state: &AppState) {
     for server in take_all(state) {
         server.stop();
     }
+}
+
+/// Records whether servers may run for `folder`, and stops them all if not.
+fn allow(state: &AppState, folder: &Path, on: bool) {
+    state.lsp.lock().unwrap().allowed = on.then(|| folder.to_path_buf());
+    if !on {
+        kill(state);
+    }
+}
+
+fn allowed(state: &AppState, folder: &Path) -> bool {
+    state.lsp.lock().unwrap().allowed.as_deref() == Some(folder)
+}
+
+/// Another folder was opened: the servers of the one before are stopped, and this one gets
+/// servers only if the student turned code checking on for it earlier.
+pub fn folder_opened(app: &AppHandle, state: &AppState, folder: &Path) {
+    kill(state);
+    allow(state, folder, prefs::code_checking(app, folder) == Some(true));
 }
 
 /// Stops every server and waits until they are gone, for when the app quits.
@@ -59,13 +88,79 @@ pub fn shutdown(state: &AppState) {
     process::stop_all_now(&take_all(state));
 }
 
-/// Looks for `kind`'s server. A miss on the remembered search path is tried once more on a
-/// fresh one, so a server installed a moment ago is found without restarting Longhand.
-fn locate(kind: Kind, folder: &Path) -> Option<Found> {
+/// How hard to look for a server that the remembered search path does not have.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Look {
+    /// No further: asking the login shell again reads the student's whole profile, too much
+    /// for something that happens whenever the window comes to the front.
+    Remembered,
+    /// Ask the shell again unless it was asked a moment ago, for while an install is awaited.
+    Fresh,
+    /// Ask the shell again now: the student pressed Check Again.
+    Now,
+}
+
+impl Look {
+    fn parse(name: &str) -> Option<Look> {
+        Some(match name {
+            "remembered" => Look::Remembered,
+            "fresh" => Look::Fresh,
+            "now" => Look::Now,
+            _ => return None,
+        })
+    }
+}
+
+/// Looks for `kind`'s server on the remembered search path, then, if `look` says so, on a fresh
+/// one, so a server installed a moment ago is found without restarting Longhand.
+fn locate(kind: Kind, folder: &Path, look: Look) -> Option<Found> {
     let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
     let virtual_env = std::env::var_os("VIRTUAL_ENV").filter(|dir| !dir.is_empty()).map(PathBuf::from);
-    let look = |path: &str| discover::find(kind, &Search { folder, path, home: &home, virtual_env: virtual_env.as_deref() });
-    look(&search_path::current()).or_else(|| look(&search_path::refreshed()?))
+    let own = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
+    let rustup_toolchain = own("RUSTUP_TOOLCHAIN");
+    let find = |shell: &search_path::Environment| {
+        let rustup_home = shell.var("RUSTUP_HOME").map(PathBuf::from).or_else(|| own("RUSTUP_HOME").map(PathBuf::from));
+        discover::find(
+            kind,
+            &Search {
+                folder,
+                path: &shell.path,
+                home: &home,
+                virtual_env: virtual_env.as_deref(),
+                vars: &shell.vars,
+                rustup_home: &rustup_home.unwrap_or_else(|| home.join(".rustup")),
+                rustup_toolchain: rustup_toolchain.as_deref(),
+            },
+        )
+    };
+    find(&search_path::current()).or_else(|| {
+        let after = match look {
+            Look::Remembered => return None,
+            Look::Fresh => search_path::REFRESH_AFTER,
+            Look::Now => Duration::ZERO,
+        };
+        find(&search_path::refreshed(after)?)
+    })
+}
+
+/// What `lsp_start` answers for a folder code checking is not on for.
+fn off() -> Value {
+    json!({ "status": "off" })
+}
+
+/// `lsp_start` without the app: looks for the server with `locate` and starts it, unless code
+/// checking is off for `folder`, in which case nothing is looked for at all.
+fn begin(
+    state: &AppState,
+    kind: Kind,
+    folder: &Path,
+    locate: impl FnOnce() -> Option<Found>,
+    on_event: impl FnMut(u64, Event) + Send + 'static,
+) -> R<Value> {
+    if !allowed(state, folder) {
+        return Ok(off());
+    }
+    start(state, kind, folder, locate(), on_event)
 }
 
 /// Starts `found` in `folder` as the server for `kind`, replacing the one running for that
@@ -86,6 +181,10 @@ fn start(
     let mut lsp = state.lsp.lock().unwrap();
     if state.workspace.lock().unwrap().as_deref() != Some(folder) {
         return Err("Another folder was opened before the language server started".into());
+    }
+    // Checked again under the lock: it may have been turned off while the server was looked for.
+    if lsp.allowed.as_deref() != Some(folder) {
+        return Ok(off());
     }
     let server = match process::spawn(found.command(folder), move |event| on_event(id, event)) {
         Ok(server) => server,
@@ -139,20 +238,40 @@ fn report(app: &AppHandle, id: u64, event: Event) {
     }
 }
 
+/// What the student decided about code checking for the open folder: `"on"`, `"off"`, or null
+/// when they have not been asked.
+#[tauri::command]
+pub fn lsp_consent(app: AppHandle, state: State<AppState>) -> R<Value> {
+    let decided = prefs::code_checking(&app, &workspace(&state)?);
+    Ok(decided.map_or(Value::Null, |on| json!(if on { "on" } else { "off" })))
+}
+
+/// Turns code checking on or off for the open folder and remembers it. Off also stops the
+/// folder's servers.
+#[tauri::command]
+pub fn lsp_consent_set(app: AppHandle, state: State<AppState>, on: bool) -> R<()> {
+    let folder = workspace(&state)?;
+    prefs::set_code_checking(&app, &folder, on)?;
+    allow(&state, &folder, on);
+    Ok(())
+}
+
 /// Finds and starts the server for `kind` (`python`, `clang`, `java`, `typescript`, `rust` or
 /// `go`) in the open folder. Answers `{ status: "started", id, server, path, root, python }`,
-/// `{ status: "missing" }` when none is installed, or `{ status: "failed", message }` when one
-/// was found but would not start. Looking can take a moment (it may start a login shell), so it
-/// happens off the main thread.
+/// `{ status: "missing" }` when none is installed, `{ status: "failed", message }` when one was
+/// found but would not start, or `{ status: "off" }` when code checking is not on for the
+/// folder. `look` says how hard to look when the server is not where servers were last found:
+/// `"remembered"` no further, `"fresh"` or `"now"` by asking the login shell again (see
+/// `Look`). Looking can take a moment, so it happens off the main thread.
 #[tauri::command]
-pub async fn lsp_start(app: AppHandle, kind: String) -> R<Value> {
+pub async fn lsp_start(app: AppHandle, kind: String, look: String) -> R<Value> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let kind = Kind::parse(&kind).ok_or_else(|| format!("Longhand has no language server for \"{kind}\""))?;
+        let look = Look::parse(&look).ok_or_else(|| format!("\"{look}\" is not a way to look for a language server"))?;
         let folder = workspace(&state)?;
-        let found = locate(kind, &folder);
         let events = app.clone();
-        start(&state, kind, &folder, found, move |id, event| report(&events, id, event))
+        begin(&state, kind, &folder, || locate(kind, &folder, look), move |id, event| report(&events, id, event))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -196,13 +315,23 @@ mod tests {
         fs::create_dir_all(server.parent().unwrap()).unwrap();
         fs::write(&server, format!("#!/bin/sh\n{script}\n")).unwrap();
         fs::set_permissions(&server, fs::Permissions::from_mode(0o755)).unwrap();
+        (open(&folder), folder)
+    }
+
+    /// A fresh app state with `folder` open and code checking turned on for it.
+    fn open(folder: &Path) -> AppState {
         let state = AppState::default();
-        *state.workspace.lock().unwrap() = Some(folder.clone());
-        (state, folder)
+        *state.workspace.lock().unwrap() = Some(folder.to_path_buf());
+        allow(&state, folder, true);
+        state
     }
 
     fn find_in(folder: &Path, kind: Kind) -> Option<Found> {
-        discover::find(kind, &Search { folder, path: "", home: Path::new("/nonexistent"), virtual_env: None })
+        let nowhere = Path::new("/nonexistent");
+        discover::find(
+            kind,
+            &Search { folder, path: "", home: nowhere, virtual_env: None, vars: &[], rustup_home: nowhere, rustup_toolchain: None },
+        )
     }
 
     /// Starts the folder's stand-in server; returns `lsp_start`'s answer and the server's events.
@@ -315,6 +444,57 @@ mod tests {
     }
 
     #[test]
+    fn nothing_is_looked_for_or_started_until_code_checking_is_on_for_the_folder() {
+        // The folder ships its own "server" and "interpreter", which say so if they are ever run.
+        let (state, folder) = folder_with_server("lsp-consent", "echo ran >> \"${0%/*}/../../ran\"; exec /bin/cat");
+        fs::copy(folder.join(".venv/bin/pylsp"), folder.join(".venv/bin/python")).unwrap();
+        let ran = || folder.join("ran").exists();
+        let looked = std::cell::Cell::new(false);
+        let look = || {
+            looked.set(true);
+            find_in(&folder, Kind::Python)
+        };
+
+        // A folder nobody has decided about, which is how every folder starts.
+        *state.lsp.lock().unwrap() = Lsp::default();
+        assert_eq!(begin(&state, Kind::Python, &folder, look, |_, _| {}).unwrap(), json!({ "status": "off" }));
+        assert!(!looked.get(), "not even looked for");
+        // Even handed a server that was found some other way, nothing starts.
+        assert_eq!(start(&state, Kind::Python, &folder, find_in(&folder, Kind::Python), |_, _| {}).unwrap(), off());
+        assert!(state.lsp.lock().unwrap().servers.is_empty());
+
+        // On for another folder is not on for this one.
+        allow(&state, Path::new("/another/folder"), true);
+        assert_eq!(begin(&state, Kind::Python, &folder, look, |_, _| {}).unwrap(), off());
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(!looked.get() && !ran());
+
+        // Turned on, it starts; turned off again, the server is stopped and none can start.
+        allow(&state, &folder, true);
+        let (tx, events) = channel();
+        let answer = begin(&state, Kind::Python, &folder, look, move |id, event| {
+            let _ = tx.send((id, event));
+        });
+        let id = id_of(&answer.unwrap());
+        send(&state, id, "{}");
+        assert_eq!(events.recv_timeout(SOON).unwrap(), (id, Event::Message("{}".into())));
+        assert!(looked.get() && ran());
+        allow(&state, &folder, false);
+        assert!(state.lsp.lock().unwrap().servers.is_empty());
+        assert_eq!(events.recv_timeout(SOON), Err(RecvTimeoutError::Disconnected), "stopped without a word");
+        assert_eq!(begin(&state, Kind::Python, &folder, look, |_, _| {}).unwrap(), off());
+        fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn the_ways_to_look_are_named_as_the_interface_names_them() {
+        assert_eq!(Look::parse("remembered"), Some(Look::Remembered));
+        assert_eq!(Look::parse("fresh"), Some(Look::Fresh));
+        assert_eq!(Look::parse("now"), Some(Look::Now));
+        assert_eq!(Look::parse(""), None);
+    }
+
+    #[test]
     fn unknown_ids_are_ignored() {
         let state = AppState::default();
         send(&state, 999_999, "{}");
@@ -342,12 +522,11 @@ mod tests {
     #[test]
     fn clangd_reports_an_error_in_a_c_file() {
         let folder = temp_dir("lsp-clangd").canonicalize().unwrap();
-        let Some(found) = locate(Kind::Clang, &folder) else {
+        let Some(found) = locate(Kind::Clang, &folder, Look::Remembered) else {
             fs::remove_dir_all(folder).unwrap();
             return eprintln!("skipped: clangd is not installed");
         };
-        let state = AppState::default();
-        *state.workspace.lock().unwrap() = Some(folder.clone());
+        let state = open(&folder);
         let (tx, events) = channel();
         let answer = start(&state, Kind::Clang, &folder, Some(found), move |id, event| {
             let _ = tx.send((id, event));
@@ -407,10 +586,9 @@ mod tests {
             return eprintln!("skipped: LONGHAND_TEST_PYTHON_FOLDER is not set");
         };
         let folder = folder.canonicalize().unwrap();
-        let found = locate(Kind::Python, &folder).expect("a server in the folder's .venv");
+        let found = locate(Kind::Python, &folder, Look::Remembered).expect("a server in the folder's .venv");
         assert!(found.path.starts_with(folder.join(".venv/bin")), "{}", found.path.display());
-        let state = AppState::default();
-        *state.workspace.lock().unwrap() = Some(folder.clone());
+        let state = open(&folder);
         let (tx, events) = channel();
         let answer = start(&state, Kind::Python, &folder, Some(found), move |id, event| {
             let _ = tx.send((id, event));

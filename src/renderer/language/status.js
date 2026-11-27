@@ -1,6 +1,7 @@
 // The status bar's one word on the language server for the file in the editor, and the small
 // sheet behind it: the problem count while a server runs, and when none is installed or it will
-// not run, a quiet line that opens an explanation with the one command that fixes it.
+// not run, a quiet line that opens an explanation with the one command that fixes it. Until the
+// student has turned code checking on for the folder, the line says that it is off.
 
 import { nextDiagnostic } from '@codemirror/lint';
 import { h, spacer } from '../dom.js';
@@ -9,7 +10,9 @@ import { notify, openSheet, showStatus } from '../shell/index.js';
 import { typeInTerminal } from '../terminal/index.js';
 import { KINDS, languageOf } from './kinds.js';
 import { countProblems, problemAt } from './problems.js';
-import { expectInstall, lookAgain, serverOf, startAgain } from './servers.js';
+import { showCheckingSheet } from './consent.js';
+import { expectInstall } from './install.js';
+import { checking, isEnabled, lookAgain, serverOf, startAgain } from './servers.js';
 
 const dot = h('span', { class: 'status-dot' });
 const label = h('span', {});
@@ -46,7 +49,10 @@ function nextProblem(path) {
 export function renderStatus() {
   const file = activeFile();
   const language = file && languageOf(file.path);
-  const server = language && serverOf(language.kind);
+  if (!language || !isEnabled() || checking() === undefined) return void (item.hidden = true);
+  if (checking() !== 'on')
+    return show('Code checking is off', { tip: 'Errors are not underlined in this folder. Click to turn code checking on.', run: showCheckingSheet });
+  const server = serverOf(language.kind);
   if (!server) return void (item.hidden = true);
   const { name } = language;
   const explain = () => showServerSheet(language.kind);

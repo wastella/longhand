@@ -1,7 +1,8 @@
-//! Runs a short helper command (`rustup which`, `xcrun -f`, a login shell printing its PATH) and
+//! Runs a short helper command (`xcrun -f`, `go env`, a login shell printing its PATH) and
 //! gives up on it after a time limit, so a tool that hangs cannot hold up looking for a server.
 
 use std::io::Read;
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -19,9 +20,21 @@ pub struct Outcome {
 }
 
 /// Runs `command` with nothing on standard input and its errors discarded. `None` when it could
-/// not be started or was still running after `limit` (it is then killed).
+/// not be started or was still running after `limit`: it is then killed with everything it
+/// started (a profile that launched an agent, say).
 pub fn run(mut command: Command, limit: Duration) -> Option<Outcome> {
-    let mut child = command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
+    command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    // A session of its own rather than only a process group: an interactive shell in a
+    // background group of a terminal's session is stopped the moment it touches that terminal.
+    // The session's id is the child's pid, and is also its process group's.
+    unsafe {
+        command.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+    let mut child = command.spawn().ok()?;
+    let group = child.id() as i32;
     let mut pipe = child.stdout.take()?;
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -35,7 +48,7 @@ pub fn run(mut command: Command, limit: Duration) -> Option<Outcome> {
             Ok(Some(status)) => break status,
             Ok(None) if Instant::now() < deadline => std::thread::sleep(POLL),
             _ => {
-                let _ = child.kill();
+                unsafe { libc::kill(-group, libc::SIGKILL) };
                 let _ = child.wait();
                 return None;
             }
@@ -86,6 +99,20 @@ mod tests {
     }
 
     #[test]
+    fn giving_up_also_ends_what_the_command_started() {
+        let note = crate::workspace::tests::temp_dir("lsp-probe-group").join("pid");
+        let script = format!("sleep 300 & echo $! > '{}'; wait", note.display());
+        assert!(run(sh(&script), Duration::from_secs(5)).is_none());
+        let pid: i32 = std::fs::read_to_string(&note).unwrap().trim().parse().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while unsafe { libc::kill(pid, 0) } == 0 && Instant::now() < deadline {
+            std::thread::sleep(POLL);
+        }
+        assert_ne!(unsafe { libc::kill(pid, 0) }, 0, "the background sleep is gone too");
+        std::fs::remove_dir_all(note.parent().unwrap()).unwrap();
+    }
+
+    #[test]
     fn a_command_that_does_not_exist_is_no_answer() {
         assert!(run(Command::new("/nonexistent/longhand-tool"), Duration::from_secs(1)).is_none());
     }
@@ -93,8 +120,8 @@ mod tests {
     #[test]
     fn output_held_open_by_a_background_process_does_not_hold_up_the_answer() {
         let start = Instant::now();
-        let outcome = run(sh("echo early; sleep 3 &"), Duration::from_secs(5)).unwrap();
+        let outcome = run(sh("echo early; sleep 30 &"), Duration::from_secs(20)).unwrap();
         assert!(outcome.success);
-        assert!(start.elapsed() < Duration::from_secs(2));
+        assert!(start.elapsed() < Duration::from_secs(10));
     }
 }

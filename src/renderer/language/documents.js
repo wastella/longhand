@@ -33,15 +33,26 @@ export function filePathOf(uri) {
   }
 }
 
-/** The single replacement that turns `before` into `after`. */
-function difference(before, after) {
+const isHighSurrogate = (unit) => unit >= 0xd800 && unit <= 0xdbff;
+const isLowSurrogate = (unit) => unit >= 0xdc00 && unit <= 0xdfff;
+
+/**
+ * The single replacement that turns `before` into `after`. It never begins or ends inside a
+ * character written as two code units (an emoji, say): servers refuse a position there and
+ * then lose track of the file.
+ */
+export function difference(before, after) {
   const a = before.toString();
   const b = after.toString();
   const max = Math.min(a.length, b.length);
   let start = 0;
   while (start < max && a.charCodeAt(start) === b.charCodeAt(start)) start++;
+  // The two texts agree up to the first half of a pair and differ in its second.
+  if (start > 0 && isHighSurrogate(a.charCodeAt(start - 1))) start--;
   let end = 0;
   while (end < max - start && a.charCodeAt(a.length - 1 - end) === b.charCodeAt(b.length - 1 - end)) end++;
+  // They agree from the second half of a pair on and differ in its first.
+  if (end > 0 && isLowSurrogate(a.charCodeAt(a.length - end))) end--;
   return ChangeSet.of({ from: start, to: a.length - end, insert: b.slice(start, b.length - end) }, a.length);
 }
 

@@ -144,6 +144,8 @@ fn main() {
             feedback::feedback_notes_save,
             feedback::feedback_threads_forget,
             // Language servers (lsp.rs): starting the one for a kind of code, and its messages.
+            lsp::lsp_consent,
+            lsp::lsp_consent_set,
             lsp::lsp_start,
             lsp::lsp_send,
             lsp::lsp_ack,

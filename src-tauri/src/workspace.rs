@@ -96,7 +96,7 @@ fn open_workspace(app: &AppHandle, dir: PathBuf) -> R<()> {
     tutor::reset(&state);
     term::kill(&state);
     pytest::cancel(&state);
-    lsp::kill(&state);
+    lsp::folder_opened(app, &state, &ws);
     let _ = app.emit(
         "workspace:opened",
         json!({

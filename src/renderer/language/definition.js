@@ -12,6 +12,13 @@ const isMac = /Mac/.test(navigator.platform);
 const MAX_TRAIL = 50;
 /** Where each jump was made from, oldest first: { path, line, column }, 1-based. */
 const trail = [];
+/** Whether a definition is being looked up. */
+let looking = false;
+/** Where the last jump landed and when, to tell its key arriving a second time from a new request. */
+let landed = null;
+// F12 can reach the page twice, as the menu's accelerator and as a key: the second must not
+// count as a jump of its own, or the first Go Back would seem to do nothing.
+const SAME_KEY_MS = 400;
 
 /** The first place a definition answer names: a Location, a list of them, or of LocationLinks. */
 function firstTarget(answer) {
@@ -26,6 +33,16 @@ function firstTarget(answer) {
  * Resolves true if it went somewhere; otherwise the status bar says why not.
  */
 export async function goToDefinition(view, pos = view.state.selection.main.head) {
+  if (looking) return false;
+  looking = true;
+  try {
+    return await findDefinition(view, pos);
+  } finally {
+    looking = false;
+  }
+}
+
+async function findDefinition(view, pos) {
   const plugin = LSPPlugin.get(view);
   if (!plugin || plugin.client.hasCapability('definitionProvider') === false) {
     showStatus('No language server is running for this file, so definitions cannot be looked up.');
@@ -35,6 +52,8 @@ export async function goToDefinition(view, pos = view.state.selection.main.head)
   const { root } = client.workspace;
   const line = view.state.doc.lineAt(pos);
   const origin = { path: pathOf(root, uri), line: line.number, column: pos - line.from + 1 };
+  const justLanded = landed && landed.path === origin.path && landed.line === origin.line && performance.now() - landed.at < SAME_KEY_MS;
+  if (justLanded) return false;
   client.sync();
   let target;
   try {
@@ -58,7 +77,9 @@ export async function goToDefinition(view, pos = view.state.selection.main.head)
     return false;
   }
   if (!(await openFile(path, target.line, target.column))) return false;
-  trail.push(origin);
+  landed = { path, line: target.line, at: performance.now() };
+  const last = trail.at(-1);
+  if (!last || last.path !== origin.path || last.line !== origin.line || last.column !== origin.column) trail.push(origin);
   if (trail.length > MAX_TRAIL) trail.shift();
   return true;
 }

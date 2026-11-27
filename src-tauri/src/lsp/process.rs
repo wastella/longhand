@@ -205,11 +205,26 @@ fn write(mut stdin: ChildStdin, inbox: Receiver<Vec<u8>>, shared: &Shared) {
     }
 }
 
+/// One read that is not ended by a signal arriving: the bytes read, or 0 at the end of the
+/// stream or on an error.
+fn read_some(from: &mut impl Read, buf: &mut [u8]) -> usize {
+    loop {
+        match from.read(buf) {
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            read => return read.unwrap_or(0),
+        }
+    }
+}
+
 /// The end of everything written to `stderr`, read until it closes.
 fn read_tail(mut stderr: ChildStderr) -> Vec<u8> {
     let mut tail = Vec::new();
     let mut buf = [0u8; 4096];
-    while let Ok(n @ 1..) = stderr.read(&mut buf) {
+    loop {
+        let n = read_some(&mut stderr, &mut buf);
+        if n == 0 {
+            break;
+        }
         tail.extend_from_slice(&buf[..n]);
         let excess = tail.len().saturating_sub(STDERR_TAIL);
         tail.drain(..excess);
@@ -238,7 +253,11 @@ fn read(mut stdout: ChildStdout, shared: &Shared, exited: Receiver<Option<i32>>,
     };
     let mut decoder = Decoder::new(MAX_BODY);
     let mut buf = vec![0u8; READ_SIZE];
-    'stream: while let Ok(n @ 1..) = stdout.read(&mut buf) {
+    'stream: loop {
+        let n = read_some(&mut stdout, &mut buf);
+        if n == 0 {
+            break;
+        }
         decoder.push(&buf[..n]);
         loop {
             match decoder.pop() {
@@ -425,7 +444,8 @@ mod tests {
         let megabyte = 1024 * 1024;
         let script = format!("i=0; while [ $i -lt 6 ]; do printf 'Content-Length: {megabyte}\\r\\n\\r\\n'; head -c {megabyte} /dev/zero | tr '\\0' 'x'; i=$((i+1)); done; exec sleep 30");
         let (server, events) = serve(&script);
-        let mut received = 0;
+        // The first may take a while on a busy machine; after it, two quiet seconds mean held back.
+        let mut received = usize::from(events.recv_timeout(SOON).is_ok());
         while events.recv_timeout(Duration::from_secs(2)).is_ok() {
             received += 1;
         }

@@ -86,6 +86,9 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
         .separator()
         // Files
         .item(&item("find-in-files", "Find in Files…", "CmdOrCtrl+Shift+F")?)
+        .separator()
+        // Language servers: on or off for the open folder.
+        .item(&plain("code-checking", "Code Checking for This Folder…")?)
         .build()?;
 
     let edit = SubmenuBuilder::new(app, "Edit")

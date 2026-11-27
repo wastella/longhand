@@ -4,29 +4,40 @@
 // definition, completion and signature requests about the fixture's Python.
 //
 // Options:
+//   codeChecking: 'on' | 'off' | 'ask'             what the student decided for the fixture folder. The
+//       real backend starts every folder at 'ask' (nothing decided, nothing runs); the mock
+//       starts at 'on' so that tests of other areas are not about this question.
 //   languageServers: { python: 'basedpyright' }   the servers installed, kind -> name, or kind ->
-//       { name, python, failToStart: 'why', slow: ms, silent: true, crashOn: 'method', crashes: n }
+//       { name, python, failToStart: 'why', slow: ms, silent: true, crashOn: 'method', crashes: n,
+//         diesAtOnce: 'stderr' }
 //       `python` is the folder's interpreter; `slow` delays every answer; `silent` never answers;
-//       `crashOn` makes it exit when it receives that method, the first `crashes` times it is
-//       started (every time when absent).
+//       `crashOn` makes it exit when it receives that method, and `diesAtOnce` makes it exit
+//       before lsp_start has answered, each the first `crashes` times it is started (every
+//       time when absent).
 //   languageTiming: { ... }                         overrides the interface's waits (language/servers.js)
-// Hooks: window.__lsp = { installed, started: [{ id, kind }], stopped: [id], received: [{ id, ...message }],
-//   docs: { uri: { text, version, languageId } }, acked: { id: bytes }, saved: [uri], settings: {},
-//   install(kind, server), crash(kind, stderr) }.
+// Hooks: window.__lsp = { checking, installed, started: [{ id, kind }], stopped: [id], looks: [{ kind, look }],
+//   received: [{ id, ...message }], docs: { uri: { text, version, languageId } }, acked: { id: bytes },
+//   delivered: { id: bytes }, saved: [uri], settings: {}, answers: { name: response },
+//   install(kind, server), crash(kind, stderr), say(kind, method, params), ask(kind, name, method, params) }.
 // What the scripted server reports: `undefined_name` is an error, `import nowhere` a warning and
-// `unused_name` a hint. `sqrt` is defined outside the folder.
+// `unused_name` a hint. `sqrt` is defined outside the folder, and completing it comes with an
+// import to add. The documentation of `variance` carries markup that must not survive.
 
 const mock = window.__mock;
 const root = mock.workspace.path;
 const lsp = (window.__lsp = {
+  checking: mock.options.codeChecking || 'on',
   installed: { ...mock.options.languageServers },
   started: [],
   stopped: [],
+  looks: [],
   received: [],
   docs: {},
   acked: {},
+  delivered: {},
   saved: [],
   settings: {},
+  answers: {},
 });
 let nextId = 1;
 /** id -> { kind, config, spawn } for servers that are running. */
@@ -45,7 +56,12 @@ function send(id, message) {
   const server = running.get(id);
   if (!server || server.config.silent) return;
   const text = JSON.stringify({ jsonrpc: '2.0', ...message });
-  const deliver = () => running.has(id) && mock.emit('lsp:message', { id, message: text, bytes: new TextEncoder().encode(text).length });
+  const bytes = new TextEncoder().encode(text).length;
+  const deliver = () => {
+    if (!running.has(id)) return;
+    lsp.delivered[id] = (lsp.delivered[id] || 0) + bytes;
+    mock.emit('lsp:message', { id, message: text, bytes });
+  };
   setTimeout(deliver, server.config.slow || 0);
 }
 
@@ -86,9 +102,16 @@ function applyChange(doc, change) {
   return doc.text.slice(0, offsetOf(doc.text, change.range.start)) + change.text + doc.text.slice(offsetOf(doc.text, change.range.end));
 }
 
+// What a hostile or careless server might put in documentation: something that runs, something
+// that loads, and somewhere to go.
+const MARKUP =
+  'How spread out the numbers are. <img src="https://example.com/pixel.png" onerror="window.__ran = true"> <script>window.__ran = true</script> ' +
+  '<a href="https://example.com/a" onclick="window.__ran = true">raw link</a> [docs](https://example.com/b) <textarea>t</textarea><select><option>o</option></select>';
+
 const DOCS = {
   RunningStats: '```python\nclass RunningStats\n```\nStatistics over a stream of numbers, without storing the stream.',
   push: '```python\n(method) def push(self, x: float) -> None\n```\nAdds one number to the stream.',
+  variance: MARKUP,
 };
 
 /** Where `word` is defined: in an open file, else in the fixture folder. */
@@ -111,11 +134,18 @@ const MEMBERS = [
   { label: 'count', kind: 5, detail: 'int' },
   { label: 'mean', kind: 5, detail: 'float' },
   { label: 'push', kind: 2, detail: '(x: float) -> None', documentation: { kind: 'markdown', value: 'Adds one number to the stream.' } },
-  { label: 'variance', kind: 2, detail: '() -> float' },
+  { label: 'variance', kind: 2, detail: '() -> float', documentation: { kind: 'markdown', value: MARKUP } },
 ];
 const NAMES = [
   { label: 'RunningStats', kind: 7, detail: 'class' },
   { label: 'range', kind: 3, detail: 'builtin' },
+  // As Pyright offers a name that is not imported yet: with the import to add at the top.
+  {
+    label: 'sqrt',
+    kind: 3,
+    detail: 'math',
+    additionalTextEdits: [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }, newText: 'from math import sqrt\n' }],
+  },
 ];
 
 function answer(text, method, params) {
@@ -160,6 +190,7 @@ function receive(id, message) {
   // As Pyright does: ask the editor which Python to analyse with.
   if (method === 'initialized') return send(id, { id: `settings-${id}`, method: 'workspace/configuration', params: { items: [{ section: 'python' }] } });
   if (!method && String(message.id).startsWith('settings-')) return void (lsp.settings[server.kind] = message.result);
+  if (!method && String(message.id).startsWith('ask-')) return void (lsp.answers[message.id.slice(4)] = message);
   const uri = params?.textDocument?.uri;
   if (method === 'textDocument/didOpen') {
     lsp.docs[uri] = { text: params.textDocument.text, version: params.textDocument.version, languageId: params.textDocument.languageId };
@@ -188,7 +219,15 @@ function stop(id) {
 }
 
 Object.assign(mock.commands, {
-  lsp_start: ({ kind }) => {
+  lsp_consent: () => (lsp.checking === 'ask' ? null : lsp.checking),
+  lsp_consent_set: ({ on }) => {
+    lsp.checking = on ? 'on' : 'off';
+    if (!on) for (const id of [...running.keys()]) stop(id);
+  },
+  lsp_start: ({ kind, look }) => {
+    // As the backend does: nothing is looked for, let alone started, for a folder not turned on.
+    if (lsp.checking !== 'on') return { status: 'off' };
+    lsp.looks.push({ kind, look });
     const config = configOf(kind);
     if (!config) return { status: 'missing' };
     if (config.failToStart) return { status: 'failed', message: config.failToStart };
@@ -197,6 +236,7 @@ Object.assign(mock.commands, {
     spawns[kind] = (spawns[kind] || 0) + 1;
     running.set(id, { kind, config, spawn: spawns[kind] });
     lsp.started.push({ id, kind });
+    if (config.diesAtOnce && (config.crashes == null || spawns[kind] <= config.crashes)) exit(id, 127, config.diesAtOnce);
     return { status: 'started', id, server: config.name, path: `/usr/local/bin/${config.name}`, root, python: config.python ?? null };
   },
   lsp_send: ({ id, message }) => {
@@ -208,6 +248,14 @@ Object.assign(mock.commands, {
 
 /** Plays the student installing a server while the app is open. */
 lsp.install = (kind, server) => (lsp.installed[kind] = server);
+
+const idOf = (kind) => [...running].find(([, server]) => server.kind === kind)?.[0];
+
+/** Has the `kind` server send a notification of its own. */
+lsp.say = (kind, method, params) => send(idOf(kind), { method, params });
+
+/** Has the `kind` server ask the editor for something; the editor's response lands in `answers[name]`. */
+lsp.ask = (kind, name, method, params) => send(idOf(kind), { id: `ask-${name}`, method, params });
 
 /** Plays the `kind` server's process dying. */
 lsp.crash = (kind, stderr = 'Segmentation fault') => {
