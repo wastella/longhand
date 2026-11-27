@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod documents;
 mod files;
 mod menu;
 mod pytest;
@@ -62,8 +63,6 @@ fn main() {
             workspace::log_summary,
             files::fs_list,
             files::fs_read,
-            files::fs_write,
-            files::fs_mtime,
             files::fs_create,
             files::fs_rename,
             files::fs_trash,
@@ -74,6 +73,10 @@ fn main() {
             files::fs_reveal,
             files::files_memory_load,
             files::files_memory_save,
+            // The editor's open documents (documents.rs).
+            documents::doc_read,
+            documents::doc_write,
+            documents::doc_stat,
             system::confirm,
             system::open_external,
             system::smoke_result,

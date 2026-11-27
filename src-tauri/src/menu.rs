@@ -7,6 +7,10 @@ use tauri::Emitter;
 
 pub fn build(app: &tauri::App) -> tauri::Result<()> {
     let item = |id: &str, label: &str, key: &str| MenuItemBuilder::with_id(id, label).accelerator(key).build(app);
+    // A native accelerator fires before the page sees the key, wherever focus is. A shortcut that
+    // means something while typing elsewhere (Ctrl+G cancels a search in the terminal's shell) is
+    // left to the editor's own key bindings, and its menu item gets no accelerator.
+    let plain = |id: &str, label: &str| MenuItemBuilder::with_id(id, label).build(app);
     let app_menu =
         SubmenuBuilder::new(app, "Longhand").about(None).separator().hide().hide_others().show_all().separator().quit().build()?;
     let file = SubmenuBuilder::new(app, "File")
@@ -19,7 +23,25 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
         .separator()
         .item(&item("find-in-files", "Find in Files…", "CmdOrCtrl+Shift+F")?)
         .build()?;
-    let edit = SubmenuBuilder::new(app, "Edit").undo().redo().separator().cut().copy().paste().select_all().build()?;
+    let edit = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        // The editor's own actions (editor/index.js registers these commands).
+        .separator()
+        .item(&item("find", "Find…", "CmdOrCtrl+F")?)
+        .item(&item("replace", "Replace…", "CmdOrCtrl+Alt+F")?)
+        .item(&plain("go-to-line", "Go to Line… (Ctrl+G)")?)
+        .item(&item("toggle-comment", "Toggle Comment", "CmdOrCtrl+/")?)
+        .separator()
+        // With Cmd: Option+] and Option+[ alone type ‘ and “ on a Mac keyboard.
+        .item(&item("next-note", "Next Note", "CmdOrCtrl+Alt+]")?)
+        .item(&item("previous-note", "Previous Note", "CmdOrCtrl+Alt+[")?)
+        .build()?;
     let view = SubmenuBuilder::new(app, "View")
         .item(&item("toggle-files", "Toggle Files", "CmdOrCtrl+B")?)
         .item(&item("toggle-bottom", "Toggle Terminal", "CmdOrCtrl+J")?)

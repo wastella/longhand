@@ -1,10 +1,13 @@
-/* The editor: tab bar and CodeMirror. Syntax colours come from One Dark (see editor/setup.js). */
+/* The editor: tabs, the banner, notices, CodeMirror's panels and the tutor's notes. Colours inside
+   the code itself come from editor/theme.js, which reads the same tokens. */
 
 #editor {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
+
+/* ---- tabs ---- */
 
 #tabs {
   height: var(--tab-bar-height);
@@ -18,37 +21,125 @@
   height: 0;
 }
 .tab {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  padding: 0 var(--space-5) 0 var(--space-7);
+  gap: var(--space-3);
+  max-width: 240px;
+  padding: 0 var(--space-2) 0 var(--space-6);
   border-right: 1px solid var(--color-border);
   cursor: pointer;
   color: var(--color-text-muted);
   white-space: nowrap;
+  outline: none;
+}
+.tab:hover {
+  color: var(--color-text-secondary);
 }
 .tab.active {
   background: var(--color-surface);
   color: var(--color-text);
+  /* Covers the bar's bottom border, so the active tab opens into the code below it. */
+  margin-bottom: -1px;
 }
-.tab .x {
-  width: var(--space-8);
-  text-align: center;
-  border-radius: var(--radius-xs);
+.tab:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--focus-ring-color);
+}
+.tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab.notice .tab-name {
+  font-style: italic;
+}
+.tab-hint {
+  flex: none;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl; /* a long folder keeps its last part visible */
+  font-size: var(--text-xs);
   color: var(--color-text-muted);
 }
-.tab .x:hover {
+.tab-close {
+  flex: none;
+  width: var(--space-9);
+  height: var(--space-9);
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--color-text-muted);
+  line-height: 1;
+  visibility: hidden;
+}
+.tab:hover .tab-close,
+.tab.active .tab-close,
+.tab.dirty .tab-close {
+  visibility: visible;
+}
+.tab-close:hover {
   background: var(--color-surface-hover);
   color: var(--color-text);
 }
-/* An unsaved file shows an accent dot where its close button would be. */
-.tab.dirty .x::before {
-  content: '●';
-  color: var(--color-accent);
+/* An unsaved file shows a dot where its close button would be, until the tab is hovered. A file
+   that needs a decision (see the banner) shows the dot in the warning colour. */
+.tab.dirty .tab-close::before {
+  content: '';
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: var(--radius-round);
+  background: var(--color-accent);
 }
-.tab.dirty .x span {
+.tab.attention .tab-close::before {
+  background: var(--color-warning);
+}
+.tab.dirty .tab-close span {
   display: none;
 }
+.tab.dirty .tab-close:hover::before {
+  display: none;
+}
+.tab.dirty .tab-close:hover span {
+  display: inline;
+}
+
+/* ---- the banner: a decision the student needs to make about the file on screen ---- */
+
+#editor-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+.banner-mark {
+  flex: none;
+  width: var(--space-4);
+  height: var(--space-4);
+  border-radius: var(--radius-round);
+  background: var(--color-warning);
+}
+.banner-text {
+  flex: 1;
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+.banner-text strong {
+  color: var(--color-text);
+  font-weight: var(--weight-strong);
+}
+.banner-actions {
+  flex: none;
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* ---- the code ---- */
 
 #editor-host {
   flex: 1;
@@ -56,14 +147,202 @@
   position: relative;
   user-select: text;
 }
-#editor-host .cm-editor {
-  height: 100%;
-  font-size: var(--code-size);
+#editor-host .cm-fold-mark {
+  display: inline-block;
+  width: var(--space-6);
+  text-align: center;
 }
-#editor-host .cm-scroller {
-  font-family: var(--font-mono);
+
+/* A file the editor will not open: one quiet message where the code would be. */
+.editor-notice {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-10);
+  text-align: center;
+  user-select: none;
+}
+.editor-notice h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-strong);
+  color: var(--color-text);
+}
+.editor-notice p {
+  margin: 0;
+  max-width: 460px;
+  color: var(--color-text-muted);
   line-height: var(--leading-reading);
 }
-#editor-host .cm-editor.cm-focused {
-  outline: none;
+.editor-notice .notice-path {
+  margin: var(--space-2) 0 var(--space-6);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+}
+
+/* ---- find, replace and go to line ---- */
+
+.search-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6) var(--space-3) var(--space-4);
+  font: var(--text-sm) / var(--leading-ui) var(--font-ui);
+}
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.search-field {
+  width: 260px;
+  height: 24px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+}
+/* The replace field lines up under the find field, past the › toggle. */
+.search-row + .search-row {
+  padding-left: 28px;
+}
+.search-panel button {
+  height: 24px;
+  font-size: var(--text-sm);
+}
+.search-panel button.ghost {
+  min-width: 24px;
+  padding: 0 var(--space-2);
+}
+.search-toggle {
+  font-family: var(--font-mono);
+}
+.search-toggle[aria-pressed='true'] {
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-strong);
+}
+.search-expand.open {
+  transform: rotate(90deg);
+}
+.search-count {
+  min-width: 90px;
+  padding: 0 var(--space-3);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.search-count.bad {
+  color: var(--color-danger);
+}
+.search-label {
+  padding: 0 var(--space-2);
+  color: var(--color-text-muted);
+}
+.go-to-field {
+  width: 120px;
+}
+.search-panel :focus-visible,
+.selection-actions :focus-visible,
+.cm-note :focus-visible,
+#editor-banner :focus-visible,
+.editor-notice :focus-visible {
+  outline: 1px solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+/* ---- tutor notes ---- */
+
+#editor-host .cm-note-gutter .cm-gutterElement {
+  width: var(--space-4);
+  display: flex;
+  justify-content: center;
+  cursor: pointer;
+}
+.cm-note-mark {
+  width: 3px;
+  height: 100%;
+  background: var(--color-note-mark);
+}
+.cm-note-mark.start {
+  border-top-left-radius: var(--radius-xs);
+  border-top-right-radius: var(--radius-xs);
+}
+.cm-note-mark.end {
+  border-bottom-left-radius: var(--radius-xs);
+  border-bottom-right-radius: var(--radius-xs);
+}
+.cm-note-mark.open {
+  background: var(--color-accent);
+}
+#editor-host .cm-note-line {
+  background: var(--color-note-tint);
+}
+#editor-host .cm-note-line.open {
+  background: var(--color-note-tint-open);
+}
+/* Padding, not margins: CodeMirror leaves a block widget's margins out of its line positions. */
+.cm-note-block {
+  padding: var(--space-2) var(--space-8) var(--space-4) var(--space-2);
+}
+.cm-note {
+  max-width: 760px;
+  padding: var(--space-3) var(--space-6) var(--space-5);
+  border-left: 2px solid var(--color-accent);
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  background: var(--color-surface-raised);
+  font: var(--text-md) / var(--leading-reading) var(--font-ui);
+  color: var(--color-text);
+  white-space: normal;
+  cursor: auto;
+  user-select: text;
+}
+.cm-note-head {
+  display: flex;
+  align-items: center;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--color-text-muted);
+}
+.cm-note-head button {
+  font-size: var(--text-xs);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.cm-note-body > :first-child {
+  margin-top: var(--space-1);
+}
+.cm-note-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---- actions offered for a selection ---- */
+
+.selection-actions {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  font: var(--text-sm) / var(--leading-ui) var(--font-ui);
+}
+.selection-actions button {
+  border-color: transparent;
+  background: none;
+  padding: var(--space-1) var(--space-4);
+}
+.selection-actions button:hover,
+.selection-actions button:focus-visible {
+  background: var(--color-surface-hover);
+  border-color: transparent;
+}
+
+/* Fold arrows appear only while the pointer is over the gutter, so they do not compete with the code. */
+#editor-host .cm-foldGutter .cm-gutterElement {
+  opacity: 0;
+}
+#editor-host .cm-gutters:hover .cm-foldGutter .cm-gutterElement {
+  opacity: 1;
 }

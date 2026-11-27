@@ -122,6 +122,82 @@ pseudo-terminal's foreground process group with the shell's (`term_busy`, used b
 guard and Run File). Locations printed in the output are checked with `term_resolve`, which only
 accepts files inside the open folder.
 
+## The editor
+
+One CodeMirror view shows the active tab; each open file keeps its own `EditorState` (text,
+undo history, cursor, open notes) and scroll position while another tab is on screen
+(`editor/session.js`). Files are read and written by `documents.rs`:
+
+A file's version on disk is its stamp, `{ mtime, size }`: the size catches a change made in the
+same second as a save on file systems that keep whole seconds. All three commands do their file
+system work on a blocking thread, so a hung network mount stalls only that call.
+
+- `doc_read(rel)` returns `{ kind: 'text', text, mtime, size, format }` with the text exactly
+  as on disk, or `{ kind, mtime, size }` with `kind` one of `binary`, `tooLarge` (over 3 MB;
+  only the first 8 KB is read to tell binary from text) or `notText` (not UTF-8), or
+  `{ kind: 'missing' }`. The editor shows a notice in place of the code for anything but text.
+  `format` is `{ lineEnding: 'lf' | 'crlf' | 'cr', bom }`, the ending most lines use.
+- `doc_write(rel, text, format, expected)` writes beside the file under an unpredictable name
+  (created new, never through an existing entry) and renames over it, so a failed write never
+  truncates the original; temporary files a crash left behind are removed on the next save of
+  that file. `text` already carries its line endings and the BOM is added from `format`. With
+  `expected` (a stamp), a file changed or deleted since then is not written and the result's
+  `status` is `changed` or `deleted` (the editor then asks); otherwise `saved` with the new
+  `mtime` and `size`. Errors are sentences a student can act on ("You don't have permission to
+  save …").
+- `doc_stat(paths)` returns `{ mtime, size }`, `{ missing: true }` or `{ error }` per path.
+
+The editor works in `\n`. `editor/line-endings.js` remembers each line break that differs from
+the file's usual ending (a CRLF line in an LF file, a lone CR) and follows it through edits, so
+saving a mixed file changes only the lines the student touched; new lines get the usual ending.
+
+The editor compares open files with the disk when the window gains focus, when a tab is shown,
+on `files:changed` from the folder watcher (for the files and folders in the batch, or every
+open file for `[""]`), and every 5 seconds while the window is focused, as a fallback for when
+the watcher could not start and for changes the files area leaves out just after a save. All of
+these go through the same check, so the races below are handled the same way. A check that gets no answer for 10 seconds says so in the status
+bar, and checks resume once the disk answers. A clean file is reloaded with the smallest change,
+so the cursor, scroll position and notes stay with their text. A file with unsaved edits is
+never replaced without the student choosing: a banner above the code offers "Keep my version" or
+"Load the disk version", and a deleted one offers "Save it again" (closing it asks first). The
+same holds for typing that lands while a reload is reading the file, and a check that overlaps
+one of the student's own saves is ignored for that file. Failed saves use the same banner. Tabs with
+unsaved edits are guarded on close, quit and folder switch (the `registerLeaveGuard` in
+`editor/index.js`); `workspace:opened` arrives only after that guard passed, and then the editor
+reopens the tabs that were open in that folder last time (kept in local storage).
+
+### Hooks for the tutor
+
+Exported from `editor/index.js`. They contain no AI: the tutor decides what to say, the editor
+decides how it sits in the code.
+
+- `setNotes(source, path, notes, { onOrphaned })` pins notes to a file, replacing the notes that
+  `source` (any name, such as `'review'`) had there. A note is `{ id, fromLine, toLine, body }`:
+  1-based inclusive lines and a DOM node the caller owns and may keep updating (the editor
+  re-measures when it grows). Each note shows a bar in the gutter and a faint tint on its lines;
+  clicking the bar or Cmd+Alt+] / Cmd+Alt+[ (next and previous note) opens the body beneath the
+  range, and Escape or "Hide" closes it. Ranges follow edits: lines typed above move the note,
+  and a line rewritten inside the range keeps it. When the note's code is deleted (or replaced
+  along with code around it), the note is detached: hidden and left out of `notesOn`, but not
+  yet lost. Undo puts it back with its code, and pasting or dropping that code elsewhere moves
+  the note there, so cutting and pasting a function keeps its note. A detached note is removed
+  and `onOrphaned(id, path)` called when its tab closes (undo history goes with the tab). A note
+  whose lines are past the end of the file when it opens is removed and reported at once. Notes
+  for files that are not open appear when they open and follow renames; when another folder
+  opens, every note is removed and `onOrphaned` called for each.
+- `clearNotes(source, path?)` removes `source`'s notes from one file, or from all of them.
+- `notesOn(source, path)` returns `[{ id, fromLine, toLine }]` where the notes are now.
+- `showNote(source, path, id)` opens the file and that note, scrolled into view.
+- `registerSelectionAction({ id, label, run })` adds a button to the small row offered beside a
+  selection once it has settled (and the mouse is up). `run({ path, fromLine, toLine, text })`
+  gets the selected lines; a selection ending at the start of a line does not include it. The
+  row hides as soon as the student types or moves the cursor, never takes focus on its own, and
+  appears only when at least one action is registered. Alt+Enter moves focus to it; Escape goes
+  back to the code. Returns a function that removes the action.
+
+The interface tests and previews reach these through `window.__editor`, which exists only
+under the mock backend.
+
 ## Per-folder data
 
 `.longhand/config.json` holds the policy and model. `.longhand/log.jsonl` is an append-only record

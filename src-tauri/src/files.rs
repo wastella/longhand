@@ -21,9 +21,14 @@ use tauri::{AppHandle, Emitter, Manager, State};
 const MAX_FILE_BYTES: u64 = 3 * 1024 * 1024;
 
 /// Every path from the interface must stay inside the open folder.
-fn in_workspace(state: &AppState, rel: &str) -> R<PathBuf> {
-    let ws = workspace(state)?;
-    let mut out = ws.clone();
+pub(crate) fn in_workspace(state: &AppState, rel: &str) -> R<PathBuf> {
+    resolve_in(&workspace(state)?, rel)
+}
+
+/// `in_workspace` for a folder already looked up, so the file system checks can run on a
+/// blocking thread (they touch the disk, which may be a slow network mount).
+pub(crate) fn resolve_in(ws: &Path, rel: &str) -> R<PathBuf> {
+    let mut out = ws.to_path_buf();
     for c in Path::new(rel).components() {
         match c {
             Component::Normal(p) => out.push(p),
@@ -81,18 +86,6 @@ pub fn fs_read(state: State<AppState>, rel: String) -> R<Value> {
         return Ok(json!({ "binary": true, "size": size }));
     }
     Ok(json!({ "text": String::from_utf8_lossy(&bytes), "mtime": mtime_ms(&p) }))
-}
-
-#[tauri::command]
-pub fn fs_write(state: State<AppState>, rel: String, text: String) -> R<Value> {
-    let p = in_workspace(&state, &rel)?;
-    fs::write(&p, text).map_err(err)?;
-    Ok(json!({ "mtime": mtime_ms(&p) }))
-}
-
-#[tauri::command]
-pub fn fs_mtime(state: State<AppState>, rel: String) -> R<f64> {
-    Ok(mtime_ms(&in_workspace(&state, &rel)?))
 }
 
 #[tauri::command]

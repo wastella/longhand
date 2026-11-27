@@ -62,8 +62,6 @@ function search({ query, caseSensitive, wholeWord }) {
 Object.assign(mock.commands, {
   fs_list: ({ rel }) => list(rel),
   fs_read: ({ rel }) => ({ text: files[rel], mtime: 1 }),
-  fs_write: ({ rel, text }) => ((files[rel] = text), { mtime: 1 }),
-  fs_mtime: () => 1,
   fs_create: ({ rel, dir }) => {
     if (Object.keys(files).some((path) => isWithin(path, rel))) throw 'Something with that name already exists';
     files[dir ? rel + '/.keep' : rel] = '';

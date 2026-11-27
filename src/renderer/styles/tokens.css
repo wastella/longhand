@@ -45,6 +45,25 @@
   --color-ansi-bright-cyan: #94d8d8;
   --color-ansi-bright-white: #ffffff;
   --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+  /* Code in the editor: syntax colours, kept soft so the text itself stays the brightest thing,
+     and the editor's own marks (search hits, the active line, tutor notes). */
+  --color-code-keyword: #c3a6de;
+  --color-code-string: #a6c48c;
+  --color-code-number: #e2a088; /* numbers, True/False/None, self */
+  --color-code-function: #8fb8e6; /* names being defined or called */
+  --color-code-type: #7fc4b8; /* class names */
+  --color-code-comment: #6e727e;
+  --color-code-punctuation: #9a9ea9; /* operators, brackets, decorators */
+  --color-code-line-number: #565964;
+  --color-code-active-line: rgba(255, 255, 255, 0.025);
+  --color-code-selection-match: rgba(255, 255, 255, 0.07); /* other copies of the selected text */
+  --color-code-bracket: rgba(255, 255, 255, 0.14); /* the bracket matching the one at the cursor */
+  --color-code-match: rgba(217, 192, 91, 0.2); /* find results */
+  --color-code-match-current: rgba(217, 192, 91, 0.42);
+  --color-note-mark: rgba(217, 163, 91, 0.5); /* a tutor note's bar in the gutter */
+  --color-note-tint: rgba(217, 163, 91, 0.045); /* the lines a note is about */
+  --color-note-tint-open: rgba(217, 163, 91, 0.085);
 }
 
 :root {
