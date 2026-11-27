@@ -18,9 +18,12 @@ export { open as openFile, movePaths } from './session.js';
 export { save, saveAll } from './disk.js';
 export { registerSelectionAction };
 
-// How often open files are compared with the disk while the window is in use. Changes made in
-// Longhand's own terminal do not move focus, so waiting for a focus event alone would miss them.
-const DISK_CHECK_MS = 2000;
+// How often open files are compared with the disk while the window is in use. Changes normally
+// arrive at once as `files:changed` from the folder watcher; this is the fallback for when the
+// watcher could not start (a network drive) and for changes it passes over (the files area
+// leaves out a file's changes for 2 seconds after the editor saved it). Changes made in
+// Longhand's own terminal move no focus, so a focus event alone would miss them.
+const DISK_CHECK_MS = 5000;
 
 /**
  * The file shown in the editor, or null:

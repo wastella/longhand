@@ -136,6 +136,17 @@ uiTest('a clean file changed on disk reloads in place, keeping the cursor', asyn
   assert.equal(await isHidden(page, '#editor-banner'), true);
 });
 
+uiTest('a change the folder watcher reports reloads the file, also when the batch names its folder or everything', async (page) => {
+  await openFromTree(page, 'stats/running.py');
+  const watcherSays = (paths) => page.evaluate((paths) => window.__emit('files:changed', { root: window.__mock.workspace.path, paths }), paths);
+  await page.evaluate(() => window.__changeOnDisk('stats/running.py', 'one\n'));
+  await watcherSays(['stats']);
+  await page.waitForFunction(() => document.querySelector('.cm-line').textContent === 'one');
+  await page.evaluate(() => window.__changeOnDisk('stats/running.py', 'two\n'));
+  await watcherSays(['']);
+  await page.waitForFunction(() => document.querySelector('.cm-line').textContent === 'two');
+});
+
 uiTest('a file with unsaved edits that changed on disk asks which version to keep', async (page) => {
   await openFromTree(page, 'stats/running.py');
   await typeAt(page, 0, ' # mine');

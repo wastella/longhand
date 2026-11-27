@@ -152,8 +152,10 @@ the file's usual ending (a CRLF line in an LF file, a lone CR) and follows it th
 saving a mixed file changes only the lines the student touched; new lines get the usual ending.
 
 The editor compares open files with the disk when the window gains focus, when a tab is shown,
-on `files:changed`, and every 2 seconds while the window is focused (changes made in Longhand's
-own terminal move no focus). A check that gets no answer for 10 seconds says so in the status
+on `files:changed` from the folder watcher (for the files and folders in the batch, or every
+open file for `[""]`), and every 5 seconds while the window is focused, as a fallback for when
+the watcher could not start and for changes the files area leaves out just after a save. All of
+these go through the same check, so the races below are handled the same way. A check that gets no answer for 10 seconds says so in the status
 bar, and checks resume once the disk answers. A clean file is reloaded with the smallest change,
 so the cursor, scroll position and notes stay with their text. A file with unsaved edits is
 never replaced without the student choosing: a banner above the code offers "Keep my version" or

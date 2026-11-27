@@ -171,9 +171,10 @@ export function activate(path) {
     session.view.setState(doc.state);
     if (isStale(doc.state)) session.view.dispatch({ effects: themeMode.reconfigure(currentThemeMode()) });
     session.view.dispatch({ effects: doc.scroll ?? EditorView.scrollIntoView(doc.state.selection.main.head, { y: 'center' }) });
-    // Focus once the event that opened the file is over: when that was Enter in a name field or
-    // a list, the key would otherwise land in the file as a stray line break.
-    setTimeout(() => session.active === doc.path && session.view.focus());
+    // At once, so whatever opens next (quick open, a dialog) gives the focus back to the code.
+    // A key that opens a file (Enter in the tree, quick open or a name field) must call
+    // preventDefault, or it would carry on into the file as a stray line break.
+    session.view.focus();
   } else {
     if (session.view) session.view.dom.hidden = true;
     renderFileNotice(ui.notice, doc, { onClose: () => close(doc.path) });

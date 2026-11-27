@@ -151,15 +151,18 @@ let stalled = null;
 const TIMED_OUT = Symbol('timed out');
 
 /**
- * Looks for open files that changed on disk (all of them, or those in `paths`). Clean ones are
- * reloaded; one with unsaved edits gets a banner asking which version to keep.
+ * Looks for open files that changed on disk: all of them, or those at or inside `paths` (as
+ * `files:changed` gives them: files or folders, and '' for "anything may have changed"). Clean
+ * ones are reloaded; one with unsaved edits gets a banner asking which version to keep.
  */
 export async function checkDisk(paths) {
   if (!app.workspace || stalled) return;
   if (checking) return void (checkAgain = true);
   checking = true;
   try {
-    const docs = [...session.docs.values()].filter((doc) => doc.kind === 'text' && !doc.saving && !doc.reloading && (!paths || paths.includes(doc.path)));
+    const docs = [...session.docs.values()].filter(
+      (doc) => doc.kind === 'text' && !doc.saving && !doc.reloading && (!paths || paths.some((p) => p === '' || isWithin(doc.path, p))),
+    );
     if (!docs.length) return;
     const asked = docs.map((doc) => ({ path: doc.path, saves: doc.saves }));
     const request = invoke('doc_stat', { paths: asked.map((a) => a.path) });
