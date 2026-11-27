@@ -308,6 +308,9 @@ fn log_summary(state: State<AppState>) -> R<Value> {
 #[tauri::command]
 fn smoke_result(app: AppHandle, result: Value) {
     println!("SMOKE {result}");
+    if let Ok(path) = std::env::var("LONGHAND_SMOKE_OUT") {
+        let _ = fs::write(path, result.to_string());
+    }
     app.exit(if result["ok"] == true { 0 } else { 1 });
 }
 
@@ -352,7 +355,23 @@ fn build_menu(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Claude Code finds its login through the user's name, which a bare launch environment may lack.
+fn ensure_user_env() {
+    if std::env::var_os("USER").is_some() {
+        return;
+    }
+    let name = unsafe {
+        let pw = libc::getpwuid(libc::getuid());
+        if pw.is_null() {
+            return;
+        }
+        std::ffi::CStr::from_ptr((*pw).pw_name).to_string_lossy().to_string()
+    };
+    std::env::set_var("USER", name);
+}
+
 fn main() {
+    ensure_user_env();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
