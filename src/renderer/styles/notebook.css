@@ -197,6 +197,11 @@
 .nb-rendered {
   padding: var(--space-1) var(--space-4);
   min-height: var(--control-height);
+  /* Nothing a notebook wrote, positioned or not, may draw outside its cell. */
+  contain: layout paint;
+}
+.nb-output {
+  contain: layout paint;
 }
 .nb-markdown > :first-child {
   margin-top: 0;

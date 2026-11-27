@@ -162,9 +162,10 @@ export class NotebookView {
   }
 
   remove(view) {
-    this.model.remove(view.cell.key);
+    const record = this.model.remove(view.cell.key);
+    if (!record) return;
     this.scroller.focus({ preventScroll: true });
-    notify({ message: 'Cell deleted.', action: { label: 'Undo', run: () => this.model.undo() } });
+    notify({ message: 'Cell deleted.', action: { label: 'Undo', run: () => this.model.restore(record) } });
   }
 
   // ---- running ----

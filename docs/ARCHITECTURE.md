@@ -310,7 +310,10 @@ outputs of unknown types) is kept as it was. A file that is not JSON, not nbform
 
 `notebook/model.js` holds the cells. Each cell's text lives in its own CodeMirror state (with
 its own undo history); adding and deleting cells go on the notebook's undo stack, which keeps
-the cell objects, so undoing a deletion brings back the text, outputs and typing history. Keys
+the cell objects, so undoing a deletion brings back the text and outputs (not the cell's typing
+history, which goes with its editor). Deleting the last cell leaves an empty one in the same
+change, so a notebook never has no cells; the Undo on a deletion's notice undoes that deletion,
+whatever was done since. Keys
 inside a cell are the editor's, plus Shift+Enter (run, then the next cell) and Cmd+Enter or
 Ctrl+Enter (run in place). Cmd+Z outside a cell's editor undoes adding and deleting cells.
 There is no Jupyter command mode.

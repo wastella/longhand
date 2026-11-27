@@ -242,6 +242,51 @@ uiTest(
 );
 
 uiTest(
+  'deleting the only cell and undoing it never leaves a notebook without cells',
+  async (page) => {
+    await openNotebook(page);
+    await press(page, 'Delete cell', 0);
+    assert.deepEqual(await cellTexts(page), [''], 'an empty cell takes its place');
+    await page.click('.notice button.button.small');
+    assert.deepEqual(await cellTexts(page), ['only = 1'], 'Undo brings the cell back and the empty one goes');
+    // Undoing with the keyboard as well, and redoing, still leave a cell.
+    await press(page, 'Delete cell', 0);
+    await page.focus('.nb-scroll');
+    for (const key of ['KeyZ', 'KeyZ']) {
+      await page.keyboard.down(MOD);
+      await page.keyboard.press(key);
+      await page.keyboard.up(MOD);
+      await page.focus('.nb-scroll');
+    }
+    assert.ok((await count(page, '.notebook:not([hidden]) .nb-cell')) >= 1);
+    await page.evaluate(() => window.__emit('menu', 'save'));
+    await page.waitForFunction(() => !document.querySelector('#tabs .tab.dirty'));
+    assert.doesNotMatch(await saved(page), /"cells": \[\]/);
+    // Text typed into the empty cell is kept when the deleted one comes back.
+    await press(page, 'Delete cell', 0);
+    await editCell(page, 0);
+    await page.keyboard.type('mine = 2');
+    await page.click('.notice button.button.small');
+    assert.deepEqual((await cellTexts(page)).sort(), ['mine = 2', 'only = 1']);
+  },
+  { files: { 'hw.ipynb': notebook([['code', 'only = 1']]) } },
+);
+
+uiTest(
+  'Undo on a deletion’s notice undoes that deletion, even after adding a cell',
+  async (page) => {
+    await openNotebook(page);
+    await press(page, 'Delete cell', 1);
+    await press(page, 'Add a code cell below', 0);
+    assert.equal(await count(page, '.notebook:not([hidden]) .nb-cell'), 3);
+    await page.click('.notice button.button.small');
+    assert.equal(await count(page, '.notebook:not([hidden]) .nb-cell'), 4);
+    assert.ok((await cellTexts(page)).includes("print('hello')"));
+  },
+  { files: { 'hw.ipynb': BASIC } },
+);
+
+uiTest(
   'a Markdown cell shows its source on Enter and renders again when run',
   async (page) => {
     await openNotebook(page);

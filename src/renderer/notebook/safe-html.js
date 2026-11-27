@@ -1,9 +1,11 @@
 // HTML from a notebook, made safe to show. A notebook may come from anywhere, and its saved
 // outputs and Markdown are whatever its author (or a program) wrote, so nothing in them may run,
-// load anything from the network, or navigate the window: scripts, styles, frames, forms, media
-// and inline SVG are dropped; images stay only as data: URLs (markdown.js turns cell
-// attachments into those);
-// links open in the browser when they are http(s), and do nothing otherwise. The content
+// load anything from the network, or navigate the window: scripts, styles, frames, forms, media,
+// image maps and inline SVG are dropped; images stay only as data: URLs (markdown.js turns cell
+// attachments into those); links open in the browser when they are http(s), and do nothing
+// otherwise. Ids, names and classes go too, except the few classes outputs are styled by, so
+// saved HTML cannot pass for the app's own parts (a class that covers the window, say); and
+// .nb-output and .nb-rendered contain their layout, so nothing positioned can leave them. The content
 // security policy (tauri.conf.json) blocks remote loads and inline scripts as a second line.
 
 import DOMPurify from 'dompurify';
@@ -11,6 +13,17 @@ import { invoke } from '../backend.js';
 
 const purifier = DOMPurify(window);
 const RASTER = /^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=\s]+$/i;
+/** Classes kept: pandas tables, code languages (for colouring) and math placeholders. */
+const KEPT_CLASS = /^(dataframe|math|math-display|language-[\w-]+)$/;
+
+purifier.addHook('uponSanitizeAttribute', (node, data) => {
+  if (data.attrName !== 'class') return;
+  data.attrValue = data.attrValue
+    .split(/\s+/)
+    .filter((name) => KEPT_CLASS.test(name))
+    .join(' ');
+  if (!data.attrValue) data.keepAttr = false;
+});
 
 purifier.addHook('afterSanitizeAttributes', (node) => {
   if (node.tagName === 'IMG') {
@@ -45,8 +58,12 @@ const CONFIG = {
     'track',
     'picture',
     'template',
+    'map',
+    'area',
+    'dialog',
+    'portal',
   ],
-  FORBID_ATTR: ['style', 'border', 'srcset', 'action', 'formaction', 'background', 'poster', 'xlink:href'],
+  FORBID_ATTR: ['style', 'border', 'srcset', 'action', 'formaction', 'background', 'poster', 'xlink:href', 'usemap', 'id', 'name', 'ping'],
   ALLOW_DATA_ATTR: false,
 };
 
