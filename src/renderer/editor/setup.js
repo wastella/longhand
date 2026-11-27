@@ -39,7 +39,8 @@ const editorKeymap = [
   { key: 'Alt-Enter', run: focusSelectionActions },
   { key: 'Escape', run: (view) => hideSelectionActions(view) || closeNotes(view) },
   ...closeBracketsKeymap,
-  ...defaultKeymap,
+  // CodeMirror deletes the line on Shift+Cmd+K, which is the menu's Look Up; the menu keeps it.
+  ...defaultKeymap.filter((binding) => binding.key !== 'Shift-Mod-k'),
   // CodeMirror's own go-to-line prompt is replaced by ours on Ctrl+G.
   ...searchKeymap.filter((binding) => binding.key !== 'Mod-Alt-g'),
   ...historyKeymap,
