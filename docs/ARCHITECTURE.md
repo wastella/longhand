@@ -344,6 +344,61 @@ stale, unreached, counts }`. A test's `id` is its pytest node id
   throw is caught and logged, so the panel cannot break the test pane or stop `tests:finished`.
   It returns a function that unregisters; calling it twice, or after another panel took over,
   does nothing. Only one panel can be registered at a time.
+  `dispose` may return a node: the panel then shows it beneath the test, now passing, until the
+  next run or another folder (the feedback area's checkpoint card uses this).
+
+## Feedback
+
+`src/renderer/feedback/` pins the tutor's help to the student's work rather than the side
+panel. Every request starts from something the student did; none of it runs in the background.
+The side panel stays for conceptual questions, and every pinned conversation uses the same
+parts as the panel (`.msg` bubbles, `renderAnswer` with its hidden-code check, the activity
+line, Stop, errors through `failureView` with Retry, and a line saying what the tutor sees).
+
+- **Review this file** (⇧⌘R, `review-file`) saves the file, sends it with line numbers
+  (`review-format.js`) as a `review` request, and places each note as soon as its closing tag
+  streams in. The tutor answers in tags, specified in `tutor/prompt.rs`:
+
+  ```
+  <note lines="12-14" kind="question">
+  Markdown
+  </note>
+  ```
+
+  The answer is untrusted: a note is kept only when its lines are inside the file and span fewer
+  than 60, its kind is from an allow-list (otherwise `question`), its text is non-empty (cut at
+  1500 characters), and it is not a duplicate; at most six; anything outside the tags is
+  ignored. The first new note replaces the file's open notes, so a failed or stopped review
+  leaves the old ones.
+
+- **Notes** (`notes.js`) are records `{ id, path, fromLine, toLine, anchor, kind, text, status,
+thread, replies, created }` in `.longhand/notes.json`, kept by `feedback.rs`
+  (`feedback_notes_load`, `feedback_notes_save`, written atomically). The file is untrusted:
+  the backend drops records with a bad id or path, out-of-range lines or no text, maps unknown
+  kinds and statuses to safe ones, and caps sizes. Open notes are pinned with the editor's
+  `setNotes` (source `review`). Each note's `anchor` is the text of its lines, refreshed on
+  save; when the folder opens, `anchors.js` relocates each note to the nearest place its text
+  still appears, and a note whose text is gone, or that the editor reports orphaned, is listed
+  as outdated rather than dropped. Resolve takes a note out of the margin into the Notes list
+  (Reopen puts it back); Dismiss deletes it. Replying asks on the note's own `note-…` thread
+  (about `review-reply`) with the note and the saved lines around it.
+- **The Notes list** (`summary.js`) sits at the top of the tutor panel (`panelStrip`) for the
+  file in the editor: the review's progress with Stop, how it ended, the open notes, resolved
+  and outdated groups, next and previous, and Review again.
+- **Explain and Ask about this…** (`explain.js`) are editor selection actions; Explain Selection
+  (⌘E, `ask-selection`) runs the first. The answer is a note on the selection (source
+  `explain`, at most four per file, not kept) on its own `explain-…` thread.
+- **Failure help** (`failure.js`) is the test panel's failure panel (`registerFailurePanel`). It
+  asks "What did you expect to happen?" (with Skip and ask), or offers "Where do I start?" when
+  starter code raises `NotImplementedError`, then asks on a `fail-…` thread kept while the test
+  keeps failing, with the report, the test's function and up to two functions it ran. When the
+  failure changes, a marker says so and the next reply carries the new report. When a test the
+  student asked about passes, `dispose` returns a one-time checkpoint card ("What was wrong?")
+  that can be skipped.
+
+The request kinds `review` and `failure` have their own instructions in `tutor/prompt.rs`; the
+Record view labels requests by `about` (`review`, `review-reply`, `explain`, `failure`,
+`checkpoint`). `evals/` has cases for both kinds.
 
 ## App settings
 
@@ -370,7 +425,8 @@ its warm lookup process, and any test run (`pytest::shutdown`, which also remove
 
 `.longhand/config.json` holds the policy and model. `.longhand/log.jsonl` is an append-only record
 of questions, test runs, reveals and setting changes. Neither leaves the machine. Both are handled
-in `workspace.rs`. `.longhand/threads/` holds the tutor's kept threads (`tutor/threads.rs`).
+in `workspace.rs`. `.longhand/threads/` holds the tutor's kept threads (`tutor/threads.rs`), and
+`.longhand/notes.json` the margin notes (`feedback.rs`).
 `workspace::longhand_dir` creates the folder with a `.gitignore` of `*`, so none of it is
 committed by accident; the History and Record views say where it is and how to delete it.
 
