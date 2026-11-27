@@ -7,6 +7,7 @@ import { mountStatusBar } from './status-bar.js';
 import { mountTextSize } from './text-size.js';
 import { mountTitleBar } from './title-bar.js';
 import { mountWelcome } from './welcome.js';
+import { mountLeaveGuards } from './leave-guards.js';
 
 export { registerCommand, runCommand } from './commands.js';
 export { showPanel } from './layout.js';
@@ -14,6 +15,7 @@ export { addBottomPane, showBottomPane } from './bottom-panel.js';
 export { showStatus } from './status-bar.js';
 export { applySavedTextSize } from './text-size.js';
 export { offerLastWorkspace } from './welcome.js';
+export { confirmLeave, registerLeaveGuard } from './leave-guards.js';
 
 export function mount({ titleBar, welcome, bottom, status }) {
   mountLayout();
@@ -22,4 +24,5 @@ export function mount({ titleBar, welcome, bottom, status }) {
   mountWelcome(welcome);
   mountBottomPanel(bottom);
   mountStatusBar(status);
+  mountLeaveGuards();
 }
