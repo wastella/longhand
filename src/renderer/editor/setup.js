@@ -1,36 +1,83 @@
-// The CodeMirror configuration every open file gets.
+// The CodeMirror configuration every open file gets, and the editor's key bindings.
 
-import { basicSetup } from 'codemirror';
-import { EditorState } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
-import { indentWithTab } from '@codemirror/commands';
-import { indentUnit } from '@codemirror/language';
-import { oneDark } from '@codemirror/theme-one-dark';
-import { languageFor } from './languages.js';
+import { Compartment, EditorState } from '@codemirror/state';
+import {
+  EditorView,
+  crosshairCursor,
+  drawSelection,
+  dropCursor,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
+  keymap,
+  lineNumbers,
+  rectangularSelection,
+} from '@codemirror/view';
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from '@codemirror/language';
+import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
+import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search';
+import { languageSupport } from './languages.js';
+import { currentThemeMode, editorTheme, themeMode } from './theme.js';
+import { createSearchPanel, openReplace } from './search-panel.js';
+import { goToLinePanel, openGoToLine } from './go-to-line.js';
+import { closeNotes, moveToNote, notesFor } from './notes.js';
+import { focusSelectionActions, hideSelectionActions, selectionActions } from './selection-actions.js';
 
-// One Dark supplies the syntax colours; the surfaces come from the design tokens so the editor
-// sits on the same background as the panes around it.
-const surfaces = EditorView.theme(
-  { '&': { backgroundColor: 'var(--color-surface)' }, '.cm-gutters': { backgroundColor: 'var(--color-surface)', border: 'none' } },
-  { dark: true },
-);
+/** Holds what depends on the file's name, so a rename can swap it without losing undo history. */
+export const languageSlot = new Compartment();
 
-/** A fresh editor state for `path`. `onEdit` runs when the text changes, `onCursor` when the text or selection does. */
-export function createEditorState(path, text, { onEdit, onCursor }) {
+const editorKeymap = [
+  { key: 'Ctrl-g', run: openGoToLine, preventDefault: true },
+  { key: 'Mod-Alt-f', run: openReplace, preventDefault: true },
+  { key: 'Alt-]', run: (view) => moveToNote(view, 1), preventDefault: true },
+  { key: 'Alt-[', run: (view) => moveToNote(view, -1), preventDefault: true },
+  { key: 'Alt-Enter', run: focusSelectionActions },
+  { key: 'Escape', run: (view) => hideSelectionActions(view) || closeNotes(view) },
+  ...closeBracketsKeymap,
+  ...defaultKeymap,
+  // CodeMirror's own go-to-line prompt is replaced by ours on Ctrl+G.
+  ...searchKeymap.filter((binding) => binding.key !== 'Mod-Alt-g'),
+  ...historyKeymap,
+  ...foldKeymap,
+  ...completionKeymap,
+  indentWithTab,
+];
+
+/**
+ * A fresh editor state for the file at `doc.path` (read again whenever it is needed, since a
+ * rename changes it). `onUpdate(update)` runs after every change to the view.
+ */
+export function createEditorState(doc, text, { selection, onUpdate }) {
   return EditorState.create({
     doc: text,
+    selection,
     extensions: [
-      basicSetup,
-      keymap.of([indentWithTab]),
-      indentUnit.of('    '),
-      EditorState.tabSize.of(4),
-      languageFor(path),
-      oneDark,
-      surfaces,
-      EditorView.updateListener.of((update) => {
-        if (update.docChanged) onEdit();
-        if (update.selectionSet || update.docChanged) onCursor();
-      }),
+      lineNumbers(),
+      notesFor(doc.path),
+      foldGutter({ markerDOM: (open) => Object.assign(document.createElement('span'), { className: 'cm-fold-mark', textContent: open ? '⌄' : '›' }) }),
+      highlightActiveLineGutter(),
+      highlightSpecialChars(),
+      history(),
+      drawSelection(),
+      dropCursor(),
+      EditorState.allowMultipleSelections.of(true),
+      indentOnInput(),
+      bracketMatching(),
+      closeBrackets(),
+      autocompletion(),
+      rectangularSelection(),
+      crosshairCursor(),
+      highlightActiveLine(),
+      highlightSelectionMatches(),
+      search({ top: true, createPanel: createSearchPanel }),
+      goToLinePanel,
+      selectionActions(() => doc.path),
+      keymap.of(editorKeymap),
+      languageSlot.of(languageSupport(doc.path, text)),
+      themeMode.of(currentThemeMode()),
+      editorTheme,
+      EditorView.updateListener.of(onUpdate),
     ],
   });
 }

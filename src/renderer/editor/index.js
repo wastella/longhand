@@ -1,13 +1,26 @@
 // The editor: CodeMirror with one tab per open file. Other areas import from this file only.
 
+import { toggleComment } from '@codemirror/commands';
+import { openSearchPanel } from '@codemirror/search';
 import { h } from '../dom.js';
 import { on } from '../state.js';
-import { registerCommand, registerLeaveGuard } from '../shell/index.js';
-import { reloadChangedFiles, save } from './disk.js';
-import { attach, close, isWithin, reset, session } from './session.js';
+import { registerCommand, registerLeaveGuard, showStatus } from '../shell/index.js';
+import { bannerActions, checkDisk, save } from './disk.js';
+import { openGoToLine } from './go-to-line.js';
+import { dropNotes, findNote, listNotes, moveToNote, openNoteAt, putNotes, refreshSpec, watchNotes } from './notes.js';
+import { openReplace } from './search-panel.js';
+import { flushTabs } from './restore.js';
+import { applyTheme, attach, close, enterFolder, fileGone, isWithin, open, session, updateDoc } from './session.js';
+import { registerSelectionAction } from './selection-actions.js';
+import { setThemeMode } from './theme.js';
 
 export { open as openFile, movePaths } from './session.js';
 export { save, saveAll } from './disk.js';
+export { registerSelectionAction };
+
+// How often open files are compared with the disk while the window is in use. Changes made in
+// Longhand's own terminal do not move focus, so waiting for a focus event alone would miss them.
+const DISK_CHECK_MS = 2000;
 
 /**
  * The file shown in the editor, or null:
@@ -15,7 +28,7 @@ export { save, saveAll } from './disk.js';
  */
 export function activeFile() {
   const { view, active, docs } = session;
-  if (!view || !active) return null;
+  if (!view || !active || docs.get(active).kind !== 'text') return null;
   const { doc, selection } = view.state;
   const sel = selection.main;
   return {
@@ -26,9 +39,45 @@ export function activeFile() {
   };
 }
 
-/** Closes open tabs at or inside `path`, without asking, after it was deleted. */
+/**
+ * After `path` (a file or folder) was deleted: closes the tabs at or inside it. A tab with
+ * unsaved changes stays open and offers to save the file again, so nothing typed is lost.
+ */
 export async function closeFilesUnder(path) {
-  for (const open of [...session.docs.keys()]) if (isWithin(open, path)) await close(open, true);
+  for (const doc of [...session.docs.values()]) if (isWithin(doc.path, path)) await fileGone(doc);
+}
+
+/**
+ * Pins notes to line ranges of `path`, replacing the notes `source` (a name such as 'review')
+ * had there. Each note is { id, fromLine, toLine, body }, where `body` is a DOM node the editor
+ * shows beneath the lines when the note is opened. Lines are 1-based and inclusive. Ranges
+ * follow the student's edits; when a note's lines are deleted (or lie past the end of the file)
+ * the note is removed and `onOrphaned(id, path)` is called. Notes for a file that is not open
+ * appear when it opens.
+ */
+export function setNotes(source, path, notes, { onOrphaned } = {}) {
+  putNotes(source, path, notes, onOrphaned);
+}
+
+/** Removes the notes `source` pinned to `path`, or to every file when `path` is omitted. */
+export function clearNotes(source, path) {
+  dropNotes(source, path);
+}
+
+/** Where `source`'s notes on `path` are now, after the student's edits: [{ id, fromLine, toLine }]. */
+export const notesOn = (source, path) => listNotes(source, path);
+
+/** Opens `path` and the note `id` that `source` pinned there, scrolled into view. Resolves false if there is no such note. */
+export async function showNote(source, path, id) {
+  const key = findNote(source, path, id);
+  if (!key || !(await open(path))) return false;
+  return openNoteAt(session.view, key);
+}
+
+/** Shows the registry's notes in an open file once they change. */
+function refreshNotes(path) {
+  const doc = session.docs.get(path);
+  if (doc?.kind === 'text') updateDoc(doc, refreshSpec(path));
 }
 
 /** What quitting or switching folder would lose, for the shell's leave guard. */
@@ -41,16 +90,48 @@ function unsavedWork(reason) {
     : { message: `${files} Open another folder without saving?`, action: 'Discard Changes' };
 }
 
-export function mount(region) {
-  const tabBar = h('div', { id: 'tabs' });
-  const host = h('div', { id: 'editor-host' });
-  region.append(tabBar, host);
-  attach(tabBar, host);
+/** Runs `run(view)` on the file on screen, if it is a text file. */
+const onView = (run) => () => {
+  const doc = session.docs.get(session.active);
+  if (doc?.kind !== 'text') return;
+  session.view.focus();
+  run(session.view);
+};
 
+const toNote = (dir) => onView((view) => moveToNote(view, dir) || showStatus('No notes in this file'));
+
+function registerCommands() {
   registerCommand('save', () => save());
   registerCommand('close-tab', () => session.active && close(session.active));
-  on('workspace:opened', reset);
+  registerCommand('find', onView(openSearchPanel));
+  registerCommand('replace', onView(openReplace));
+  registerCommand('go-to-line', onView(openGoToLine));
+  registerCommand('toggle-comment', onView(toggleComment));
+  registerCommand('next-note', toNote(1));
+  registerCommand('previous-note', toNote(-1));
+}
+
+export function mount(region) {
+  const tabBar = h('div', { id: 'tabs' });
+  const banner = h('div', { id: 'editor-banner', role: 'alert', hidden: true });
+  const notice = h('div', { class: 'editor-notice', hidden: true });
+  const host = h('div', { id: 'editor-host' }, notice);
+  region.append(tabBar, banner, host);
+  attach({ tabBar, banner, host, notice }, bannerActions);
+  watchNotes(refreshNotes);
+  registerCommands();
+
+  // workspace:opened comes after the shell's leave guard has passed, so the old tabs can go.
+  on('workspace:opened', (ws) => enterFolder(ws.path));
+  on('editor:active', (path) => path && checkDisk([path]));
+  on('files:changed', (paths) => checkDisk(paths));
   on('text-size:changed', () => session.view?.requestMeasure());
-  window.addEventListener('focus', reloadChangedFiles);
+  on('theme:changed', (mode) => setThemeMode(mode) && applyTheme());
+  window.addEventListener('focus', () => checkDisk());
+  window.addEventListener('pagehide', flushTabs);
+  setInterval(() => document.hasFocus() && checkDisk(), DISK_CHECK_MS);
   registerLeaveGuard(unsavedWork);
+  // The interface tests and previews run against the mock backend and drive the tutor hooks
+  // directly, since no tutor feature uses them yet. The real app never sets __MOCK__.
+  if (window.__MOCK__) window.__editor = { setNotes, clearNotes, notesOn, showNote, registerSelectionAction };
 }
