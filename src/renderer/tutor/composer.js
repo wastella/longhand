@@ -2,6 +2,7 @@
 // question. Each item there can be removed for that question.
 
 import { h, spacer } from '../dom.js';
+import { icon } from '../shell/icons.js';
 import { contextItems } from './context.js';
 
 const DEFAULT_PLACEHOLDER = 'Ask about a concept, an API, an error, or your own code';
@@ -43,7 +44,7 @@ export function renderChips() {
             title: 'Leave out of the next question',
             onclick: () => remove(item.key),
           },
-          '×',
+          icon('x', 'tiny'),
         ),
       ),
     ),

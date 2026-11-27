@@ -3,6 +3,7 @@
 
 import { confirm, invoke } from '../backend.js';
 import { h } from '../dom.js';
+import { icon } from '../shell/icons.js';
 import { showStatus } from '../shell/index.js';
 import { TerminalSession } from './session.js';
 
@@ -13,7 +14,7 @@ const strip = h('span', { id: 'terminal-tabs', role: 'tablist', 'aria-label': 'T
 const addButton = h(
   'button',
   { id: 'terminal-add', class: 'ghost', title: 'New terminal (⌃⇧`)', 'aria-label': 'New terminal', onclick: () => addTerminal() },
-  '+',
+  icon('plus', 'small'),
 );
 const restartButton = h('button', { id: 'terminal-restart', class: 'ghost', title: 'Start this terminal again', onclick: () => restartTerminal() }, 'Restart');
 export const actions = h('span', { id: 'terminal-actions' }, strip, addButton, restartButton);
@@ -45,7 +46,7 @@ function renderTabs() {
           },
           String(s.number),
         ),
-        h('button', { class: 'term-tab-close', title: `Close ${label}`, 'aria-label': `Close ${label}`, onclick: () => closeTerminal(s) }, '×'),
+        h('button', { class: 'term-tab-close', title: `Close ${label}`, 'aria-label': `Close ${label}`, onclick: () => closeTerminal(s) }, icon('x', 'tiny')),
       );
     }),
   );

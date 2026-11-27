@@ -1,7 +1,10 @@
 // Renders the interface in headless Chrome against the mock backend and saves a screenshot.
 //
-//   npm run preview -- --out shot.png [--scenario failing-test]
+//   npm run preview -- --out shot.png [--scenario failing-test] [--theme light]
 //   npm run preview -- --list
+//
+// --theme dark or light sets the app's Appearance setting; without it the scenario decides (the
+// default follows the system, which headless Chrome reports as light).
 //
 // A scenario is a file in scripts/scenarios/ (see README there): its name is the file name.
 import { mkdirSync, readdirSync } from 'node:fs';
@@ -16,7 +19,7 @@ const scenarios = readdirSync(scenarioDir)
   .sort();
 
 const { values } = parseArgs({
-  options: { out: { type: 'string' }, scenario: { type: 'string', default: 'default' }, list: { type: 'boolean' } },
+  options: { out: { type: 'string' }, scenario: { type: 'string', default: 'default' }, theme: { type: 'string' }, list: { type: 'boolean' } },
 });
 
 if (values.list) {
@@ -32,10 +35,20 @@ if (!scenarios.includes(values.scenario)) {
   process.exit(2);
 }
 
+if (values.theme && !['dark', 'light'].includes(values.theme)) {
+  console.error('--theme is dark or light');
+  process.exit(2);
+}
+
 const scenario = await import(new URL(`${values.scenario}.mjs`, scenarioDir));
+let options = scenario.options;
+if (values.theme) {
+  const init = options?.init || {};
+  options = { ...options, init: { ...init, settings: { ...init.settings, theme: values.theme } } };
+}
 const browser = await launch();
 try {
-  const { page, errors } = await openApp(browser, scenario.options);
+  const { page, errors } = await openApp(browser, options);
   await scenario.default(page);
   // Let animation frames and the terminal settle before the picture.
   await sleep(500);

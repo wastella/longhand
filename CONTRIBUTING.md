@@ -43,7 +43,9 @@ The first build compiles the Rust dependencies and takes a few minutes. Later bu
 | `scripts/`                      | The headless-Chrome launcher and the preview command with its scenarios    |
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the pieces talk to each other, and
-[docs/DESIGN.md](docs/DESIGN.md) describes the design tokens and shared components.
+[docs/DESIGN.md](docs/DESIGN.md) describes the design tokens and shared components. Longhand has a
+dark and a light theme: a new colour token in `styles/tokens.css` must be defined for both, and a
+visual change should be looked at in both (`npm run preview -- --scenario kitchen-sink`).
 
 ## Checks
 

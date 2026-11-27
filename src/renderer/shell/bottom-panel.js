@@ -2,17 +2,33 @@
 // their own pane with addBottomPane.
 
 import { h, paneHead, spacer } from '../dom.js';
+import { runCommand } from './commands.js';
+import { icon } from './icons.js';
 import { showPanel } from './layout.js';
 
 const panes = new Map();
 let root;
 let head;
 let gap;
+let hideButton;
 
 export function mountBottomPanel(region) {
   root = region;
   gap = spacer();
-  head = paneHead(gap);
+  hideButton = h(
+    'button',
+    {
+      id: 'hide-bottom',
+      class: 'button ghost icon-button small',
+      'aria-label': 'Hide terminal and tests',
+      'data-tip': 'Hide',
+      'data-tip-command': 'toggle-bottom',
+      onclick: () => runCommand('toggle-bottom'),
+    },
+    icon('x', 'small'),
+  );
+  head = paneHead(gap, hideButton);
+  head.setAttribute('role', 'tablist');
   root.append(head);
 }
 
@@ -24,23 +40,29 @@ export function mountBottomPanel(region) {
  */
 export function addBottomPane({ name, label, body, actions, onShow }) {
   const first = panes.size === 0;
-  const tab = h('button', { class: 'tab-btn' + (first ? ' active' : ''), 'data-pane': name, onclick: () => showBottomPane(name) }, label);
+  const tab = h(
+    'button',
+    { class: 'tab-btn' + (first ? ' active' : ''), role: 'tab', 'aria-selected': String(first), 'data-pane': name, onclick: () => showBottomPane(name) },
+    label,
+  );
   gap.before(tab);
   body.hidden = !first;
   root.append(body);
   if (actions) {
     actions.hidden = !first;
-    head.append(actions);
+    hideButton.before(actions);
   }
   panes.set(name, { tab, body, actions, onShow });
 }
 
 /** Opens the bottom panel on the pane called `name`. */
 export function showBottomPane(name) {
+  if (!panes.has(name)) return;
   showPanel('bottom');
   for (const [paneName, pane] of panes) {
     const shown = paneName === name;
     pane.tab.classList.toggle('active', shown);
+    pane.tab.setAttribute('aria-selected', String(shown));
     pane.body.hidden = !shown;
     if (pane.actions) pane.actions.hidden = !shown;
   }

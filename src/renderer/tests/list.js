@@ -1,6 +1,7 @@
 // The left side of the test pane: where the run is, then the results grouped by file.
 
 import { emptyState, h } from '../dom.js';
+import { icon } from '../shell/icons.js';
 import { askTutorAbout } from '../tutor/index.js';
 import { clock, count, duration, failed, group, parseId, shortName, slow } from './model.js';
 
@@ -187,7 +188,7 @@ function groupRow(item, open, depth, on, targets) {
       title: item.key,
       onclick: toggle,
     },
-    h('span', { class: 'twist' }, open ? '▾' : '▸'),
+    h('span', { class: 'twist' }, icon(open ? 'chevron-down' : 'chevron-right', 'tiny')),
     h('span', { class: 'name' }, item.label),
     h('span', { class: 'tests-count' }, bad ? [h('span', { class: 'tests-fail' }, `${bad} failing`), ` of ${tests.length}`] : `${tests.length}`),
     h(

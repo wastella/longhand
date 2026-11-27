@@ -13,10 +13,11 @@ effects, and a web interface in the system webview that owns everything on scree
 ┌───────────────────▼────────────────────────────────────────────┴───────────────────┐
 │                              backend (src-tauri/src)                               │
 │  main.rs       start-up and command registration                                   │
-│  workspace.rs  the open folder, per-folder config, usage log, app state            │
+│  workspace.rs  the open folder, per-folder config, usage log                       │
+│  prefs.rs      app settings, recent folders, layout (app data directory)           │
 │  files.rs      file commands, in_workspace, quick open, find in files, watching    │
 │  menu.rs       the native menu; item ids become `menu` events                      │
-│  system.rs     confirm dialog, opening links, self-test result                     │
+│  system.rs     confirm dialog, opening links, window theme, self-test result       │
 │  term.rs       up to four login shells on pseudo-terminals                         │
 │  pytest.rs     `uv run pytest` → parsed results                                    │
 │  tutor.rs      `claude -p` with read-only tools → streamed answer                  │
@@ -29,21 +30,21 @@ effects, and a web interface in the system webview that owns everything on scree
 `#bottom`, `#tutor` and `#status`. `main.js` mounts each area into its region, then asks the
 backend for start-up state. Each area builds its own markup in its `mount()`.
 
-| Area        | Owns                                                                                                                                  |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `shell/`    | Layout and splitters, panel toggles, bottom panel tabs, title bar (usage, auth), status bar, welcome, text size, the command registry |
-| `editor/`   | CodeMirror setup and languages, tabs, saving, reloading files changed on disk, the unsaved-changes quit prompt                        |
-| `files/`    | File tree, its context menu and naming field, quick open, find in files, watching the folder                                          |
-| `terminal/` | xterm.js and the shell session                                                                                                        |
-| `tests/`    | Running pytest and showing results                                                                                                    |
-| `tutor/`    | The tutor engine client, conversation, lookup bar, hints, history and record, Markdown and math with the hidden-code check, setup     |
+| Area        | Owns                                                                                                                                                                                             |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `shell/`    | Layout and splitters, panel toggles, bottom panel tabs, title and status bars, welcome and folders, settings, theme, notifications, focus, shortcuts, the command registry and shared components |
+| `editor/`   | CodeMirror setup and languages, tabs, saving, reloading files changed on disk, the unsaved-changes quit prompt                                                                                   |
+| `files/`    | File tree, its context menu and naming field, quick open, find in files, watching the folder                                                                                                     |
+| `terminal/` | xterm.js and the shell session                                                                                                                                                                   |
+| `tests/`    | Running pytest and showing results                                                                                                                                                               |
+| `tutor/`    | The tutor engine client, conversation, lookup bar, hints, history and record, Markdown and math with the hidden-code check, setup                                                                |
 
 How areas talk to each other:
 
 - **Events** (`on`, `once`, `emit` in `state.js`) say what happened: `workspace:opened`,
   `editor:active`, `editor:cursor`, `tests:finished`, `tutor:finished`, `usage:changed`,
-  `auth:changed`, `panel:toggled`, `text-size:changed`. The list with payloads is at the top of
-  `state.js`.
+  `auth:changed`, `panel:toggled`, `text-size:changed`, `theme:changed`, `settings:changed`. The
+  list with payloads is at the top of `state.js`.
 - **Commands** (`registerCommand`, `runCommand` from `shell/`) are named actions. Menu items in
   `menu.rs` send their id as a `menu` event and `main.js` runs the command with that id, so an
   area adds a menu action by registering a command and adding the item in `menu.rs`.
@@ -343,6 +344,27 @@ stale, unreached, counts }`. A test's `id` is its pytest node id
   throw is caught and logged, so the panel cannot break the test pane or stop `tests:finished`.
   It returns a function that unregisters; calling it twice, or after another panel took over,
   does nothing. Only one panel can be registered at a time.
+
+## App settings
+
+App-wide data lives in the app data directory, handled in `prefs.rs`: `settings.json` holds the
+settings (an area adds one with `registerSetting` from `shell/`; the settings sheet lists them)
+and `state.json` the last folder, the recent folders and the panel layout. The window's size and
+position are kept by `tauri-plugin-window-state`. Every way of switching folder goes through
+`openFolder` in `shell/folders.js`: it checks the path is a folder (`folder_check`), then calls
+`confirmLeave('folder')`, then opens it, one at a time. The menu's Open Folder only asks the
+backend for a path (`workspace_choose`) and the interface opens it. Start-up never touches the
+recent folders on disk (an unplugged volume could stall the launch); the interface asks for the
+checked list (`recents_list`) once it is up.
+
+Quitting works the same way. Longhand > Quit is a menu item of ours: the interface runs
+`confirmLeave('quit')` and then calls `app_quit`. Closing the window (its button, or Window >
+Close Window, ⇧⌘W, ours too since the system's would take ⌘W from Close Tab) goes through the
+window's close-requested event, which the interface can cancel. Quit from the Dock and logging out
+are carried out by macOS without asking the app, so unsaved work is not protected there. Whichever
+way the app ends, `stop_processes` in `main.rs` runs once, from the window's `Destroyed` event or
+`RunEvent::Exit`, whichever comes first: it stops every terminal's session, the tutor's runs and
+its warm lookup process, and any test run (`pytest::shutdown`, which also removes the reporter).
 
 ## Per-folder data
 

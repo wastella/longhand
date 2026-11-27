@@ -1,28 +1,38 @@
-/* Design tokens. Every colour, size and radius in the other stylesheets comes from here; see
-   docs/DESIGN.md. Colours are roles, not hues, so a theme is one block that redefines them. */
+/* Design tokens. Every colour, size, radius and duration in the other stylesheets comes from
+   here; see docs/DESIGN.md. Colours are roles, not hues: each theme is one block that redefines
+   them, selected by data-theme on <html> (shell/theme.js). Any element can carry data-theme to
+   show a subtree in the other theme, which the kitchen-sink preview uses. */
 
-/* Colour roles: the dark theme. A light theme would redefine these, and only these, under its own selector. */
-:root {
+/* Colour roles: the dark theme, which is also what shows before a theme is chosen. */
+:root,
+[data-theme='dark'] {
   color-scheme: dark;
 
   --color-surface: #1c1d21; /* the editor, terminal and bottom panel */
   --color-surface-raised: #222329; /* side panels and the tab bar */
   --color-surface-hover: #2a2c33; /* hovered or selected rows, buttons, user messages */
   --color-surface-sunken: #17181b; /* code blocks in tutor answers */
+  --color-surface-overlay: #2a2c33; /* menus, sheets and notifications floating above the layout */
+  --color-overlay-hover: #373a45; /* the highlighted row in a list on an overlay (the palette) */
   --color-border: #33353d;
-  --color-border-strong: #4a4d58; /* a hovered button's border */
-  --color-border-overlay: #454853; /* menus floating above the layout */
+  --color-border-control: #6b6f7b; /* the edge of a button, field or select: 3:1 on the panels */
+  --color-border-strong: #4a4d58; /* a separator that needs more weight than --color-border */
+  --color-border-overlay: #454853; /* the edge of anything floating */
   --color-text: #d7d9de;
   --color-text-strong: #fff; /* the selected file in the tree */
   --color-text-secondary: #c3c6cf; /* folder names, test output */
-  --color-text-muted: #8a8d98; /* labels, hints, secondary information */
-  --color-accent: #d9a35b; /* the one accent: primary actions, focus, unsaved marks */
+  --color-text-muted: #9295a1; /* labels, hints, secondary information */
+  --color-accent: #d9a35b; /* the one accent: primary actions, focus, unsaved marks, links */
+  --color-accent-soft: rgba(217, 163, 91, 0.14); /* behind accent text: a badge, a highlighted match */
   --color-on-accent: #1c1d21; /* text on an accent background */
   --color-success: #7fbf7f;
   --color-danger: #e07a7a;
+  --color-danger-soft: rgba(224, 122, 122, 0.13);
   --color-warning: #d9c05b;
   --color-selection: #3d4150; /* selected text in the terminal */
   --color-scrollbar: #3a3c45;
+  --color-switch-knob: #f4f5f7;
+  --color-backdrop: rgba(0, 0, 0, 0.38); /* behind a sheet */
   --focus-ring-color: var(--color-accent);
 
   /* The terminal's 16 ANSI colours, tuned to read on --color-surface. "Black" is a grey that
@@ -53,9 +63,9 @@
   --color-code-number: #e2a088; /* numbers, True/False/None, self */
   --color-code-function: #8fb8e6; /* names being defined or called */
   --color-code-type: #7fc4b8; /* class names */
-  --color-code-comment: #6e727e;
+  --color-code-comment: #82868f; /* 4.5:1 on the surface */
   --color-code-punctuation: #9a9ea9; /* operators, brackets, decorators */
-  --color-code-line-number: #565964;
+  --color-code-line-number: #6a6d78; /* 3:1: a guide beside the text, not text to read */
   --color-code-active-line: rgba(255, 255, 255, 0.025);
   --color-code-selection-match: rgba(255, 255, 255, 0.07); /* other copies of the selected text */
   --color-code-bracket: rgba(255, 255, 255, 0.14); /* the bracket matching the one at the cursor */
@@ -64,19 +74,93 @@
   --color-note-mark: rgba(217, 163, 91, 0.5); /* a tutor note's bar in the gutter */
   --color-note-tint: rgba(217, 163, 91, 0.045); /* the lines a note is about */
   --color-note-tint-open: rgba(217, 163, 91, 0.085);
+  --shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.3); /* the switch knob */
+}
+
+/* Colour roles: the light theme. Same roles, tuned so every pairing keeps its contrast ratio
+   (the ratios are listed in docs/DESIGN.md). The accent is a deeper amber so it reads as text. */
+[data-theme='light'] {
+  color-scheme: light;
+
+  --color-surface: #ffffff;
+  --color-surface-raised: #f5f5f7;
+  --color-surface-hover: #e9eaee;
+  --color-surface-sunken: #f2f3f5;
+  --color-surface-overlay: #ffffff;
+  --color-overlay-hover: #ebecf0;
+  --color-border: #dfe0e5;
+  --color-border-control: #868a95;
+  --color-border-strong: #b5b8c2;
+  --color-border-overlay: #d0d2d9;
+  --color-text: #24262c;
+  --color-text-strong: #000;
+  --color-text-secondary: #3b3e47;
+  --color-text-muted: #666974;
+  --color-accent: #9a5b06;
+  --color-accent-soft: rgba(154, 91, 6, 0.11);
+  --color-on-accent: #ffffff;
+  --color-success: #2b7a36;
+  --color-danger: #c0392f;
+  --color-danger-soft: rgba(192, 57, 47, 0.1);
+  --color-warning: #8a6a00;
+  --color-selection: #cdd7ec;
+  --color-scrollbar: #c6c8cf;
+  --color-switch-knob: #ffffff;
+  --color-backdrop: rgba(30, 32, 40, 0.2);
+  --focus-ring-color: var(--color-accent);
+  --shadow-overlay: 0 8px 24px rgba(20, 22, 30, 0.16), 0 0 0 1px rgba(20, 22, 30, 0.04);
+  --shadow-knob: 0 1px 2px rgba(20, 22, 30, 0.25);
+
+  /* The terminal's ANSI colours on a white surface. "White" and bright white are greys dark
+     enough to read, since programs print them as ordinary text; black is the text colour. */
+  --color-ansi-black: #24262c;
+  --color-ansi-red: #b8312b;
+  --color-ansi-green: #2b7a36;
+  --color-ansi-yellow: #845f00;
+  --color-ansi-blue: #2459b0;
+  --color-ansi-magenta: #8a3ab0;
+  --color-ansi-cyan: #0d6f78;
+  --color-ansi-white: #61656f;
+  --color-ansi-bright-black: #5f636d;
+  --color-ansi-bright-red: #d0392f;
+  --color-ansi-bright-green: #2c8039;
+  --color-ansi-bright-yellow: #946c00;
+  --color-ansi-bright-blue: #2f6ad0;
+  --color-ansi-bright-magenta: #9c46c6;
+  --color-ansi-bright-cyan: #0f7c86;
+  --color-ansi-bright-white: #474a53;
+
+  /* Code: the same hues as the dark theme, deep enough to read on white and on the tutor's
+     sunken code blocks. */
+  --color-code-keyword: #7d3eb0;
+  --color-code-string: #3f7120;
+  --color-code-number: #a3461f;
+  --color-code-function: #23609f;
+  --color-code-type: #146f66;
+  --color-code-comment: #6a6e78;
+  --color-code-punctuation: #575b65;
+  --color-code-line-number: #8d919b;
+  --color-code-active-line: rgba(20, 22, 30, 0.03);
+  --color-code-selection-match: rgba(20, 22, 30, 0.07);
+  --color-code-bracket: rgba(20, 22, 30, 0.13);
+  --color-code-match: rgba(214, 170, 0, 0.22);
+  --color-code-match-current: rgba(214, 170, 0, 0.45);
+  --color-note-mark: rgba(154, 91, 6, 0.55);
+  --color-note-tint: rgba(154, 91, 6, 0.05);
+  --color-note-tint-open: rgba(154, 91, 6, 0.1);
 }
 
 :root {
   /* Type */
   --font-ui: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
-  --code-size: 13px; /* set at run time by View > Bigger Text / Smaller Text */
+  --code-size: 13px; /* set at run time by the Text size setting */
   --text-2xs: 9px; /* disclosure triangles */
   --text-xs: 11px; /* pane headers, hints, small buttons */
   --text-mono-sm: 11.5px; /* monospace beside --text-xs prose */
   --text-sm: 12px; /* secondary text, test output, inline code */
   --text-md: 13px; /* body */
-  --text-lg: 14px; /* section headings inside a pane */
+  --text-lg: 14px; /* section headings inside a pane, sheet titles */
   --text-display: 26px; /* the welcome screen's title */
   --leading-ui: 1.45;
   --leading-output: 1.5; /* monospace output such as test tracebacks */
@@ -96,6 +180,8 @@
   --space-8: 16px;
   --space-9: 18px;
   --space-10: 20px;
+  --space-12: 24px;
+  --space-16: 32px;
 
   /* Radii */
   --radius-xs: 3px;
@@ -103,8 +189,24 @@
   --radius-md: 5px; /* buttons and inputs */
   --radius-lg: 6px;
   --radius-xl: 7px; /* menus and the question box */
-  --radius-2xl: 8px;
+  --radius-2xl: 8px; /* notifications */
+  --radius-3xl: 10px; /* sheets and the palette */
   --radius-round: 50%;
+
+  /* Controls */
+  --control-height-sm: 20px;
+  --control-height: 24px;
+  --control-height-lg: 30px;
+  --icon-size: 16px;
+  --icon-size-sm: 14px;
+  --icon-size-xs: 12px; /* disclosure chevrons and close marks inside tabs and chips */
+  --icon-stroke: 1.75;
+
+  /* Motion: short and only for things appearing or changing state. Both drop to zero when the
+     system asks for reduced motion. */
+  --duration-fast: 100ms; /* hover and pressed colours */
+  --duration-normal: 160ms; /* sheets, notifications and menus appearing */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
 
   /* Layout */
   --titlebar-height: 38px;
@@ -113,11 +215,23 @@
   --tab-bar-height: 32px;
   --status-height: 24px;
   --row-height: 23px; /* a file tree row */
-  --files-width: 220px;
+  --files-width: 220px; /* defaults; the student's own sizes are set inline by shell/layout.js */
   --tutor-width: 400px;
   --palette-width: 560px; /* quick open and other lookups */
   --bottom-height: 240px;
-  --splitter-size: 5px;
+  --splitter-hit: 9px; /* the draggable width around a splitter's 1px line */
+  --sheet-width: 460px;
+  --notice-width: 340px;
   --z-splitter: 5;
-  --z-overlay: 50;
+  --z-overlay: 50; /* menus */
+  --z-sheet: 60;
+  --z-notice: 70;
+  --z-tooltip: 80;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-normal: 0ms;
+  }
 }

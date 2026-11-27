@@ -8,7 +8,8 @@
   </head>
   <body>
     <!-- Root regions only. Each area builds its own content into its region (see src/renderer/main.js). -->
-    <header id="titlebar" data-tauri-drag-region></header>
+    <!-- The whole title bar drags the window; Tauri leaves its buttons out of the drag. -->
+    <header id="titlebar" data-tauri-drag-region="deep"></header>
     <main id="app">
       <aside id="files"></aside>
       <div class="split-v" data-target="files"></div>

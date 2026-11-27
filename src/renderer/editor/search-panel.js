@@ -14,6 +14,7 @@ import {
   setSearchQuery,
 } from '@codemirror/search';
 import { h } from '../dom.js';
+import { icon } from '../shell/icons.js';
 
 // Counting stops here, so a one-letter search in a large file stays instant.
 const MAX_COUNTED = 1000;
@@ -70,7 +71,7 @@ export function createSearchPanel(view) {
   const expand = h(
     'button',
     { class: 'ghost search-expand', type: 'button', title: 'Replace (⌘⌥F)', 'aria-label': 'Show replace', 'aria-expanded': 'false' },
-    '›',
+    icon('chevron-right', 'small'),
   );
   const replaceRow = h(
     'div',
@@ -93,7 +94,7 @@ export function createSearchPanel(view) {
       count,
       action('↑', 'Previous match (⇧Enter)', findPrevious),
       action('↓', 'Next match (Enter)', findNext),
-      action('×', 'Close (Esc)', closeSearchPanel),
+      action(icon('x', 'small'), 'Close (Esc)', closeSearchPanel),
     ),
     replaceRow,
   );

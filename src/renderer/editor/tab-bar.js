@@ -1,6 +1,7 @@
 // The row of tabs above the editor, one per open file.
 
 import { h } from '../dom.js';
+import { icon } from '../shell/icons.js';
 
 /**
  * For each path, the file name and, when another open file has the same name, as much of its
@@ -51,7 +52,7 @@ export function renderTabBar(host, { docs, active }, { onSelect, onClose }) {
         title: 'Close (⌘W)',
         onclick: (e) => (e.stopPropagation(), onClose(path)),
       },
-      h('span', {}, '×'),
+      h('span', {}, icon('x', 'tiny')),
     );
     const classes = ['tab', path === active && 'active', doc.dirty && 'dirty', doc.banner && 'attention', doc.kind === 'notice' && 'notice'];
     return h(

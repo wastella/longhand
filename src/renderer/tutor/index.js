@@ -4,8 +4,8 @@
 
 import { invoke } from '../backend.js';
 import { h, paneHead, spacer } from '../dom.js';
-import { on, state } from '../state.js';
-import { registerCommand, showPanel, showStatus } from '../shell/index.js';
+import { emit, on, state } from '../state.js';
+import { registerCommand, registerFocusTarget, showPanel, showStatus } from '../shell/index.js';
 import { attach, form, input, renderChips, showCursor } from './composer.js';
 import { chat, newConversation, resumeLatest, setupConversation } from './conversation.js';
 import { closeLadder, ladder } from './hints.js';
@@ -50,6 +50,7 @@ function showPolicy() {
 async function changePolicy(value) {
   if (!state.workspace || value === state.config.policy) return;
   state.config = await invoke('config_set', { patch: { policy: value } });
+  emit('config:changed', state.config);
   showPolicy();
   newConversation();
   showStatus(`Tutor policy set to ${POLICIES[value].label}; started a new conversation`);
@@ -116,6 +117,8 @@ export function mount(region) {
   renderChips();
   region.addEventListener('keydown', (e) => e.key === 'Escape' && view !== 'chat' && showView('chat'));
 
+  // View > Go to Tutor (⌘4): the question box, or the setup steps' button while not connected.
+  registerFocusTarget('tutor', () => [input, setupBox.querySelector('button')].find((node) => node?.offsetParent) || null);
   registerCommand('ask-selection', explainSelection);
   registerCommand('review-file', reviewFile);
   registerCommand('new-conversation', startNewConversation);
