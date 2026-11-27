@@ -451,7 +451,7 @@ mod tests {
     fn the_eval_runner_uses_the_apps_configuration() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../evals");
         let fixture = root.join("fixture");
-        let kinds = [Kind::Conversation, Kind::Lookup];
+        let kinds = [Kind::Conversation, Kind::Lookup, Kind::Review, Kind::Failure];
         let mut args = json!({});
         let mut prompts = json!({});
         for kind in kinds {

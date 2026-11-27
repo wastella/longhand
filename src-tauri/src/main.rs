@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod documents;
+mod feedback;
 mod files;
 mod menu;
 mod prefs;
@@ -136,6 +137,9 @@ fn main() {
             tutor::tutor_threads,
             tutor::tutor_thread,
             tutor::tutor_record,
+            // Feedback: the tutor's margin notes, kept per folder (feedback.rs).
+            feedback::feedback_notes_load,
+            feedback::feedback_notes_save,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start Longhand")
