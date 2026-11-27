@@ -1,0 +1,34 @@
+name: Tutor behaviour
+description: The tutor gave away too much, refused something reasonable, or was wrong
+labels: [tutor]
+body:
+  - type: dropdown
+    attributes:
+      label: What went wrong
+      options:
+        - It wrote code or a solution it should not have
+        - It refused or deflected something a TA would answer
+        - It said something incorrect
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Policy
+      options: [Strict, Guided]
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What you asked
+      description: The question as you typed it. Remove anything you do not want public.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What it said
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Did the folder have an AGENTS.md or CLAUDE.md?

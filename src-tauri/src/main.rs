@@ -11,11 +11,22 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, State, TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 const IGNORED: &[&str] = &[
-    ".git", ".venv", "venv", "__pycache__", "node_modules", ".pytest_cache", ".ruff_cache",
-    ".mypy_cache", ".longhand", ".DS_Store", "wandb", ".ipynb_checkpoints", "target",
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "node_modules",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".mypy_cache",
+    ".longhand",
+    ".DS_Store",
+    "wandb",
+    ".ipynb_checkpoints",
+    "target",
 ];
 const MAX_FILE_BYTES: u64 = 3 * 1024 * 1024;
 
@@ -67,10 +78,7 @@ fn app_state_path(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_data_dir().ok().map(|d| d.join("state.json"))
 }
 fn load_app_state(app: &AppHandle) -> Value {
-    app_state_path(app)
-        .and_then(|p| fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| json!({}))
+    app_state_path(app).and_then(|p| fs::read_to_string(p).ok()).and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_else(|| json!({}))
 }
 fn save_last_workspace(app: &AppHandle, ws: &Path) {
     if let Some(p) = app_state_path(app) {
@@ -82,9 +90,8 @@ fn save_last_workspace(app: &AppHandle, ws: &Path) {
 pub fn read_config(ws: &Path) -> Value {
     let default_policy = if tutor::read_course_rules(ws).is_some() { "strict" } else { "guided" };
     let mut cfg = json!({ "policy": default_policy, "model": "sonnet" });
-    if let Some(Value::Object(saved)) = fs::read_to_string(ws.join(".longhand/config.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
+    if let Some(Value::Object(saved)) =
+        fs::read_to_string(ws.join(".longhand/config.json")).ok().and_then(|s| serde_json::from_str(&s).ok())
     {
         for (k, v) in saved {
             cfg[k] = v;
@@ -205,7 +212,7 @@ fn fs_list(state: State<AppState>, rel: String) -> R<Vec<Value>> {
         .flatten()
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().to_string();
-            if IGNORED.contains(&name.as_str()) || name.ends_with(".pyc") {
+            if is_ignored(&name) {
                 return None;
             }
             Some((e.path().is_dir(), name))
@@ -213,10 +220,7 @@ fn fs_list(state: State<AppState>, rel: String) -> R<Vec<Value>> {
         .collect();
     entries.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.to_lowercase().cmp(&b.1.to_lowercase())));
     let prefix = if rel.is_empty() || rel == "." { String::new() } else { format!("{}/", rel.trim_end_matches('/')) };
-    Ok(entries
-        .into_iter()
-        .map(|(is_dir, name)| json!({ "path": format!("{prefix}{name}"), "name": name, "dir": is_dir }))
-        .collect())
+    Ok(entries.into_iter().map(|(is_dir, name)| json!({ "path": format!("{prefix}{name}"), "name": name, "dir": is_dir })).collect())
 }
 
 fn mtime_ms(p: &Path) -> f64 {
@@ -271,11 +275,91 @@ fn fs_create(state: State<AppState>, rel: String, dir: bool) -> R<()> {
 }
 
 #[tauri::command]
+fn fs_rename(state: State<AppState>, from: String, to: String) -> R<()> {
+    let src = in_workspace(&state, &from)?;
+    let dst = in_workspace(&state, &to)?;
+    if dst.exists() {
+        return Err("Something with that name already exists".into());
+    }
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent).map_err(err)?;
+    }
+    fs::rename(src, dst).map_err(err)
+}
+
+/// Deleting from the file tree moves the item to the system Trash, so it can be recovered.
+#[tauri::command]
+fn fs_trash(state: State<AppState>, rel: String) -> R<()> {
+    let p = in_workspace(&state, &rel)?;
+    if p == workspace(&state)? {
+        return Err("The open folder itself cannot be deleted from here".into());
+    }
+    trash::delete(p).map_err(err)
+}
+
+fn is_ignored(name: &str) -> bool {
+    IGNORED.contains(&name) || name.ends_with(".pyc")
+}
+
+/// Case-insensitive text search across the folder's source files.
+#[tauri::command]
+async fn fs_search(state: State<'_, AppState>, query: String) -> R<Value> {
+    const MAX_HITS: usize = 300;
+    const MAX_SEARCH_BYTES: u64 = 1024 * 1024;
+    let ws = workspace(&state)?;
+    let needle = query.to_lowercase();
+    let mut hits = Vec::new();
+    let mut truncated = false;
+    if needle.trim().is_empty() {
+        return Ok(json!({ "hits": hits, "truncated": false }));
+    }
+    let mut stack = vec![ws.clone()];
+    'walk: while let Some(dir) = stack.pop() {
+        let Ok(read) = fs::read_dir(&dir) else { continue };
+        let mut entries: Vec<_> = read.flatten().collect();
+        entries.sort_by_key(|e| e.file_name());
+        for e in entries {
+            let name = e.file_name().to_string_lossy().to_string();
+            if is_ignored(&name) {
+                continue;
+            }
+            let Ok(kind) = e.file_type() else { continue };
+            if kind.is_dir() {
+                stack.push(e.path());
+                continue;
+            }
+            if !kind.is_file() || e.metadata().map(|m| m.len() > MAX_SEARCH_BYTES).unwrap_or(true) {
+                continue;
+            }
+            let Ok(text) = fs::read_to_string(e.path()) else { continue };
+            let rel = e.path().strip_prefix(&ws).unwrap_or(&e.path()).to_string_lossy().to_string();
+            for (i, line) in text.lines().enumerate() {
+                if line.to_lowercase().contains(&needle) {
+                    if hits.len() >= MAX_HITS {
+                        truncated = true;
+                        break 'walk;
+                    }
+                    let shown: String = line.trim().chars().take(200).collect();
+                    hits.push(json!({ "path": rel, "line": i + 1, "text": shown }));
+                }
+            }
+        }
+    }
+    Ok(json!({ "hits": hits, "truncated": truncated }))
+}
+
+#[tauri::command]
+async fn confirm(app: AppHandle, message: String, action: String) -> bool {
+    app.dialog().message(message).title("Longhand").buttons(MessageDialogButtons::OkCancelCustom(action, "Cancel".into())).blocking_show()
+}
+
+#[tauri::command]
 fn open_external(url: String) -> R<()> {
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         return Err("Only web links can be opened".into());
     }
-    std::process::Command::new("open").arg(url).spawn().map(|_| ()).map_err(err)
+    let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    std::process::Command::new(opener).arg(url).spawn().map(|_| ()).map_err(err)
 }
 
 #[tauri::command]
@@ -316,19 +400,26 @@ fn smoke_result(app: AppHandle, result: Value) {
 
 fn build_menu(app: &tauri::App) -> tauri::Result<()> {
     let item = |id: &str, label: &str, key: &str| MenuItemBuilder::with_id(id, label).accelerator(key).build(app);
-    let app_menu = SubmenuBuilder::new(app, "Longhand").about(None).separator().hide().hide_others().show_all().separator().quit().build()?;
+    let app_menu =
+        SubmenuBuilder::new(app, "Longhand").about(None).separator().hide().hide_others().show_all().separator().quit().build()?;
     let file = SubmenuBuilder::new(app, "File")
         .item(&item("open-folder", "Open Folder…", "CmdOrCtrl+O")?)
         .item(&item("new-file", "New File…", "CmdOrCtrl+N")?)
         .separator()
         .item(&item("save", "Save", "CmdOrCtrl+S")?)
         .item(&item("close-tab", "Close Tab", "CmdOrCtrl+W")?)
+        .separator()
+        .item(&item("find-in-files", "Find in Files…", "CmdOrCtrl+Shift+F")?)
         .build()?;
     let edit = SubmenuBuilder::new(app, "Edit").undo().redo().separator().cut().copy().paste().select_all().build()?;
     let view = SubmenuBuilder::new(app, "View")
         .item(&item("toggle-files", "Toggle Files", "CmdOrCtrl+B")?)
         .item(&item("toggle-bottom", "Toggle Terminal", "CmdOrCtrl+J")?)
         .item(&item("toggle-tutor", "Toggle Tutor", "CmdOrCtrl+L")?)
+        .separator()
+        .item(&item("zoom-in", "Bigger Text", "CmdOrCtrl+=")?)
+        .item(&item("zoom-out", "Smaller Text", "CmdOrCtrl+-")?)
+        .item(&item("zoom-reset", "Default Text Size", "CmdOrCtrl+0")?)
         .separator()
         .fullscreen()
         .build()?;
@@ -397,12 +488,113 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            app_init, auth_status, workspace_choose, workspace_open, fs_list, fs_read, fs_write, fs_mtime,
-            fs_create, open_external, config_set, log_record, log_summary, smoke_result,
-            term::term_start, term::term_input, term::term_resize,
-            pytest::tests_run, pytest::tests_cancel,
-            tutor::tutor_ask, tutor::tutor_cancel, tutor::tutor_reset,
+            app_init,
+            auth_status,
+            workspace_choose,
+            workspace_open,
+            fs_list,
+            fs_read,
+            fs_write,
+            fs_mtime,
+            fs_create,
+            fs_rename,
+            fs_trash,
+            fs_search,
+            confirm,
+            open_external,
+            config_set,
+            log_record,
+            log_summary,
+            smoke_result,
+            term::term_start,
+            term::term_input,
+            term::term_resize,
+            pytest::tests_run,
+            pytest::tests_cancel,
+            tutor::tutor_ask,
+            tutor::tutor_cancel,
+            tutor::tutor_reset,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start Longhand");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_for(dir: &Path) -> AppState {
+        let state = AppState::default();
+        *state.workspace.lock().unwrap() = Some(dir.canonicalize().unwrap());
+        state
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("longhand-test-{name}-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn paths_stay_inside_the_workspace() {
+        let root = temp_dir("paths");
+        let ws = root.join("ws");
+        fs::create_dir_all(ws.join("pkg")).unwrap();
+        fs::write(root.join("secret.txt"), "x").unwrap();
+        let state = state_for(&ws);
+
+        assert!(in_workspace(&state, "pkg/new_file.py").is_ok());
+        assert!(in_workspace(&state, "./pkg").is_ok());
+        assert!(in_workspace(&state, "").is_ok());
+        assert!(in_workspace(&state, "../secret.txt").is_err());
+        assert!(in_workspace(&state, "pkg/../../secret.txt").is_err());
+        assert!(in_workspace(&state, "/etc/passwd").is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_cannot_lead_outside() {
+        let root = temp_dir("links");
+        let ws = root.join("ws");
+        fs::create_dir_all(&ws).unwrap();
+        fs::create_dir_all(root.join("outside")).unwrap();
+        std::os::unix::fs::symlink(root.join("outside"), ws.join("link")).unwrap();
+        let state = state_for(&ws);
+
+        assert!(in_workspace(&state, "link/file.txt").is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn no_folder_open_is_an_error() {
+        assert!(in_workspace(&AppState::default(), "a.py").is_err());
+    }
+
+    #[test]
+    fn course_rules_make_strict_the_default_policy() {
+        let ws = temp_dir("policy");
+        assert_eq!(read_config(&ws)["policy"], "guided");
+        fs::write(ws.join("AGENTS.md"), "Act as a teaching assistant.").unwrap();
+        assert_eq!(read_config(&ws)["policy"], "strict");
+        // A saved choice wins over the default.
+        fs::create_dir_all(ws.join(".longhand")).unwrap();
+        fs::write(ws.join(".longhand/config.json"), r#"{"policy":"guided"}"#).unwrap();
+        assert_eq!(read_config(&ws)["policy"], "guided");
+        assert_eq!(read_config(&ws)["model"], "sonnet");
+        fs::remove_dir_all(ws).unwrap();
+    }
+
+    #[test]
+    fn log_counts_questions_reveals_and_test_runs() {
+        let ws = temp_dir("log");
+        log_event(&ws, "ask", json!({ "about": "question" }));
+        log_event(&ws, "ask", json!({ "about": "review" }));
+        log_event(&ws, "reveal", json!({ "lines": 4 }));
+        log_event(&ws, "config", json!({ "policy": "guided" }));
+        let summary = log_summary_for(&ws);
+        assert_eq!(summary["today"], json!({ "ask": 2, "reveal": 1, "tests": 0 }));
+        assert_eq!(summary["total"]["ask"], 2);
+        fs::remove_dir_all(ws).unwrap();
+    }
 }

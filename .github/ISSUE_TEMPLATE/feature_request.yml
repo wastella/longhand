@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest something Longhand should do
+labels: [enhancement]
+body:
+  - type: textarea
+    attributes:
+      label: What you were trying to do
+      description: The situation, before any proposed solution.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What would help
+  - type: checkboxes
+    attributes:
+      label: Scope
+      options:
+        - label: I have read the "What fits" section of CONTRIBUTING.md
+          required: true

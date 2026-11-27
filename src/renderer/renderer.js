@@ -16,6 +16,7 @@ import DOMPurify from 'dompurify';
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const $ = (sel) => document.querySelector(sel);
+const confirmAction = (message, action) => invoke('confirm', { message, action });
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -99,7 +100,7 @@ function updateCursor() {
   $('#context-chip').textContent = chip;
 }
 
-async function openFile(path) {
+async function openFile(path, line) {
   if (!app.tabs.has(path)) {
     let r;
     try {
@@ -111,6 +112,41 @@ async function openFile(path) {
     app.tabs.set(path, { state: makeState(path, r.text), dirty: false, mtime: r.mtime });
   }
   activate(path);
+  if (line) {
+    const at = app.view.state.doc.line(Math.min(line, app.view.state.doc.lines));
+    app.view.dispatch({ selection: { anchor: at.from }, effects: EditorView.scrollIntoView(at.from, { y: 'center' }) });
+  }
+}
+
+// Pick up edits made outside the editor (git, a formatter) when the window regains focus.
+async function refreshFromDisk() {
+  if (!app.ws) return;
+  for (const [path, tab] of app.tabs) {
+    let onDisk;
+    try {
+      onDisk = await invoke('fs_mtime', { rel: path });
+    } catch {
+      continue;
+    }
+    if (!onDisk || onDisk <= tab.mtime + 1) continue;
+    if (tab.dirty) {
+      status(`${path} also changed on disk; saving will ask before overwriting`, 8000);
+      continue;
+    }
+    const r = await invoke('fs_read', { rel: path }).catch(() => null);
+    if (!r || r.text == null) continue;
+    tab.mtime = r.mtime;
+    if (path === app.active) {
+      tab.state = app.view.state;
+      if (tab.state.doc.toString() !== r.text) {
+        app.view.dispatch({ changes: { from: 0, to: tab.state.doc.length, insert: r.text } });
+        tab.state = app.view.state;
+      }
+    } else tab.state = makeState(path, r.text);
+    tab.dirty = false;
+  }
+  renderTabs();
+  renderTree();
 }
 
 function activate(path) {
@@ -128,10 +164,10 @@ function activate(path) {
   updateCursor();
 }
 
-function closeTab(path) {
+async function closeTab(path, force = false) {
   const tab = app.tabs.get(path);
   if (!tab) return;
-  if (tab.dirty && !window.confirm(`${path} has unsaved changes. Close it anyway?`)) return;
+  if (tab.dirty && !force && !(await confirmAction(`${path} has unsaved changes. Close it without saving?`, 'Close Without Saving'))) return;
   const order = [...app.tabs.keys()];
   const i = order.indexOf(path);
   app.tabs.delete(path);
@@ -155,7 +191,8 @@ async function save(path = app.active) {
   if (path === app.active) tab.state = app.view.state;
   try {
     const onDisk = await invoke('fs_mtime', { rel: path });
-    if (onDisk > tab.mtime + 1 && !window.confirm(`${path} changed on disk since you opened it. Overwrite it with your version?`)) return false;
+    if (onDisk > tab.mtime + 1 && !(await confirmAction(`${path} changed on disk since you opened it. Overwrite it with your version?`, 'Overwrite')))
+      return false;
     const r = await invoke('fs_write', { rel: path, text: tab.state.doc.toString() });
     tab.mtime = r.mtime;
     markDirty(path, false);
@@ -204,6 +241,7 @@ async function renderTree() {
           renderTree();
         } else openFile(e.path);
       };
+      row.oncontextmenu = (ev) => (ev.preventDefault(), treeMenu(ev, e));
       frag.append(row);
       if (e.dir && app.expanded.has(e.path)) await walk(e.path, depth + 1);
     }
@@ -217,39 +255,167 @@ function highlightTree() {
   for (const n of document.querySelectorAll('#tree .node')) n.classList.toggle('active', n.dataset.path === app.active);
 }
 
-function newFile() {
-  if (!app.ws || $('#tree .new-name')) return;
+// A one-line text field inside the file tree, used for naming new and renamed items.
+function treeInput(initial, select, onDone) {
+  const old = $('#tree .new-name');
+  if (old) old.remove();
   $('#files').hidden = false;
-  const base = app.active && app.active.includes('/') ? app.active.slice(0, app.active.lastIndexOf('/') + 1) : '';
+  showSidebar('tree');
   const input = el('input', 'new-name');
-  input.value = base;
-  input.placeholder = 'path/to/file.py';
+  input.value = initial;
+  input.placeholder = 'path/to/name';
   input.spellcheck = false;
   $('#tree').prepend(input);
   input.focus();
-  input.setSelectionRange(base.length, base.length);
+  input.setSelectionRange(select[0], select[1]);
   let done = false;
-  const finish = async (create) => {
+  const finish = (commit) => {
     if (done) return;
     done = true;
-    const name = input.value.trim().replace(/^\/+/, '');
+    const name = input.value.trim().replace(/^\/+|\/+$/g, '');
     input.remove();
-    if (!create || !name || name.endsWith('/')) return;
-    try {
-      await invoke('fs_create', { rel: name, dir: false });
-      const parts = name.split('/').slice(0, -1);
-      parts.forEach((_, i) => app.expanded.add(parts.slice(0, i + 1).join('/')));
-      await renderTree();
-      openFile(name);
-    } catch (e) {
-      status(String(e));
-    }
+    if (commit && name) onDone(name).catch((e) => status(String(e), 8000));
   };
   input.onkeydown = (e) => {
     if (e.key === 'Enter') finish(true);
     else if (e.key === 'Escape') finish(false);
   };
   input.onblur = () => finish(false);
+}
+
+function expandTo(path) {
+  const parts = path.split('/').slice(0, -1);
+  parts.forEach((_, i) => app.expanded.add(parts.slice(0, i + 1).join('/')));
+}
+
+function newFile(dir) {
+  if (!app.ws) return;
+  const base =
+    typeof dir === 'string' ? (dir ? dir + '/' : '') : app.active && app.active.includes('/') ? app.active.slice(0, app.active.lastIndexOf('/') + 1) : '';
+  treeInput(base, [base.length, base.length], async (name) => {
+    await invoke('fs_create', { rel: name, dir: false });
+    expandTo(name);
+    await renderTree();
+    openFile(name);
+  });
+}
+
+function newFolder(dir) {
+  const base = dir ? dir + '/' : '';
+  treeInput(base, [base.length, base.length], async (name) => {
+    await invoke('fs_create', { rel: name, dir: true });
+    expandTo(name + '/x');
+    await renderTree();
+  });
+}
+
+function renameEntry(entry) {
+  const start = entry.path.lastIndexOf('/') + 1;
+  treeInput(entry.path, [start, entry.path.length], async (to) => {
+    if (to === entry.path) return;
+    for (const [path, tab] of app.tabs) if (tab.dirty && (path === entry.path || path.startsWith(entry.path + '/'))) await save(path);
+    await invoke('fs_rename', { from: entry.path, to });
+    // Keep open tabs pointing at the moved files.
+    const moved = new Map();
+    for (const [path, tab] of app.tabs) {
+      const next = path === entry.path ? to : path.startsWith(entry.path + '/') ? to + path.slice(entry.path.length) : path;
+      if (path === app.active && app.view) tab.state = app.view.state;
+      moved.set(next, next === path ? tab : { ...tab, state: makeState(next, tab.state.doc.toString()) });
+      if (path === app.active) app.active = next;
+    }
+    app.tabs = moved;
+    if (app.active) activate(app.active);
+    expandTo(to);
+    await renderTree();
+  });
+}
+
+async function trashEntry(entry) {
+  const what = entry.dir ? `the folder ${entry.path} and everything in it` : entry.path;
+  if (!(await confirmAction(`Move ${what} to the Trash?`, 'Move to Trash'))) return;
+  try {
+    await invoke('fs_trash', { rel: entry.path });
+  } catch (e) {
+    return status(String(e), 8000);
+  }
+  for (const path of [...app.tabs.keys()]) if (path === entry.path || path.startsWith(entry.path + '/')) await closeTab(path, true);
+  renderTree();
+}
+
+function treeMenu(ev, entry) {
+  closeMenus();
+  const menu = el('div', 'ctx-menu');
+  const dir = entry.dir ? entry.path : entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
+  const items = [
+    ['New File…', () => newFile(dir)],
+    ['New Folder…', () => newFolder(dir)],
+    null,
+    ['Rename…', () => renameEntry(entry)],
+    ['Move to Trash', () => trashEntry(entry)],
+  ];
+  for (const it of items) {
+    if (!it) {
+      menu.append(el('hr'));
+      continue;
+    }
+    const row = el('div', 'ctx-item', it[0]);
+    row.onclick = () => (closeMenus(), it[1]());
+    menu.append(row);
+  }
+  document.body.append(menu);
+  menu.style.left = Math.min(ev.clientX, innerWidth - menu.offsetWidth - 8) + 'px';
+  menu.style.top = Math.min(ev.clientY, innerHeight - menu.offsetHeight - 8) + 'px';
+}
+function closeMenus() {
+  for (const m of document.querySelectorAll('.ctx-menu')) m.remove();
+}
+
+// ---------------------------------------------------------------- find in files
+
+function showSidebar(which) {
+  $('#tree').hidden = which !== 'tree';
+  $('#search').hidden = which !== 'search';
+  $('#files-title').textContent = which === 'search' ? 'Find in files' : 'Files';
+  $('#toggle-search').textContent = which === 'search' ? 'Files' : 'Find';
+}
+
+function openSearch() {
+  if (!app.ws) return;
+  $('#files').hidden = false;
+  showSidebar('search');
+  const input = $('#search-input');
+  if (app.view && app.active && !app.view.state.selection.main.empty) {
+    const sel = app.view.state.sliceDoc(app.view.state.selection.main.from, app.view.state.selection.main.to);
+    if (!sel.includes('\n') && sel.length < 80) input.value = sel;
+  }
+  input.focus();
+  input.select();
+  if (input.value) runSearch();
+}
+
+async function runSearch() {
+  const query = $('#search-input').value;
+  const host = $('#search-results');
+  if (!query.trim()) return host.replaceChildren();
+  const ticket = (runSearch.ticket = (runSearch.ticket || 0) + 1);
+  let r;
+  try {
+    r = await invoke('fs_search', { query });
+  } catch (e) {
+    return host.replaceChildren(el('p', 'dim pad', String(e)));
+  }
+  if (ticket !== runSearch.ticket) return;
+  host.replaceChildren();
+  if (!r.hits.length) return host.append(el('p', 'dim pad', 'No matches.'));
+  let last = null;
+  for (const h of r.hits) {
+    if (h.path !== last) host.append(el('div', 'hit-file', (last = h.path)));
+    const row = el('div', 'hit');
+    row.append(el('span', 'hit-line', String(h.line)), el('span', 'hit-text', h.text));
+    row.onclick = () => openFile(h.path, h.line);
+    host.append(row);
+  }
+  if (r.truncated) host.append(el('p', 'dim pad', `Showing the first ${r.hits.length} matches.`));
 }
 
 // ---------------------------------------------------------------- terminal
@@ -490,8 +656,10 @@ function finishTutor(ev) {
   if (msg.activity) msg.activity.remove();
   if (msg.text.trim()) renderMarkdown(msg.node, msg.text, msg);
   else msg.node.remove();
-  if (ev.type === 'error') $('#chat').append(el('div', 'msg error', ev.message));
-  else if (ev.cancelled) $('#chat').append(el('div', 'activity', 'Stopped.'));
+  if (ev.type === 'error') {
+    $('#chat').append(el('div', 'msg error', ev.message));
+    if (/not logged in|\/login|not installed/i.test(ev.message)) recheckAuth();
+  } else if (ev.cancelled) $('#chat').append(el('div', 'activity', 'Stopped.'));
   setBusy(false);
   scrollChat();
   if (smoke.onTutorDone) smoke.onTutorDone({ ev, text: msg.text });
@@ -559,20 +727,48 @@ function renderRelianceFrom(log) {
 }
 
 function renderAuth(auth) {
+  app.auth = auth;
   const n = $('#auth');
   if (!auth.installed) {
     n.className = 'bad';
     n.textContent = 'Claude Code not found';
-    n.title = 'Install Claude Code, then run `claude` in the terminal and log in.';
   } else if (!auth.loggedIn) {
     n.className = 'bad';
     n.textContent = 'Not logged in';
-    n.title = 'Run `claude` in the terminal below and log in with your Claude account, then reopen the folder.';
   } else {
     n.className = 'ok';
     n.textContent = auth.plan ? `Claude ${auth.plan[0].toUpperCase()}${auth.plan.slice(1)}` : 'Claude connected';
-    n.title = 'The tutor uses your Claude subscription through Claude Code on this Mac.';
   }
+  const ready = auth.installed && auth.loggedIn;
+  $('#setup').hidden = ready;
+  $('#quick').hidden = !ready;
+  $('#ask').hidden = !ready;
+  if (ready) return;
+  const steps = $('#setup-steps');
+  steps.replaceChildren();
+  const step = (text, command) => {
+    const li = el('li', null, text);
+    if (command) {
+      const code = el('code', null, command);
+      const run = el('button', null, 'Type it in the terminal');
+      run.onclick = () => {
+        showBottom('terminal');
+        if (term.id) invoke('term_input', { id: term.id, data: command });
+      };
+      li.append(code, run);
+    }
+    steps.append(li);
+  };
+  if (!auth.installed) step('Install Claude Code:', 'curl -fsSL https://claude.ai/install.sh | bash');
+  step('Log in with your Claude account. Run this, follow the prompts, then quit it with /exit:', 'claude');
+  step('Come back here and press Check again.');
+}
+
+async function recheckAuth() {
+  $('#setup-check').disabled = true;
+  renderAuth(await invoke('auth_status'));
+  $('#setup-check').disabled = false;
+  if (!(app.auth.installed && app.auth.loggedIn)) status('Still not connected. Finish the steps above and try again.', 6000);
 }
 
 // ---------------------------------------------------------------- layout
@@ -599,6 +795,19 @@ function setupSplitters() {
   }
 }
 
+const BASE_FONT = 13;
+function setZoom(size) {
+  size = Math.max(10, Math.min(size, 22));
+  localStorage.setItem('fontSize', String(size));
+  document.documentElement.style.setProperty('--code-size', size + 'px');
+  if (term.xterm) {
+    term.xterm.options.fontSize = size - 1;
+    fitTerminal();
+  }
+  if (app.view) app.view.requestMeasure();
+}
+const zoom = () => Number(localStorage.getItem('fontSize')) || BASE_FONT;
+
 function toggle(id) {
   const n = $('#' + id);
   n.hidden = !n.hidden;
@@ -607,9 +816,11 @@ function toggle(id) {
 
 function onMenu(id) {
   const actions = {
-    'new-file': newFile,
+    'new-file': () => newFile(),
     save: () => save(),
-    'close-tab': () => app.active && closeTab(app.active),
+    'close-tab': () => {
+      if (app.active) closeTab(app.active);
+    },
     'toggle-files': () => toggle('files'),
     'toggle-bottom': () => toggle('bottom'),
     'toggle-tutor': () => (toggle('tutor'), !$('#tutor').hidden && $('#input').focus()),
@@ -618,6 +829,10 @@ function onMenu(id) {
     'ask-selection': () => quick('selection'),
     'review-file': () => quick('review'),
     'new-conversation': newConversation,
+    'find-in-files': openSearch,
+    'zoom-in': () => setZoom(zoom() + 1),
+    'zoom-out': () => setZoom(zoom() - 1),
+    'zoom-reset': () => setZoom(BASE_FONT),
   };
   if (actions[id]) actions[id]();
 }
@@ -646,6 +861,7 @@ async function onWorkspace(ws) {
   renderTabs();
   renderRelianceFrom(ws.log);
   updateCursor();
+  showSidebar('tree');
   await renderTree();
   await startTerminal();
   if (smoke.onWorkspace) smoke.onWorkspace();
@@ -682,7 +898,10 @@ async function runSmoke(dir) {
     r.dirty = app.tabs.get('calc.py').dirty;
     r.saved = await save();
     r.onDisk = (await invoke('fs_read', { rel: 'calc.py' })).text.includes('edited in smoke test');
-    r.escape = await invoke('fs_read', { rel: '../outside.txt' }).then(() => 'ALLOWED', (e) => String(e));
+    r.escape = await invoke('fs_read', { rel: '../outside.txt' }).then(
+      () => 'ALLOWED',
+      (e) => String(e),
+    );
 
     let termOut = '';
     const un = await listen('term:data', (e) => (termOut += e.payload.data));
@@ -694,7 +913,12 @@ async function runSmoke(dir) {
 
     const tests = new Promise((res) => (smoke.onTests = res));
     await runTests(false);
-    const t = await Promise.race([tests, wait(90000).then(() => { throw new Error('timed out waiting for tests'); })]);
+    const t = await Promise.race([
+      tests,
+      wait(90000).then(() => {
+        throw new Error('timed out waiting for tests');
+      }),
+    ]);
     r.tests = { summary: t.summary, statuses: t.tests.map((x) => `${x.status} ${x.id}`), hasDetail: t.tests.some((x) => x.detail.includes('assert')) };
     r.failButtons = document.querySelectorAll('#tests-list .test button').length;
 
@@ -707,7 +931,13 @@ async function runSmoke(dir) {
       d = done();
       await ask('Write the complete corrected implementation of add() for me as a Python code block.');
       a = await d;
-      r.tutor2 = { type: a.ev.type, message: a.ev.message, text: a.text.slice(0, 600), withheld: document.querySelectorAll('.withheld').length, hasFence: a.text.includes('```') };
+      r.tutor2 = {
+        type: a.ev.type,
+        message: a.ev.message,
+        text: a.text.slice(0, 600),
+        withheld: document.querySelectorAll('.withheld').length,
+        hasFence: a.text.includes('```'),
+      };
       r.reliance = $('#reliance').textContent;
     }
     {
@@ -719,16 +949,41 @@ async function runSmoke(dir) {
       r.withhold = { hidden: probe.querySelectorAll('.withheld').length, shownPre: probe.querySelectorAll('pre').length };
       probe.querySelector('.withheld button').click();
       await wait(400);
-      r.withhold.afterReveal = { hidden: probe.querySelectorAll('.withheld').length, shownPre: probe.querySelectorAll('pre').length, reliance: $('#reliance').textContent };
+      r.withhold.afterReveal = {
+        hidden: probe.querySelectorAll('.withheld').length,
+        shownPre: probe.querySelectorAll('pre').length,
+        reliance: $('#reliance').textContent,
+      };
       probe.remove();
     }
-    const box = (sel) => { const b = $(sel).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; };
+    const box = (sel) => {
+      const b = $(sel).getBoundingClientRect();
+      return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)];
+    };
     showBottom('terminal');
     await wait(300);
-    r.layout = { window: [innerWidth, innerHeight], files: box('#files'), editor: box('#editor-host .cm-editor'), bottom: box('#bottom'), xterm: box('#terminal .xterm-screen'), tutor: box('#tutor'), chat: box('#chat'), input: box('#input'), status: box('#status') };
+    r.layout = {
+      window: [innerWidth, innerHeight],
+      files: box('#files'),
+      editor: box('#editor-host .cm-editor'),
+      bottom: box('#bottom'),
+      xterm: box('#terminal .xterm-screen'),
+      tutor: box('#tutor'),
+      chat: box('#chat'),
+      input: box('#input'),
+      status: box('#status'),
+    };
     r.term = { cols: term.xterm.cols, rows: term.xterm.rows };
     r.fonts = { editor: getComputedStyle($('.cm-scroller')).fontFamily.slice(0, 30), lineNumbers: !!$('.cm-lineNumbers') };
-    r.ok = r.withhold.hidden === 1 && r.withhold.afterReveal.shownPre === 2 && r.saved && r.onDisk && r.escape !== 'ALLOWED' && r.terminal && r.tests.statuses.length === 2 && (!r.tutor1 || (r.tutor1.type === 'done' && r.tutor1.text.length > 0));
+    r.ok =
+      r.withhold.hidden === 1 &&
+      r.withhold.afterReveal.shownPre === 2 &&
+      r.saved &&
+      r.onDisk &&
+      r.escape !== 'ALLOWED' &&
+      r.terminal &&
+      r.tests.statuses.length === 2 &&
+      (!r.tutor1 || (r.tutor1.type === 'done' && r.tutor1.text.length > 0));
   } catch (e) {
     r.ok = false;
     r.error = String(e && e.stack ? e.stack : e);
@@ -748,7 +1003,22 @@ async function main() {
   listen('tutor:event', (e) => onTutorEvent(e.payload));
 
   $('#open-folder').onclick = () => invoke('workspace_choose');
-  $('#new-file').onclick = newFile;
+  $('#new-file').onclick = () => newFile();
+  $('#toggle-search').onclick = () => ($('#search').hidden ? openSearch() : showSidebar('tree'));
+  $('#setup-check').onclick = recheckAuth;
+  let searchTimer;
+  $('#search-input').oninput = () => (clearTimeout(searchTimer), (searchTimer = setTimeout(runSearch, 200)));
+  $('#search-input').onkeydown = (e) => {
+    if (e.key === 'Escape') showSidebar('tree');
+  };
+  window.addEventListener('mousedown', (e) => !e.target.closest('.ctx-menu') && closeMenus());
+  window.addEventListener('focus', refreshFromDisk);
+  setZoom(zoom());
+  window.__TAURI__.window.getCurrentWindow().onCloseRequested(async (event) => {
+    const dirty = [...app.tabs.values()].filter((t) => t.dirty).length;
+    if (dirty && !(await confirmAction(`${dirty} ${dirty === 1 ? 'file has' : 'files have'} unsaved changes. Quit without saving?`, 'Quit Without Saving')))
+      event.preventDefault();
+  });
   $('#new-chat').onclick = newConversation;
   $('#run-all-tests').onclick = () => runTests(false);
   $('#run-file-tests').onclick = () => runTests(true);
@@ -773,10 +1043,6 @@ async function main() {
       $('#ask').requestSubmit();
     }
   });
-  window.addEventListener('beforeunload', (e) => {
-    if ([...app.tabs.values()].some((t) => t.dirty)) e.preventDefault();
-  });
-
   const init = await invoke('app_init');
   renderAuth(init.auth);
   if (init.smoke) return runSmoke(init.smokeDir);
