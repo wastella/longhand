@@ -5,9 +5,7 @@ and versions follow [Semantic Versioning](https://semver.org).
 
 ## Unreleased
 
-## 0.1.0 - 2026-11-27
-
-First release.
+Nothing has been released yet. This is what the first release will contain.
 
 ### Added
 
