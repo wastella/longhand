@@ -122,6 +122,63 @@ pseudo-terminal's foreground process group with the shell's (`term_busy`, used b
 guard and Run File). Locations printed in the output are checked with `term_resolve`, which only
 accepts files inside the open folder.
 
+## The editor
+
+One CodeMirror view shows the active tab; each open file keeps its own `EditorState` (text,
+undo history, cursor, open notes) and scroll position while another tab is on screen
+(`editor/session.js`). Files are read and written by `documents.rs`:
+
+- `doc_read(rel)` returns `{ kind: 'text', text, mtime, format }`, or `{ kind, size }` with
+  `kind` one of `binary`, `tooLarge` (over 3 MB; only the first 8 KB is read to tell binary from
+  text) or `notText` (not UTF-8), or `{ kind: 'missing' }`. The editor shows a notice in place of
+  the code for anything but text.
+- `doc_write(rel, text, format, expectedMtime)` writes beside the file and renames over it, so a
+  failed write never truncates the original. `format` (`{ lineEnding: 'lf' | 'crlf', bom }`)
+  comes from `doc_read`: the editor works in `\n` and the file is saved with its own line
+  endings and byte-order mark; nothing else is changed. With `expectedMtime`, a file changed or
+  deleted since then is not written and the result's `status` is `changed` or `deleted` (the
+  editor then asks); otherwise `saved` with the new `mtime`. Errors are sentences a student can
+  act on ("You don't have permission to save …").
+- `doc_stat(paths)` returns `{ mtime }`, `{ missing: true }` or `{ error }` per path.
+
+The editor compares open files with the disk when the window gains focus, when a tab is shown,
+on `files:changed`, and every 2 seconds while the window is focused (changes made in Longhand's
+own terminal move no focus). A clean file is reloaded with the smallest change, so the cursor,
+scroll position and notes stay with their text. A file with unsaved edits is never replaced
+without the student choosing: a banner above the code offers "Keep my version" or "Load the disk
+version", and a deleted one offers "Save it again". Failed saves use the same banner. Tabs with
+unsaved edits are guarded on close, quit and folder switch (the `registerLeaveGuard` in
+`editor/index.js`); `workspace:opened` arrives only after that guard passed, and then the editor
+reopens the tabs that were open in that folder last time (kept in local storage).
+
+### Hooks for the tutor
+
+Exported from `editor/index.js`. They contain no AI: the tutor decides what to say, the editor
+decides how it sits in the code.
+
+- `setNotes(source, path, notes, { onOrphaned })` pins notes to a file, replacing the notes that
+  `source` (any name, such as `'review'`) had there. A note is `{ id, fromLine, toLine, body }`:
+  1-based inclusive lines and a DOM node the caller owns and may keep updating (the editor
+  re-measures when it grows). Each note shows a bar in the gutter and a faint tint on its lines;
+  clicking the bar or Alt+] / Alt+[ (next and previous note) opens the body beneath the range,
+  and Escape or "Hide" closes it. Ranges follow edits: lines typed above move the note, and a
+  line rewritten inside the range keeps it. When the note's text is deleted, or its lines are
+  past the end of the file when it opens, the note is removed and `onOrphaned(id, path)` is
+  called. Notes for files that are not open appear when they open, follow renames, and are
+  forgotten when another folder opens.
+- `clearNotes(source, path?)` removes `source`'s notes from one file, or from all of them.
+- `notesOn(source, path)` returns `[{ id, fromLine, toLine }]` where the notes are now.
+- `showNote(source, path, id)` opens the file and that note, scrolled into view.
+- `registerSelectionAction({ id, label, run })` adds a button to the small row offered beside a
+  selection once it has settled (and the mouse is up). `run({ path, fromLine, toLine, text })`
+  gets the selected lines; a selection ending at the start of a line does not include it. The
+  row hides as soon as the student types or moves the cursor, never takes focus on its own, and
+  appears only when at least one action is registered. Alt+Enter moves focus to it; Escape goes
+  back to the code. Returns a function that removes the action.
+
+The interface tests and previews reach these through `window.__editor`, which exists only
+under the mock backend.
+
 ## Per-folder data
 
 `.longhand/config.json` holds the policy and model. `.longhand/log.jsonl` is an append-only record

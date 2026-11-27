@@ -19,7 +19,24 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
         .separator()
         .item(&item("find-in-files", "Find in Files…", "CmdOrCtrl+Shift+F")?)
         .build()?;
-    let edit = SubmenuBuilder::new(app, "Edit").undo().redo().separator().cut().copy().paste().select_all().build()?;
+    let edit = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        // The editor's own actions (editor/index.js registers these commands).
+        .separator()
+        .item(&item("find", "Find…", "CmdOrCtrl+F")?)
+        .item(&item("replace", "Replace…", "CmdOrCtrl+Alt+F")?)
+        .item(&item("go-to-line", "Go to Line…", "Ctrl+G")?)
+        .item(&item("toggle-comment", "Toggle Comment", "CmdOrCtrl+/")?)
+        .separator()
+        .item(&item("next-note", "Next Note", "Alt+]")?)
+        .item(&item("previous-note", "Previous Note", "Alt+[")?)
+        .build()?;
     let view = SubmenuBuilder::new(app, "View")
         .item(&item("toggle-files", "Toggle Files", "CmdOrCtrl+B")?)
         .item(&item("toggle-bottom", "Toggle Terminal", "CmdOrCtrl+J")?)
