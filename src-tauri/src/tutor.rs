@@ -1,7 +1,7 @@
 //! The tutor runs through the user's own installed Claude Code, so it uses their
 //! Claude subscription login. It is started with read-only tools and nothing else.
 
-use crate::{log_event, read_config, workspace, AppState};
+use crate::workspace::{log_event, read_config, workspace, AppState};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -50,7 +50,7 @@ fn find_claude() -> Option<PathBuf> {
     found.clone()
 }
 
-pub fn auth_status() -> Value {
+pub fn read_auth() -> Value {
     let Some(bin) = find_claude() else {
         return json!({ "installed": false, "loggedIn": false });
     };
@@ -113,6 +113,11 @@ pub fn reset(state: &AppState) {
 fn emit(app: &AppHandle, generation: u64, mut event: Value) {
     event["gen"] = json!(generation);
     let _ = app.emit("tutor:event", event);
+}
+
+#[tauri::command]
+pub async fn auth_status() -> Value {
+    read_auth()
 }
 
 #[tauri::command]

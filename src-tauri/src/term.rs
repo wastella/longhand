@@ -1,6 +1,6 @@
 //! The integrated terminal: a login shell on a pseudo-terminal, started in the open folder.
 
-use crate::AppState;
+use crate::workspace::AppState;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde_json::json;
 use std::io::{Read, Write};
