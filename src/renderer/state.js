@@ -4,6 +4,7 @@
 //   workspace:opened   { path, name, config, courseRules, log }  a folder was opened; reset per-folder state
 //   workspace:ready    (none)                                     every area finished handling workspace:opened
 //   editor:active      path | null                                the file shown in the editor changed
+//   editor:saved       path                                       a file was written to disk
 //   editor:cursor      { path, line, col, selection: { fromLine, toLine } | null } | null
 //   tests:finished     the result object of the backend's tests:done event
 //   tutor:finished     { ev, text }                               a tutor answer ended (done, error or stopped)
@@ -11,6 +12,10 @@
 //   auth:changed       { installed, loggedIn, plan }              the tutor's connection status is known
 //   panel:toggled      { id, visible }                            a side or bottom panel was shown or hidden
 //   text-size:changed  size in px                                 the code text size changed
+//
+// Reserved for work in progress, so areas agree on the names before they exist:
+//   files:changed      [path]                                     files changed on disk outside the editor
+//   theme:changed      'dark' | 'light'                           the colour theme changed; re-read tokens
 
 export const state = {
   /** The open folder, as sent with workspace:opened, or null before one is opened. */

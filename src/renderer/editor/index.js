@@ -1,9 +1,8 @@
 // The editor: CodeMirror with one tab per open file. Other areas import from this file only.
 
-import { confirm, onCloseRequested } from '../backend.js';
 import { h } from '../dom.js';
 import { on } from '../state.js';
-import { registerCommand } from '../shell/index.js';
+import { registerCommand, registerLeaveGuard } from '../shell/index.js';
 import { reloadChangedFiles, save } from './disk.js';
 import { attach, close, isWithin, reset, session } from './session.js';
 
@@ -32,10 +31,14 @@ export async function closeFilesUnder(path) {
   for (const open of [...session.docs.keys()]) if (isWithin(open, path)) await close(open, true);
 }
 
-async function confirmQuit(event) {
+/** What quitting or switching folder would lose, for the shell's leave guard. */
+function unsavedWork(reason) {
   const dirty = [...session.docs.values()].filter((doc) => doc.dirty).length;
-  if (dirty && !(await confirm(`${dirty} ${dirty === 1 ? 'file has' : 'files have'} unsaved changes. Quit without saving?`, 'Quit Without Saving')))
-    event.preventDefault();
+  if (!dirty) return null;
+  const files = `${dirty} ${dirty === 1 ? 'file has' : 'files have'} unsaved changes.`;
+  return reason === 'quit'
+    ? { message: `${files} Quit without saving?`, action: 'Quit Without Saving' }
+    : { message: `${files} Open another folder without saving?`, action: 'Discard Changes' };
 }
 
 export function mount(region) {
@@ -49,5 +52,5 @@ export function mount(region) {
   on('workspace:opened', reset);
   on('text-size:changed', () => session.view?.requestMeasure());
   window.addEventListener('focus', reloadChangedFiles);
-  onCloseRequested(confirmQuit);
+  registerLeaveGuard(unsavedWork);
 }

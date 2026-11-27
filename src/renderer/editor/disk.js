@@ -1,7 +1,7 @@
 // Saving open files, and picking up changes made to them outside the editor.
 
 import { confirm, invoke } from '../backend.js';
-import { state } from '../state.js';
+import { emit, state } from '../state.js';
 import { showStatus } from '../shell/index.js';
 import { docState, isWithin, renderTabs, session, setDirty } from './session.js';
 
@@ -21,6 +21,7 @@ export async function save(path = session.active) {
     doc.mtime = written.mtime;
     setDirty(path, false);
     showStatus(`Saved ${path}`, 1500);
+    emit('editor:saved', path);
     return true;
   } catch (e) {
     showStatus(`Could not save: ${e}`, 8000);
