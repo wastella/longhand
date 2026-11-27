@@ -1,19 +1,16 @@
 // The status bar holds only what a student glances at while writing: the open file and whether
-// it is saved, its problems, the tutor's policy, and the cursor position. Messages that need noticing are
+// it is saved, its problems when it has any, and the cursor position. Messages that need noticing are
 // notifications (notify.js); showStatus keeps working for passing remarks.
 
 import { h, spacer } from '../dom.js';
-import { on, state } from '../state.js';
+import { on } from '../state.js';
 import { activeFile } from '../editor/index.js';
 
 const file = h('span', { id: 'status-file', class: 'truncate' });
 const saved = h('span', { id: 'status-saved' });
 const message = h('span', { id: 'status-msg', class: 'truncate', 'aria-live': 'polite' });
-const policy = h('span', { id: 'status-policy', 'data-tip': 'How much code the tutor may show. Change it in the tutor panel.' });
 const position = h('span', { id: 'status-pos' });
 let clearTimer;
-
-const POLICY_NAMES = { strict: 'Strict', guided: 'Guided' };
 
 /** Shows `text` in the status bar for `ms` milliseconds (0 keeps it until the next message). */
 export function showStatus(text, ms = 4000) {
@@ -24,18 +21,10 @@ export function showStatus(text, ms = 4000) {
 
 /**
  * Adds an item another area keeps up to date (the language server's problem count), before the
- * tutor's policy. Its owner hides it when it has nothing to say.
+ * cursor position. Its owner hides it when it has nothing to say.
  */
 export function addStatusItem(node) {
-  policy.before(node);
-}
-
-// The policy is read from shared state each time the bar updates, so it stays current even
-// before every area announces config:changed.
-function showPolicy() {
-  const name = state.workspace && POLICY_NAMES[state.config?.policy];
-  policy.hidden = !name;
-  policy.textContent = name ? `Tutor: ${name}` : '';
+  position.before(node);
 }
 
 function showFile() {
@@ -44,11 +33,10 @@ function showFile() {
   saved.hidden = !active;
   saved.className = active?.dirty ? 'unsaved' : '';
   saved.textContent = active?.dirty ? 'Unsaved' : 'Saved';
-  showPolicy();
 }
 
 export function mountStatusBar(region) {
-  region.append(file, saved, spacer(), message, policy, position);
+  region.append(file, saved, spacer(), message, position);
   showFile();
   on('editor:active', showFile);
   on('editor:saved', showFile);
@@ -57,5 +45,4 @@ export function mountStatusBar(region) {
     showFile();
   });
   on('workspace:opened', showFile);
-  on('config:changed', showPolicy);
 }

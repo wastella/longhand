@@ -40,8 +40,7 @@ const asFailure = (error) => (error && error.code ? error : { code: 'failed', me
  *   question    what the student wrote, for the transcript (defaults to prompt)
  *   context     short labels for what was attached, for the transcript
  *   model       'haiku' | 'sonnet' | 'opus' (lookups default to haiku, others to the folder's)
- *   about       what the usage log files it under: question, explain, review, failure, hint, lookup
- *   rung        for hints, the ladder rung (1-3)
+ *   about       what the usage log files it under: question, explain, review, failure, lookup
  *   ephemeral   keep no transcript and no CLI session (default false; lookups keep a
  *               transcript but never a CLI session, and get no tools)
  *   retry       ask the thread's last question again without repeating it in the transcript
@@ -87,5 +86,5 @@ export const listThreads = (prefix) => invoke('tutor_threads', { prefix });
 /** One kept thread: { id, kind, title, created, updated, messages: [{ role, text, at, context?, status? }] }, or null. */
 export const loadThread = (id) => invoke('tutor_thread', { id });
 
-/** The student's tutor use in this folder: { days: [{ date, asks, hintRung, reveals }], total }. */
+/** The student's tutor use in this folder: { days: [{ date, asks, reveals }], total }. */
 export const usageRecord = () => invoke('tutor_record');

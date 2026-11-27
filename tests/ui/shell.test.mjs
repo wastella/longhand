@@ -176,10 +176,9 @@ uiTest('title bar items show tooltips with their shortcut', async (page) => {
   assert.equal(await isHidden(page, '.tooltip'), true);
 });
 
-uiTest('the status bar shows the file, its save state, the policy and the cursor', async (page) => {
+uiTest('the status bar shows the file, its save state and the cursor', async (page) => {
   await openFromTree(page, 'stats/running.py');
   assert.equal(await text(page, '#status-saved'), 'Saved');
-  assert.equal(await text(page, '#status-policy'), 'Tutor: Strict');
   await page.click('.cm-content');
   await page.keyboard.type('x');
   assert.equal(await text(page, '#status-saved'), 'Unsaved');
@@ -447,12 +446,6 @@ uiTest(
   },
   { auth: { installed: true, loggedIn: true, plan: 'max', tooOld: true } },
 );
-
-uiTest('the status bar follows the tutor policy when it changes', async (page) => {
-  assert.equal(await text(page, '#status-policy'), 'Tutor: Strict');
-  await page.click('#policy button[data-policy="guided"]');
-  await page.waitForFunction(() => document.querySelector('#status-policy').textContent === 'Tutor: Guided');
-});
 
 uiTest('Go to Terminal and Go to Tutor land where typing goes', async (page) => {
   await menu(page, 'focus-terminal');

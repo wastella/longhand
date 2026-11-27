@@ -155,11 +155,10 @@ function tallies() {
   for (const entry of log) {
     const what = counted(entry);
     if (!what) continue;
-    const day = days.get(entry.date) || { date: entry.date, asks: {}, hintRung: 0, reveals: 0, tests: 0 };
+    const day = days.get(entry.date) || { date: entry.date, asks: {}, reveals: 0, tests: 0 };
     days.set(entry.date, day);
     if (what === 'ask') {
       day.asks[entry.about] = (day.asks[entry.about] || 0) + 1;
-      day.hintRung = Math.max(day.hintRung, entry.rung || 0);
     } else if (what === 'reveal') day.reveals++;
     else day.tests++;
   }
@@ -184,7 +183,7 @@ Object.assign(mock.commands, {
     window.__asked.push(request);
     // As tutor.rs's log_ask writes it.
     const about = request.about || (request.kind === 'conversation' ? 'question' : request.kind);
-    logEntry('ask', { about, requestKind: request.kind, ...(request.rung ? { rung: request.rung } : {}) });
+    logEntry('ask', { about, requestKind: request.kind });
     if (options.refuse) throw options.refuse;
     if (!request.retry) keep(request, { role: 'student', text: request.question || request.prompt, context: request.context || [] });
     start(request);
@@ -208,10 +207,9 @@ Object.assign(mock.commands, {
       .filter((d) => questions(d) || d.reveals)
       .map(({ tests, ...day }) => day)
       .sort((a, b) => b.date.localeCompare(a.date));
-    const total = { asks: {}, hintRung: 0, reveals: 0 };
+    const total = { asks: {}, reveals: 0 };
     for (const d of days) {
       for (const [k, n] of Object.entries(d.asks)) total.asks[k] = (total.asks[k] || 0) + n;
-      total.hintRung = Math.max(total.hintRung, d.hintRung);
       total.reveals += d.reveals;
     }
     return { days, total };

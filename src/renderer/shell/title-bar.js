@@ -1,5 +1,5 @@
-// The title bar: panel toggles, the folder's name, today's tutor use and whether the tutor is
-// connected. The whole bar drags the window (data-tauri-drag-region="deep" in index.html);
+// The title bar: panel toggles, the folder's name, today's tutor use (which opens the student's
+// record) and whether the tutor is connected. The whole bar drags the window (data-tauri-drag-region="deep" in index.html);
 // Tauri leaves buttons out of the drag, so they stay clickable and everything keeps its tooltip.
 
 import { h, spacer } from '../dom.js';
@@ -8,7 +8,14 @@ import { runCommand } from './commands.js';
 import { icon } from './icons.js';
 
 const name = h('span', { id: 'ws-name', class: 'truncate' }, 'Longhand');
-const usage = h('span', { id: 'reliance', 'data-tip': 'Your own record of tutor use in this folder, kept in .longhand/log.jsonl' });
+const usage = h('button', {
+  id: 'reliance',
+  type: 'button',
+  class: 'ghost',
+  hidden: true,
+  'data-tip': 'Your own record of tutor use in this folder, by day',
+  onclick: () => runCommand('show-record'),
+});
 const auth = h('span', { id: 'auth', 'data-tip': 'Tutor connection' });
 
 const toggles = {
@@ -46,6 +53,7 @@ function showUsage(log) {
   const parts = [`${t.ask} ${t.ask === 1 ? 'question' : 'questions'}`];
   if (t.reveal) parts.push(`${t.reveal} code ${t.reveal === 1 ? 'reveal' : 'reveals'}`);
   usage.textContent = `Today: ${parts.join(' · ')}`;
+  usage.hidden = false;
 }
 
 function showAuth(status) {

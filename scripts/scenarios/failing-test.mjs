@@ -1,6 +1,6 @@
-import { askTutor, openFromTree } from '../browser.mjs';
+import { openFromTree } from '../browser.mjs';
 
-export const description = 'A failing test sent to the tutor, with its answer (the README screenshot)';
+export const description = 'A failing test asked about beneath it, with the answer (the README screenshot)';
 
 export default async function (page) {
   await openFromTree(page, 'stats/running.py');
@@ -8,8 +8,8 @@ export default async function (page) {
   await page.evaluate(() => document.querySelector('#run-all-tests').click());
   await page.waitForSelector('#tests-list .test.FAILED');
   await page.click('#tests-list .test.FAILED button');
-  await askTutor(
-    page,
-    'I expected 4.0 because the squared distances from the mean are 4 + 0 + 4, divided by 2. I checked variance() and the division looks right.',
-  );
+  await page.type('#tests-detail .fb-expect', '4.0, because the squared distances from the mean are 4 + 0 + 4, divided by 2');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.querySelector('#tests-detail .fb-failure .msg.tutor') && !document.querySelector('.msg.tutor.streaming'));
+  await page.evaluate(() => document.querySelector('#tests-detail .fb-failure .msg.tutor').scrollIntoView({ block: 'end' }));
 }

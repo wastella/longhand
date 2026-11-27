@@ -1,18 +1,16 @@
 // The tutor panel: policy, conversation, earlier conversations, the student's record, setup
-// steps, hints, quick actions and the question box; and the lookup bar. Other areas import from
+// steps and the question box; and the lookup bar. Other areas import from
 // this file only.
 
 import { invoke } from '../backend.js';
 import { h, paneHead, spacer } from '../dom.js';
 import { emit, on, state } from '../state.js';
-import { registerCommand, registerFocusTarget, showStatus } from '../shell/index.js';
+import { isPanelShown, registerCommand, registerFocusTarget, showPanel, showStatus } from '../shell/index.js';
 import { form, input, renderChips, showCursor } from './composer.js';
 import { chat, newConversation, resumeLatest, setupConversation } from './conversation.js';
-import { closeLadder, ladder } from './hints.js';
 import { historyView, showHistory } from './history.js';
 import { openLookup, setupLookup } from './lookup.js';
 import { loadMathStyles } from './math.js';
-import { quickActions } from './quick-actions.js';
 import { recordView, showRecord } from './record.js';
 import { isConnected, setupBox, showSetup } from './setup.js';
 
@@ -51,22 +49,19 @@ async function changePolicy(value) {
   showStatus(`Tutor policy set to ${POLICIES[value].label}; started a new conversation`);
 }
 
-// The panel shows the conversation, the list of earlier ones, or the student's record.
+// The panel shows the conversation, the list of earlier ones, or the student's record (opened
+// from the usage count in the title bar).
 const views = { history: historyView, record: recordView };
-const viewButtons = {
-  history: h('button', { class: 'ghost', id: 'show-history', 'aria-pressed': 'false', title: 'Earlier conversations in this folder' }, 'History'),
-  record: h('button', { class: 'ghost', id: 'show-record', 'aria-pressed': 'false', title: 'Your own use of the tutor in this folder' }, 'Record'),
-};
+const historyButton = h('button', { class: 'ghost', id: 'show-history', 'aria-pressed': 'false', title: 'Earlier conversations in this folder' }, 'History');
 let view = 'chat';
 let connected = false;
 
 function showView(next) {
   view = next;
   for (const [name, node] of Object.entries(views)) node.hidden = name !== view;
-  for (const [name, button] of Object.entries(viewButtons)) button.setAttribute('aria-pressed', String(name === view));
+  historyButton.setAttribute('aria-pressed', String(view === 'history'));
   chat.hidden = view !== 'chat';
-  for (const part of [quickActions, form]) part.hidden = view !== 'chat' || !connected;
-  if (view !== 'chat' || !connected) ladder.hidden = true;
+  form.hidden = view !== 'chat' || !connected;
   if (view === 'history') showHistory(() => showView('chat'));
   if (view === 'record') showRecord();
 }
@@ -74,13 +69,23 @@ const toggleView = (name) => showView(view === name ? 'chat' : name);
 
 function startNewConversation() {
   showView('chat');
-  closeLadder();
   newConversation();
+}
+
+/**
+ * The student's record, with the panel shown if it was hidden. Escape, or asking again while it
+ * is on screen, goes back to the conversation.
+ */
+function toggleRecord() {
+  if (!state.workspace) return;
+  if (view === 'record' && isPanelShown('tutor')) return showView('chat');
+  showPanel('tutor');
+  showView('record');
+  recordView.focus();
 }
 
 async function showFolder() {
   showPolicy();
-  closeLadder();
   showView('chat');
   await resumeLatest();
 }
@@ -93,19 +98,16 @@ function showConnection(auth) {
 
 export function mount(region) {
   loadMathStyles();
-  viewButtons.history.onclick = () => toggleView('history');
-  viewButtons.record.onclick = () => toggleView('record');
+  historyButton.onclick = () => toggleView('history');
   const newChat = h('button', { id: 'new-chat', class: 'ghost', title: 'New conversation (⇧⌘N)', onclick: startNewConversation }, 'New');
   region.append(
-    paneHead(h('span', {}, 'Tutor'), spacer(), policy, viewButtons.history, viewButtons.record, newChat),
+    paneHead(h('span', {}, 'Tutor'), spacer(), policy, historyButton, newChat),
     policyNote,
     panelStrip,
     chat,
     historyView,
     recordView,
     setupBox,
-    ladder,
-    quickActions,
     form,
   );
   setupConversation();
@@ -116,6 +118,7 @@ export function mount(region) {
   // View > Go to Tutor (⌘4): the question box, or the setup steps' button while not connected.
   registerFocusTarget('tutor', () => [input, setupBox.querySelector('button')].find((node) => node?.offsetParent) || null);
   registerCommand('new-conversation', startNewConversation);
+  registerCommand('show-record', toggleRecord);
   registerCommand('lookup', openLookup);
   on('workspace:opened', showFolder);
   on('auth:changed', showConnection);

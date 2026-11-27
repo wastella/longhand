@@ -24,6 +24,10 @@
   color: var(--color-text-muted);
   white-space: nowrap;
 }
+/* A quiet button: it reads as text until hovered, aligned with the text beside it. */
+#reliance {
+  margin-right: calc(-1 * var(--space-4));
+}
 #auth {
   display: flex;
   align-items: center;
