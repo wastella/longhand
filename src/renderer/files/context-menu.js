@@ -2,8 +2,14 @@
 // keys move through it, Enter picks, Escape closes and gives the focus back.
 
 import { h } from '../dom.js';
+import { closeOnEscape } from '../shell/dismiss.js';
 
 let returnFocus = null;
+
+closeOnEscape(
+  () => document.querySelector('.ctx-menu') !== null,
+  () => closeContextMenus({ restoreFocus: true }),
+);
 
 /**
  * Opens a menu at { x, y }. `items` are { label, hint?, run } objects, with null for a separator.
@@ -43,7 +49,7 @@ export function showContextMenu({ x, y }, items, { fromKeyboard = false } = {}) 
     if (e.key === 'ArrowDown') highlight(current + 1);
     else if (e.key === 'ArrowUp') highlight(current < 0 ? -1 : current - 1);
     else if ((e.key === 'Enter' || e.key === ' ') && current >= 0) pick(items.filter(Boolean)[current]);
-    else if (e.key === 'Escape' || e.key === 'Tab') closeContextMenus({ restoreFocus: true });
+    else if (e.key === 'Tab') closeContextMenus({ restoreFocus: true });
   });
   document.body.append(menu);
   menu.style.left = Math.max(8, Math.min(x, innerWidth - menu.offsetWidth - 8)) + 'px';

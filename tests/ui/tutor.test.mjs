@@ -296,6 +296,15 @@ uiTest('the lookup bar answers in a popover that is not part of the conversation
   assert.equal(await isHidden(page, '#lookup'), true);
 });
 
+uiTest('Escape closes the lookup bar even when the focus is somewhere else', async (page) => {
+  await page.evaluate(() => window.__emit('menu', 'lookup'));
+  assert.equal(await isHidden(page, '#lookup'), false);
+  // Focus leaves the bar without a click it could see, as when another window takes it.
+  await page.evaluate(() => document.querySelector('#lookup-input').blur());
+  await page.keyboard.press('Escape');
+  assert.equal(await isHidden(page, '#lookup'), true);
+});
+
 uiTest('every kind of question moves the title bar, which agrees with the record', async (page) => {
   const header = () => text(page, '#reliance');
   assert.equal(await header(), 'Today: 3 questions', "the fixture's log");

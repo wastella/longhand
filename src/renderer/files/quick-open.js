@@ -3,6 +3,7 @@
 
 import { invoke } from '../backend.js';
 import { h } from '../dom.js';
+import { closeOnEscape } from '../shell/dismiss.js';
 import { state } from '../state.js';
 import { activeFile, openFile } from '../editor/index.js';
 import { candidate, match, normalise } from './fuzzy.js';
@@ -213,10 +214,14 @@ export function mountQuickOpen() {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       choose(current);
-    } else if (e.key === 'Escape' || e.key === 'Tab') {
+    } else if (e.key === 'Tab') {
       e.preventDefault();
       close({ restoreFocus: true });
     }
   });
   input.addEventListener('blur', () => close());
+  closeOnEscape(
+    () => !palette.hidden,
+    () => close({ restoreFocus: true }),
+  );
 }
