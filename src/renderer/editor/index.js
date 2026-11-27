@@ -51,9 +51,10 @@ export async function closeFilesUnder(path) {
  * Pins notes to line ranges of `path`, replacing the notes `source` (a name such as 'review')
  * had there. Each note is { id, fromLine, toLine, body }, where `body` is a DOM node the editor
  * shows beneath the lines when the note is opened. Lines are 1-based and inclusive. Ranges
- * follow the student's edits; when a note's lines are deleted (or lie past the end of the file)
- * the note is removed and `onOrphaned(id, path)` is called. Notes for a file that is not open
- * appear when it opens.
+ * follow the student's edits. When a note's code is deleted it is hidden until undo or a paste
+ * of that code brings it back, and removed (calling `onOrphaned(id, path)`) once its tab
+ * closes; a note past the end of the file is removed at once, and every note is removed (and
+ * reported) when another folder opens. Notes for a file that is not open appear when it opens.
  */
 export function setNotes(source, path, notes, { onOrphaned } = {}) {
   putNotes(source, path, notes, onOrphaned);

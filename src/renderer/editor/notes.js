@@ -6,7 +6,14 @@
 // Notes live in a registry by path, so notes for files that are not open appear when they open.
 // For an open file, the file's CodeMirror state holds the live ranges and the registry is kept
 // in step after every change (syncNotes).
+//
+// A note whose code is deleted is not dropped at once: it is detached (hidden, and left out of
+// notesOn) for as long as its file stays open, because the student may want the code back.
+// Undo puts it back where it was, and pasting or dropping its code elsewhere moves it there, so
+// a function cut and pasted keeps its note. Only when the tab closes, or another folder opens,
+// is a detached note removed and reported through onOrphaned.
 
+import { invertedEffects } from '@codemirror/commands';
 import { RangeSet, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, EditorView, GutterMarker, WidgetType, gutter } from '@codemirror/view';
 import { h, spacer } from '../dom.js';
@@ -20,6 +27,14 @@ const replaceNotes = StateEffect.define();
 const toggleNote = StateEffect.define();
 /** Opens one note (its key) and closes the rest; null closes them all. */
 const openOnly = StateEffect.define();
+/** Puts detached notes back: [{ key, from, to }]. Undo carries it, mapped through later edits. */
+const restoreNotes = StateEffect.define({
+  map: (value, mapping) =>
+    value.map((r) => {
+      const from = mapping.mapPos(r.from, 1);
+      return { ...r, from, to: Math.max(from, mapping.mapPos(r.to, -1)) };
+    }),
+});
 
 // ---- the registry, which is what other areas talk to ----
 
@@ -56,7 +71,7 @@ export function dropNotes(source, path) {
 /** Where `source`'s notes on `path` are now: [{ id, fromLine, toLine }], in line order. */
 export function listNotes(source, path) {
   return [...(registry.get(path)?.values() || [])]
-    .filter((note) => note.source === source)
+    .filter((note) => note.source === source && !note.detached)
     .map(({ id, fromLine, toLine }) => ({ id, fromLine, toLine }))
     .sort((a, b) => a.fromLine - b.fromLine);
 }
@@ -76,8 +91,23 @@ export function moveNotes(from, to) {
   }
 }
 
-/** Forgets every note, for a newly opened folder. */
-export const forgetAllNotes = () => registry.clear();
+/** Forgets every note, for a newly opened folder, telling whoever set each one. */
+export function forgetAllNotes() {
+  const dropped = [...registry].flatMap(([path, notes]) => [...notes.values()].map((note) => [note, path]));
+  registry.clear();
+  for (const [note, path] of dropped) note.onOrphaned?.(note.id, path);
+}
+
+/** A file's tab is closing with `state`: its detached notes can no longer come back. */
+export function releaseDetached(path, state) {
+  const notes = registry.get(path);
+  for (const { note } of state?.field(notesField, false)?.detached || []) {
+    if (notes?.get(note.key) !== note) continue;
+    notes.delete(note.key);
+    note.onOrphaned?.(note.id, path);
+  }
+  if (notes && !notes.size) registry.delete(path);
+}
 
 // ---- ranges in an open file ----
 
@@ -116,6 +146,9 @@ class NoteMark extends GutterMarker {
   }
 }
 
+/** A note's DOM -> { key, resize }: which note it shows, and the observer watching its size. */
+const widgetDom = new WeakMap();
+
 class NoteWidget extends WidgetType {
   constructor(note, lines) {
     super();
@@ -131,25 +164,37 @@ class NoteWidget extends WidgetType {
       { class: 'ghost cm-note-hide', type: 'button', title: 'Hide note (Esc)', onclick: () => view.dispatch({ effects: toggleNote.of(this.note.key) }) },
       'Hide',
     );
+    // CodeMirror measures a block widget without its margins, so the spacing around the card
+    // is padding on a wrapper; margins would shift every line below it out of step.
     const dom = h(
       'div',
-      { class: 'cm-note', role: 'note', 'aria-label': `Note on ${this.lines.toLowerCase()}`, 'data-note': this.note.id },
-      h('div', { class: 'cm-note-head' }, h('span', { class: 'cm-note-lines' }, this.lines), spacer(), collapse),
-      h('div', { class: 'cm-note-body' }, this.note.body),
+      { class: 'cm-note-block' },
+      h(
+        'div',
+        { class: 'cm-note', role: 'note', 'aria-label': `Note on ${this.lines.toLowerCase()}`, 'data-note': this.note.id },
+        h('div', { class: 'cm-note-head' }, h('span', { class: 'cm-note-lines' }, this.lines), spacer(), collapse),
+        h('div', { class: 'cm-note-body' }, this.note.body),
+      ),
     );
     // The body may grow after it is shown (an answer streaming in), so the editor re-measures.
-    this.resize = new ResizeObserver(() => view.requestMeasure());
-    this.resize.observe(dom);
+    // The observer belongs to the DOM, which CodeMirror may hand on to a newer widget (updateDOM).
+    const resize = new ResizeObserver(() => view.requestMeasure());
+    resize.observe(dom);
+    widgetDom.set(dom, { key: this.note.key, resize });
     return dom;
   }
   updateDOM(dom) {
-    if (dom.dataset.note !== String(this.note.id)) return false;
+    if (widgetDom.get(dom)?.key !== this.note.key) return false;
     dom.querySelector('.cm-note-lines').textContent = this.lines;
-    dom.setAttribute('aria-label', `Note on ${this.lines.toLowerCase()}`);
+    dom.querySelector('.cm-note').setAttribute('aria-label', `Note on ${this.lines.toLowerCase()}`);
+    // setNotes may have given the same note a new body.
+    const body = dom.querySelector('.cm-note-body');
+    if (body.firstChild !== this.note.body) body.replaceChildren(this.note.body);
     return true;
   }
-  destroy() {
-    this.resize?.disconnect();
+  destroy(dom) {
+    widgetDom.get(dom)?.resize.disconnect();
+    widgetDom.delete(dom);
   }
   ignoreEvent() {
     return true;
@@ -188,16 +233,22 @@ function draw(doc, notes, open) {
   return { decorations: Decoration.set([...lines, ...widgets], true), marks: RangeSet.of(marks) };
 }
 
-function build(doc, notes, open, orphaned = []) {
+/**
+ * The field's value. `notes` are the placed ones ({ note, from, to }), `detached` the ones whose
+ * code was deleted ({ note, text }, with the text they covered), and `orphaned` the notes this
+ * transaction lost for good (past the end of the file), for syncNotes to report.
+ */
+function build(doc, notes, open, orphaned = [], detached = []) {
   notes.sort((a, b) => a.from - b.from || a.to - b.to);
   const drawn = draw(doc, notes, open);
-  return { notes, open, orphaned, ...drawn };
+  return { notes, open, orphaned, detached, ...drawn };
 }
 
-function fromEntries(doc, entries) {
+function fromEntries(doc, entries, detached = []) {
   const notes = [];
   const orphaned = [];
   for (const note of entries) {
+    if (detached.some((d) => d.note === note)) continue;
     const range = rangeFor(doc, note.fromLine, note.toLine);
     if (range) notes.push({ note, ...range });
     else orphaned.push(note);
@@ -205,27 +256,57 @@ function fromEntries(doc, entries) {
   return { notes, orphaned };
 }
 
+/** Notes whose code reappears whole in pasted or dropped text go with it. */
+function reattachPasted(tr, notes, detached) {
+  const back = [];
+  tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
+    const text = inserted.toString();
+    for (const entry of detached) {
+      if (!entry.text.trim() || back.some((b) => b.entry === entry)) continue;
+      const at = text.indexOf(entry.text);
+      if (at >= 0) back.push({ entry, from: fromB + at, to: fromB + at + entry.text.length });
+    }
+  });
+  if (!back.length) return { notes, detached };
+  return {
+    notes: [...notes, ...back.map(({ entry, from, to }) => ({ note: entry.note, from, to }))],
+    detached: detached.filter((d) => !back.some((b) => b.entry === d)),
+  };
+}
+
 const notesField = StateField.define({
   create: () => build(null, [], new Set()),
   update(value, tr) {
-    let { notes, open } = value;
+    let { notes, open, detached } = value;
     const orphaned = [];
     let changed = false;
-    if (tr.docChanged && notes.length) {
+    if (tr.docChanged && (notes.length || detached.length)) {
       changed = true;
+      const lost = [];
       notes = notes.flatMap((entry) => {
         const range = mapRange(entry, tr.changes, tr.startState.doc);
         if (range) return [{ ...entry, ...range }];
-        orphaned.push(entry.note);
+        lost.push({ note: entry.note, text: tr.startState.doc.sliceString(entry.from, entry.to) });
         return [];
       });
+      detached = [...detached, ...lost];
+      if (detached.length && ['input.paste', 'input.drop', 'move.drop'].some((event) => tr.isUserEvent(event)))
+        ({ notes, detached } = reattachPasted(tr, notes, detached));
     }
     for (const effect of tr.effects) {
       if (effect.is(replaceNotes)) {
-        const fresh = fromEntries(tr.state.doc, effect.value);
+        // Detached notes the registry still holds stay detached; the rest are placed afresh.
+        detached = detached.filter((d) => effect.value.includes(d.note));
+        const fresh = fromEntries(tr.state.doc, effect.value, detached);
         notes = fresh.notes;
         orphaned.push(...fresh.orphaned);
-        open = new Set([...open].filter((key) => notes.some((n) => n.note.key === key)));
+      } else if (effect.is(restoreNotes)) {
+        for (const { key, from, to } of effect.value) {
+          const entry = detached.find((d) => d.note.key === key);
+          if (!entry || to > tr.state.doc.length) continue;
+          detached = detached.filter((d) => d !== entry);
+          notes = [...notes, { note: entry.note, from, to }];
+        }
       } else if (effect.is(toggleNote)) {
         open = new Set(open);
         if (!open.delete(effect.value)) open.add(effect.value);
@@ -235,11 +316,24 @@ const notesField = StateField.define({
       changed = true;
     }
     if (!changed) return value;
-    // Orphans leave the open set too, so a stale key cannot reopen anything.
-    if (orphaned.length) open = new Set([...open].filter((key) => !orphaned.some((note) => note.key === key)));
-    return build(tr.state.doc, notes, open, orphaned);
+    // Only placed notes can be open, so a stale key cannot reopen anything.
+    open = new Set([...open].filter((key) => notes.some((n) => n.note.key === key)));
+    return build(tr.state.doc, notes, open, orphaned, detached);
   },
   provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
+});
+
+/** Undoing an edit that detached notes puts them back where they were before it. */
+const undoDetach = invertedEffects.of((tr) => {
+  const before = tr.startState.field(notesField, false);
+  const after = tr.state.field(notesField, false);
+  if (!before || !after || before === after) return [];
+  const restore = after.detached
+    .filter((d) => !before.detached.some((b) => b.note === d.note))
+    .map((d) => before.notes.find((n) => n.note === d.note))
+    .filter(Boolean)
+    .map(({ note, from, to }) => ({ key: note.key, from, to }));
+  return restore.length ? [restoreNotes.of(restore)] : [];
 });
 
 const noteGutter = gutter({
@@ -263,7 +357,7 @@ export function notesFor(path) {
     const { notes, orphaned } = fromEntries(state.doc, initial);
     return build(state.doc, notes, new Set(), orphaned);
   };
-  return [notesField.init(init), noteGutter];
+  return [notesField.init(init), noteGutter, undoDetach];
 }
 
 /** The transaction spec that shows the registry's current notes for `path` in a state. */
@@ -271,15 +365,17 @@ export const refreshSpec = (path) => ({ effects: replaceNotes.of([...(registry.g
 
 /**
  * Brings the registry in line with a file's state after it changed from `before` (null for a
- * state just created) to `after`: notes that moved get their new lines, and notes whose text was
- * deleted, or whose lines are past the end of the file, are removed and reported to whoever set them.
+ * state just created) to `after`: notes that moved get their new lines, detached ones are marked
+ * so, and notes whose lines are past the end of the file are removed and reported to whoever set them.
  */
 export function syncNotes(path, before, after) {
   const prev = before?.field(notesField, false);
   const next = after.field(notesField, false);
   if (!next || prev === next) return;
   const notes = registry.get(path);
+  for (const { note } of next.detached) note.detached = true;
   for (const { note, from, to } of next.notes) {
+    note.detached = false;
     note.fromLine = after.doc.lineAt(from).number;
     note.toLine = after.doc.lineAt(to).number;
   }

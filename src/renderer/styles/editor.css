@@ -284,8 +284,11 @@
 #editor-host .cm-note-line.open {
   background: var(--color-note-tint-open);
 }
+/* Padding, not margins: CodeMirror leaves a block widget's margins out of its line positions. */
+.cm-note-block {
+  padding: var(--space-2) var(--space-8) var(--space-4) var(--space-2);
+}
 .cm-note {
-  margin: var(--space-2) var(--space-8) var(--space-4) var(--space-2);
   max-width: 760px;
   padding: var(--space-3) var(--space-6) var(--space-5);
   border-left: 2px solid var(--color-accent);

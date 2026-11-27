@@ -7,6 +7,10 @@ use tauri::Emitter;
 
 pub fn build(app: &tauri::App) -> tauri::Result<()> {
     let item = |id: &str, label: &str, key: &str| MenuItemBuilder::with_id(id, label).accelerator(key).build(app);
+    // A native accelerator fires before the page sees the key, wherever focus is. A shortcut that
+    // means something while typing elsewhere (Ctrl+G cancels a search in the terminal's shell) is
+    // left to the editor's own key bindings, and its menu item gets no accelerator.
+    let plain = |id: &str, label: &str| MenuItemBuilder::with_id(id, label).build(app);
     let app_menu =
         SubmenuBuilder::new(app, "Longhand").about(None).separator().hide().hide_others().show_all().separator().quit().build()?;
     let file = SubmenuBuilder::new(app, "File")
@@ -31,11 +35,12 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
         .separator()
         .item(&item("find", "Find…", "CmdOrCtrl+F")?)
         .item(&item("replace", "Replace…", "CmdOrCtrl+Alt+F")?)
-        .item(&item("go-to-line", "Go to Line…", "Ctrl+G")?)
+        .item(&plain("go-to-line", "Go to Line… (Ctrl+G)")?)
         .item(&item("toggle-comment", "Toggle Comment", "CmdOrCtrl+/")?)
         .separator()
-        .item(&item("next-note", "Next Note", "Alt+]")?)
-        .item(&item("previous-note", "Previous Note", "Alt+[")?)
+        // With Cmd: Option+] and Option+[ alone type ‘ and “ on a Mac keyboard.
+        .item(&item("next-note", "Next Note", "CmdOrCtrl+Alt+]")?)
+        .item(&item("previous-note", "Previous Note", "CmdOrCtrl+Alt+[")?)
         .build()?;
     let view = SubmenuBuilder::new(app, "View")
         .item(&item("toggle-files", "Toggle Files", "CmdOrCtrl+B")?)

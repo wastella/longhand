@@ -22,8 +22,13 @@ const MAX_FILE_BYTES: u64 = 3 * 1024 * 1024;
 
 /// Every path from the interface must stay inside the open folder.
 pub(crate) fn in_workspace(state: &AppState, rel: &str) -> R<PathBuf> {
-    let ws = workspace(state)?;
-    let mut out = ws.clone();
+    resolve_in(&workspace(state)?, rel)
+}
+
+/// `in_workspace` for a folder already looked up, so the file system checks can run on a
+/// blocking thread (they touch the disk, which may be a slow network mount).
+pub(crate) fn resolve_in(ws: &Path, rel: &str) -> R<PathBuf> {
+    let mut out = ws.to_path_buf();
     for c in Path::new(rel).components() {
         match c {
             Component::Normal(p) => out.push(p),

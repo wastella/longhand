@@ -1,8 +1,9 @@
 // The open files and the single CodeMirror view that shows the active one.
 //
 // Each open file is a doc: { path, kind, dirty, banner, ... }. A text doc ('text') also has its
-// CodeMirror `state`, the text last read or written (`saved`), the file's `mtime` and `format`
-// on disk, and `missing` once it has been deleted underneath the editor. A file the editor will
+// CodeMirror `state`, the text last read or written (`saved`), the version on disk that text
+// came from (`stamp`: { mtime, size }), the file's `format`, `missing` once it has been deleted
+// underneath the editor, and `saves`, counting the saves started. A file the editor will
 // not open (binary, too large) is a 'notice' doc with the reason in `notice`. Insertion order of
 // `session.docs` is tab order.
 
@@ -14,7 +15,8 @@ import { createEditorState, languageSlot } from './setup.js';
 import { languageSupport } from './languages.js';
 import { currentThemeMode, isStale, themeMode } from './theme.js';
 import { goTo } from './go-to-line.js';
-import { forgetAllNotes, moveNotes, syncNotes } from './notes.js';
+import { forgetAllNotes, moveNotes, releaseDetached, syncNotes } from './notes.js';
+import { fromDisk } from './line-endings.js';
 import { renderTabBar, wireTabBar } from './tab-bar.js';
 import { renderBanner, renderFileNotice } from './notice.js';
 import { flushTabs, recallTabs, rememberTabs } from './restore.js';
@@ -43,6 +45,9 @@ export function attach(elements, actions) {
 }
 
 export const isWithin = (path, prefix) => path === prefix || path.startsWith(prefix + '/');
+
+/** The version of a file a backend result describes: { mtime, size }. */
+export const stampOf = (file) => ({ mtime: file.mtime, size: file.size });
 
 const isShown = (doc) => doc.path === session.active && doc.kind === 'text' && session.view;
 
@@ -104,8 +109,9 @@ function remember() {
 }
 
 function textDoc(path, file, cursor) {
-  const doc = { path, kind: 'text', mtime: file.mtime, format: file.format, dirty: false, missing: false, banner: null, scroll: null };
-  let state = createEditorState(doc, file.text, { onUpdate: (update) => onViewUpdate(doc, update) });
+  const doc = { path, kind: 'text', stamp: stampOf(file), format: file.format, saves: 0, dirty: false, missing: false, banner: null, scroll: null };
+  const { text, endings } = fromDisk(file.text, file.format);
+  let state = createEditorState(doc, text, { endings, onUpdate: (update) => onViewUpdate(doc, update) });
   if (cursor) state = state.update({ selection: { anchor: Math.min(cursor, state.doc.length) } }).state;
   doc.state = state;
   doc.saved = state.doc;
@@ -117,6 +123,7 @@ const noticeDoc = (path, notice) => ({ path, kind: 'notice', notice, dirty: fals
 
 /** Turns an open doc into a notice in place, when its file stopped being readable text. */
 export function becomeNotice(doc, notice) {
+  if (doc.kind === 'text') releaseDetached(doc.path, stateOf(doc));
   Object.assign(doc, noticeDoc(doc.path, notice));
   if (doc.path === session.active) activate(doc.path);
 }
@@ -208,6 +215,8 @@ export async function close(path, force = false) {
   if (session.docs.get(doc.path) !== doc) return false;
   const order = [...session.docs.keys()];
   const i = order.indexOf(doc.path);
+  // Undo goes with the tab, so notes whose code was deleted cannot come back any more.
+  if (doc.kind === 'text') releaseDetached(doc.path, stateOf(doc));
   session.docs.delete(doc.path);
   if (session.active !== doc.path) {
     renderChrome();

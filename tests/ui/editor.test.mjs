@@ -167,6 +167,87 @@ uiTest('a deleted file closes if clean, and stays open with a way back if not', 
   assert.equal(await count(page, '#tabs .tab.dirty'), 0);
 });
 
+uiTest(
+  "closing a deleted file's tab without saving asks first, since it holds the only copy",
+  async (page) => {
+    await openFromTree(page, 'stats/running.py');
+    await typeAt(page, 0, ' # mine');
+    await page.evaluate(() => window.__changeOnDisk('stats/running.py', null));
+    await focusWindow(page);
+    await page.waitForSelector('#editor-banner:not([hidden])');
+    await page.click('#editor-banner button:last-child');
+    await page.waitForFunction(() => window.__confirmed);
+    assert.match(await page.evaluate(() => window.__confirmed), /running\.py has unsaved changes\. Close it without saving\?/);
+    assert.deepEqual(await tabNames(page), ['running.py'], 'backing out keeps it open');
+  },
+  { confirm: false },
+);
+
+/** Plays a change on disk that the editor reads slowly, typing ' # mine' on line 1 while it reads. */
+async function typeDuringSlowReload(page, change) {
+  await openFromTree(page, 'stats/running.py');
+  await page.click('.cm-line:nth-child(1)');
+  await page.evaluate(change);
+  await page.evaluate(() => (window.__MOCK__.delay = { doc_read: 400 }));
+  await focusWindow(page);
+  await sleep(100); // the check has seen the change and is reading the file
+  await page.keyboard.press('End');
+  await page.keyboard.type(' # mine');
+  await sleep(600);
+}
+
+uiTest('typing while a changed file is being reloaded keeps the typing and asks instead', async (page) => {
+  await typeDuringSlowReload(page, () => window.__changeOnDisk('stats/running.py', 'theirs\n'));
+  assert.match((await lines(page))[0], /# mine$/, 'the disk version did not replace the typing');
+  assert.equal(await count(page, '#tabs .tab.dirty'), 1, 'the typing counts as unsaved');
+  assert.match(await text(page, '#editor-banner'), /running\.py changed on disk/);
+  await page.click('#editor-banner button:last-child');
+  await page.waitForFunction(() => document.querySelector('.cm-line').textContent === 'theirs');
+});
+
+uiTest('typing while a file that turned binary is being read keeps the typing', async (page) => {
+  await typeDuringSlowReload(page, () => {
+    window.__changeOnDisk('stats/running.py', '\u0000\u0001');
+    window.__MOCK__.disk = { 'stats/running.py': { kind: 'binary', size: 2 } };
+  });
+  assert.equal(await isHidden(page, '.editor-notice'), true);
+  assert.match((await lines(page))[0], /# mine$/);
+  assert.match(await text(page, '#editor-banner'), /running\.py changed on disk/);
+});
+
+uiTest('a disk check that overlaps a save does not mistake the save for a change', async (page) => {
+  await openFromTree(page, 'stats/running.py');
+  await typeAt(page, 0, ' # mine');
+  await page.evaluate(() => (window.__MOCK__.delay = { doc_stat: 400 }));
+  await focusWindow(page); // its answer describes the file from before the save
+  await sleep(50);
+  await save(page);
+  await page.waitForFunction(() => !document.querySelector('#tabs .tab.dirty'));
+  await typeAt(page, 0, '!');
+  await sleep(600);
+  assert.equal(await isHidden(page, '#editor-banner'), true);
+
+  await page.evaluate(() => ((window.__MOCK__.delay = {}), (window.__confirmed = null)));
+  await save(page);
+  await page.waitForFunction(() => window.__files['stats/running.py'].includes('# mine!'));
+  assert.equal(await page.evaluate(() => window.__confirmed), null, 'the next save does not ask to overwrite');
+});
+
+uiTest(
+  'saving a file with mixed line endings keeps every line ending it did not touch',
+  async (page) => {
+    await openFromTree(page, 'mixed.txt');
+    assert.deepEqual(await lines(page), ['one', 'two', 'three', 'four', 'five', '']);
+    await typeAt(page, 1, '!');
+    await typeAt(page, 3, '\n4b');
+    await save(page);
+    await page.waitForFunction(() => window.__saves['mixed.txt'] === 1);
+    // New line breaks take the ending most of the file uses (CRLF here).
+    assert.equal(await page.evaluate(() => window.__files['mixed.txt']), 'one\r\ntwo!\nthree\r\nfour\r\n4b\rfive\r\n');
+  },
+  { files: { 'mixed.txt': 'one\r\ntwo\nthree\r\nfour\rfive\r\n' } },
+);
+
 uiTest('moving a file with unsaved edits to the Trash keeps the edits open', async (page) => {
   await openFromTree(page, 'stats/running.py');
   await typeAt(page, 0, ' # mine');
@@ -319,14 +400,14 @@ uiTest('notes show a mark and tint, open beneath their lines, and close again', 
   assert.equal(await count(page, '.cm-note'), 0);
 
   await page.click('.cm-content');
-  await chord(page, ['Alt', 'BracketRight']);
+  await chord(page, ['Mod', 'Alt', 'BracketRight']);
   await page.waitForSelector('.cm-note');
   assert.match(await text(page, '.cm-note'), /Lines 5–8.*Three running totals\./);
   assert.match(await text(page, '#status-pos'), /^Ln 5,/);
-  await chord(page, ['Alt', 'BracketRight']);
+  await chord(page, ['Mod', 'Alt', 'BracketRight']);
   assert.match(await text(page, '.cm-note'), /Lines 12–14.*Check the order here\./);
   assert.equal(await count(page, '.cm-note'), 1, 'moving to a note closes the one before');
-  await chord(page, ['Alt', 'BracketLeft']);
+  await chord(page, ['Mod', 'Alt', 'BracketLeft']);
   assert.match(await text(page, '.cm-note'), /Lines 5–8/);
 
   await page.keyboard.press('Escape');
@@ -337,7 +418,33 @@ uiTest('notes show a mark and tint, open beneath their lines, and close again', 
   assert.equal(await count(page, '.cm-note'), 0);
 });
 
-uiTest('notes follow edits, and report themselves when their lines are deleted', async (page) => {
+/** Selects whole lines `first` to `last` (1-based), up to the start of the line after. */
+async function selectLines(page, first, last) {
+  await page.click(`.cm-line:nth-child(${first})`);
+  // The first Home stops at the indentation; the second goes to the start of the line.
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Home');
+  for (let n = first; n <= last; n++) await chord(page, ['Shift', 'ArrowDown']);
+}
+
+/** Cuts the selection, then pastes it at the start of line `at`, through the clipboard events CodeMirror handles. */
+async function cutAndPaste(page, at) {
+  const cut = await page.evaluate(() => {
+    const data = new DataTransfer();
+    document.querySelector('.cm-content').dispatchEvent(new ClipboardEvent('cut', { clipboardData: data, bubbles: true, cancelable: true }));
+    return data.getData('text/plain');
+  });
+  await page.click(`.cm-line:nth-child(${at})`);
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Home');
+  await page.evaluate((text) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', text);
+    document.querySelector('.cm-content').dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  }, cut);
+}
+
+uiTest('notes follow edits; deleted code takes its note away until undo or a paste brings it back', async (page) => {
   await openFromTree(page, 'stats/running.py');
   await pinNotes(page, 'stats/running.py', [
     { id: 'push', fromLine: 12, toLine: 14, text: 'Order of updates.' },
@@ -355,18 +462,65 @@ uiTest('notes follow edits, and report themselves when their lines are deleted',
   await page.keyboard.type('self.mean = self.mean + delta / self.count');
   assert.equal((await notesOn(page, 'stats/running.py'))[0].fromLine, 13);
 
-  // Select lines 18-19 and delete them.
-  await page.click('.cm-line:nth-child(18)');
-  await page.keyboard.press('Home');
-  await page.keyboard.press('Home');
-  await chord(page, ['Shift', 'ArrowDown']);
-  await chord(page, ['Shift', 'ArrowDown']);
+  // Deleting lines 18-19 hides their note, but does not report it lost while undo can restore it.
+  await sleep(600); // so the deletion is its own step in the undo history
+  await selectLines(page, 18, 19);
   await page.keyboard.press('Backspace');
+  const ids = async () => (await notesOn(page, 'stats/running.py')).map((n) => `${n.id} ${n.fromLine}-${n.toLine}`);
+  assert.deepEqual(await ids(), ['push 13-15']);
+  assert.equal(await count(page, '.cm-note-mark.start'), 1);
+  assert.deepEqual(await page.evaluate(() => window.__orphaned), []);
+  await chord(page, ['Mod', 'KeyZ']);
+  assert.deepEqual(await ids(), ['push 13-15', 'guard 18-19'], 'undo brings the note back with its code');
+
+  // Cutting the code and pasting it elsewhere moves the note with it.
+  await selectLines(page, 18, 19);
+  await cutAndPaste(page, 2);
+  assert.match((await lines(page))[1], /if self\.count < 2:/);
+  assert.deepEqual(await ids(), ['guard 2-3', 'push 15-17']);
+  assert.deepEqual(await page.evaluate(() => window.__orphaned), []);
+});
+
+uiTest('a note whose code is gone is reported once its tab closes; a folder switch reports the rest', async (page) => {
+  await openFromTree(page, 'stats/running.py');
+  await pinNotes(page, 'stats/running.py', [
+    { id: 'push', fromLine: 11, toLine: 13, text: 'Order of updates.' },
+    { id: 'guard', fromLine: 17, toLine: 18, text: 'One number?' },
+  ]);
+  await selectLines(page, 17, 18);
+  await page.keyboard.press('Backspace');
+  assert.deepEqual(await page.evaluate(() => window.__orphaned), []);
+  await page.evaluate(() => window.__emit('menu', 'close-tab'));
+  await page.waitForFunction(() => !document.querySelector('#tabs .tab'));
   assert.deepEqual(await page.evaluate(() => window.__orphaned), [['guard', 'stats/running.py']]);
   assert.deepEqual(
     (await notesOn(page, 'stats/running.py')).map((n) => n.id),
     ['push'],
+    'a note whose code is still there waits for the file to open again',
   );
+
+  await page.evaluate(() => window.__emit('workspace:opened', { ...window.__mock.workspace }));
+  await page.waitForFunction(() => window.__orphaned.length === 2);
+  assert.deepEqual(await page.evaluate(() => window.__orphaned[1]), ['push', 'stats/running.py']);
+});
+
+uiTest('a note body that grows after it opens is measured again, even after its lines moved', async (page) => {
+  await openFromTree(page, 'stats/running.py');
+  await pinNotes(page, 'stats/running.py', [{ id: 'a', fromLine: 5, toLine: 6, text: 'Short.' }]);
+  assert.equal(await page.evaluate(() => window.__editor.showNote('review', 'stats/running.py', 'a')), true);
+  await page.waitForSelector('.cm-note');
+  // A line typed above moves the note, and CodeMirror hands the note's DOM to a new widget.
+  await typeAt(page, 1, '\n# above');
+  assert.equal(await text(page, '.cm-note-lines'), 'Lines 6–7');
+  await page.evaluate(() => (document.querySelector('.cm-note-body p').textContent = 'A longer answer, streaming in. '.repeat(300)));
+  await sleep(300);
+  // CodeMirror's own idea of where line 8 is (the line number beside it) matches the code.
+  const gap = await page.evaluate(() => {
+    const number = [...document.querySelectorAll('.cm-lineNumbers .cm-gutterElement')].find((n) => n.textContent === '8');
+    const line = document.querySelectorAll('.cm-line')[7];
+    return Math.abs(number.getBoundingClientRect().top - line.getBoundingClientRect().top);
+  });
+  assert.ok(gap < 2, `line 8's number is ${gap}px away from its code`);
 });
 
 uiTest('notes for a file that is not open appear when it opens; past the end they are orphaned', async (page) => {
