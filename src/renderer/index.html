@@ -7,101 +7,21 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header id="titlebar" data-tauri-drag-region>
-      <span id="ws-name">Longhand</span>
-      <span class="spacer"></span>
-      <span id="reliance" title="Your own record of tutor use in this folder. Stored in .longhand/log.jsonl"></span>
-      <span id="auth" title="Tutor connection"></span>
-    </header>
-
+    <!-- Root regions only. Each area builds its own content into its region (see src/renderer/main.js). -->
+    <header id="titlebar" data-tauri-drag-region></header>
     <main id="app">
-      <aside id="files">
-        <div class="pane-head">
-          <span id="files-title">Files</span>
-          <span class="spacer"></span>
-          <button id="toggle-search" class="ghost" title="Find in files (⇧⌘F)">Find</button>
-          <button id="new-file" class="ghost" title="New file (⌘N)">+</button>
-        </div>
-        <div id="tree"></div>
-        <div id="search" hidden>
-          <input id="search-input" type="search" placeholder="Search this folder" spellcheck="false" />
-          <div id="search-results"></div>
-        </div>
-      </aside>
+      <aside id="files"></aside>
       <div class="split-v" data-target="files"></div>
-
       <section id="center">
-        <div id="tabs"></div>
-        <div id="editor-host">
-          <div id="welcome">
-            <h1>Longhand</h1>
-            <p>You write the code. The tutor reads along and answers like a TA in office hours.</p>
-            <button id="open-folder" class="primary">Open a folder</button>
-            <p id="welcome-last" class="dim"></p>
-          </div>
-        </div>
+        <div id="editor"></div>
+        <div id="welcome"></div>
         <div class="split-h" data-target="bottom"></div>
-        <div id="bottom">
-          <div class="pane-head">
-            <button class="tab-btn active" data-pane="terminal">Terminal</button>
-            <button class="tab-btn" data-pane="tests">Tests <span id="tests-badge"></span></button>
-            <span class="spacer"></span>
-            <span id="tests-actions" hidden>
-              <button id="run-file-tests" class="ghost">Run file</button>
-              <button id="run-all-tests" class="ghost">Run all</button>
-            </span>
-          </div>
-          <div id="terminal" class="bottom-pane"></div>
-          <div id="tests" class="bottom-pane" hidden>
-            <div id="tests-list"><p class="dim pad">Run the tests to see results here.</p></div>
-            <pre id="tests-detail"></pre>
-          </div>
-        </div>
+        <div id="bottom"></div>
       </section>
-
       <div class="split-v" data-target="tutor"></div>
-      <aside id="tutor">
-        <div class="pane-head">
-          <span>Tutor</span>
-          <span class="spacer"></span>
-          <select id="policy" title="How much code the tutor may show">
-            <option value="strict">Strict: no code</option>
-            <option value="guided">Guided: toy examples</option>
-          </select>
-          <button id="new-chat" class="ghost" title="New conversation">New</button>
-        </div>
-        <div id="course-note" hidden></div>
-        <div id="chat"></div>
-        <div id="setup" hidden>
-          <h2>Connect the tutor</h2>
-          <p>The tutor runs on your own Claude subscription, through Claude Code on this computer. The editor, terminal and tests work without it.</p>
-          <ol id="setup-steps"></ol>
-          <button id="setup-check" class="primary">Check again</button>
-        </div>
-        <div id="quick">
-          <button data-quick="selection">Explain selection</button>
-          <button data-quick="review">Review this file</button>
-          <button data-quick="hint">I'm stuck</button>
-        </div>
-        <form id="ask">
-          <div id="context-chip"></div>
-          <textarea id="input" rows="3" placeholder="Ask about a concept, an API, an error, or your own code"></textarea>
-          <div class="row">
-            <span class="dim" id="ask-hint">Enter to send · Shift+Enter for a new line</span>
-            <span class="spacer"></span>
-            <button type="button" id="stop" hidden>Stop</button>
-            <button type="submit" class="primary" id="send">Ask</button>
-          </div>
-        </form>
-      </aside>
+      <aside id="tutor"></aside>
     </main>
-
-    <footer id="status">
-      <span id="status-file"></span>
-      <span class="spacer"></span>
-      <span id="status-msg"></span>
-      <span id="status-pos"></span>
-    </footer>
+    <footer id="status"></footer>
     <script src="renderer.js"></script>
   </body>
 </html>

@@ -9,8 +9,9 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "smoke": "node build.mjs && cd src-tauri && LONGHAND_SMOKE=1 cargo run",
-    "screenshot": "node build.mjs && node scripts/screenshot.mjs",
-    "test:ui": "node build.mjs && node scripts/ui-test.mjs",
+    "preview": "node build.mjs && node scripts/preview.mjs",
+    "screenshot": "node build.mjs && node scripts/preview.mjs --scenario failing-test --out docs/screenshot.png",
+    "test:ui": "node build.mjs && node --test --test-reporter=spec --test-concurrency=1 'tests/ui/*.test.mjs'",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "npm run test:ui && cd src-tauri && cargo test"

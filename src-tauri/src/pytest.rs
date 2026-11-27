@@ -1,6 +1,6 @@
 //! Runs the workspace's pytest suite and turns its output into a list of results.
 
-use crate::{log_event, workspace, AppState};
+use crate::workspace::{log_event, workspace, AppState};
 use regex::Regex;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};

@@ -1,0 +1,12 @@
+/* The terminal pane. xterm.js's own colours come from the tokens in terminal/index.js. */
+
+#terminal {
+  overflow: hidden;
+  background: var(--color-surface);
+}
+#terminal .xterm-viewport {
+  background-color: var(--color-surface) !important;
+}
+#terminal .xterm {
+  padding: var(--space-2) 0 0 var(--space-5);
+}
