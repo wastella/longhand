@@ -106,7 +106,6 @@ npm test         # interface tests (headless Chrome) and backend tests
 
 Not built yet, roughly in order:
 
-- Python language server: errors underlined, go to definition, hover documentation
 - Signed and notarized releases with automatic updates
 - A measured leak rate for the tutor's policies, from a published set of adversarial prompts
 - An API-key option for people without a Claude subscription
