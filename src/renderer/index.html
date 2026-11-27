@@ -17,10 +17,16 @@
     <main id="app">
       <aside id="files">
         <div class="pane-head">
-          <span>Files</span>
-          <button id="new-file" class="ghost" title="New file">+</button>
+          <span id="files-title">Files</span>
+          <span class="spacer"></span>
+          <button id="toggle-search" class="ghost" title="Find in files (⇧⌘F)">Find</button>
+          <button id="new-file" class="ghost" title="New file (⌘N)">+</button>
         </div>
         <div id="tree"></div>
+        <div id="search" hidden>
+          <input id="search-input" type="search" placeholder="Search this folder" spellcheck="false" />
+          <div id="search-results"></div>
+        </div>
       </aside>
       <div class="split-v" data-target="files"></div>
 
@@ -66,6 +72,12 @@
         </div>
         <div id="course-note" hidden></div>
         <div id="chat"></div>
+        <div id="setup" hidden>
+          <h2>Connect the tutor</h2>
+          <p>The tutor runs on your own Claude subscription, through Claude Code on this computer. The editor, terminal and tests work without it.</p>
+          <ol id="setup-steps"></ol>
+          <button id="setup-check" class="primary">Check again</button>
+        </div>
         <div id="quick">
           <button data-quick="selection">Explain selection</button>
           <button data-quick="review">Review this file</button>

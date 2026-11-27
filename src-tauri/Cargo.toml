@@ -3,6 +3,8 @@ name = "longhand"
 version = "0.1.0"
 edition = "2021"
 description = "A quiet code editor for students: you write the code, the AI is a read-only tutor."
+license = "MIT"
+repository = "https://github.com/wastella/longhand"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -17,6 +19,7 @@ regex = "1"
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
 libc = "0.2"
+trash = "5"
 
 [profile.release]
 opt-level = 3

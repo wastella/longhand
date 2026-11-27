@@ -70,11 +70,7 @@ pub fn parse(output: &str) -> Value {
             "detail": detail,
         }));
     }
-    let summary = summary_line
-        .captures(output)
-        .or_else(|| quiet_summary.captures(output))
-        .map(|c| c[1].to_string())
-        .unwrap_or_default();
+    let summary = summary_line.captures(output).or_else(|| quiet_summary.captures(output)).map(|c| c[1].to_string()).unwrap_or_default();
     json!({ "tests": tests, "summary": summary })
 }
 
@@ -177,5 +173,49 @@ FAILED tests/test_m.py::test_add - assert 3 == 4
         assert!(tests[1]["detail"].as_str().unwrap().contains("E   assert 3 == 4"));
         assert_eq!(tests[0]["detail"], "");
         assert_eq!(v["summary"], "1 failed, 1 passed in 0.02s");
+    }
+
+    #[test]
+    fn collection_errors_and_empty_runs() {
+        let out = "\
+==================================== ERRORS ====================================
+_____________________ ERROR collecting tests/test_m.py ______________________
+ImportError while importing test module
+=========================== short test summary info ============================
+ERROR tests/test_m.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.05s
+";
+        let v = parse(out);
+        assert_eq!(v["tests"][0]["status"], "ERROR");
+        assert_eq!(v["tests"][0]["id"], "tests/test_m.py");
+        assert_eq!(v["summary"], "1 error in 0.05s");
+
+        let empty = parse("no tests ran in 0.00s\n");
+        assert_eq!(empty["tests"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn class_based_tests_find_their_traceback() {
+        let out = "\
+=================================== FAILURES ===================================
+_____________________________ TestMath.test_square _____________________________
+tests/test_m.py:9: in test_square
+    assert square(3) == 9
+E   assert 6 == 9
+=========================== short test summary info ============================
+FAILED tests/test_m.py::TestMath::test_square - assert 6 == 9
+1 failed in 0.01s
+";
+        let v = parse(out);
+        assert!(v["tests"][0]["detail"].as_str().unwrap().contains("assert 6 == 9"));
+    }
+
+    #[test]
+    fn quoting_protects_odd_test_ids() {
+        use super::shell_quote;
+        assert_eq!(shell_quote("tests/test_m.py::test_a[1-2]"), "tests/test_m.py::test_a[1-2]");
+        assert_eq!(shell_quote("my tests/t.py"), "'my tests/t.py'");
+        assert_eq!(shell_quote("a'b; rm -rf x"), r"'a'\''b; rm -rf x'");
     }
 }

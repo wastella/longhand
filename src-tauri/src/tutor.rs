@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const READ_ONLY_TOOLS: [&str; 3] = ["Read", "Glob", "Grep"];
@@ -26,27 +26,28 @@ pub struct TutorState {
 }
 
 fn find_claude() -> Option<PathBuf> {
-    static FOUND: OnceLock<Option<PathBuf>> = OnceLock::new();
-    FOUND
-        .get_or_init(|| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            let candidates = [
-                format!("{home}/.local/bin/claude"),
-                format!("{home}/.claude/local/claude"),
-                "/opt/homebrew/bin/claude".to_string(),
-                "/usr/local/bin/claude".to_string(),
-            ];
-            if let Some(c) = candidates.iter().map(PathBuf::from).find(|p| p.exists()) {
-                return Some(c);
-            }
-            // Apps launched from Finder do not inherit the shell's PATH; ask a login shell.
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-            let out = Command::new(shell).args(["-ilc", "command -v claude"]).stdin(Stdio::null()).output().ok()?;
-            let text = String::from_utf8_lossy(&out.stdout);
-            let path = PathBuf::from(text.lines().last()?.trim());
-            path.exists().then_some(path)
-        })
-        .clone()
+    // Remember a hit, but keep looking after a miss so a fresh install is picked up.
+    static FOUND: Mutex<Option<PathBuf>> = Mutex::new(None);
+    let mut found = FOUND.lock().unwrap();
+    if let Some(p) = found.as_ref().filter(|p| p.exists()) {
+        return Some(p.clone());
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    let candidates = [
+        format!("{home}/.local/bin/claude"),
+        format!("{home}/.claude/local/claude"),
+        "/opt/homebrew/bin/claude".to_string(),
+        "/usr/local/bin/claude".to_string(),
+    ];
+    *found = candidates.iter().map(PathBuf::from).find(|p| p.exists()).or_else(|| {
+        // Apps launched from Finder do not inherit the shell's PATH; ask a login shell.
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+        let out = Command::new(shell).args(["-ilc", "command -v claude"]).stdin(Stdio::null()).output().ok()?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        let path = PathBuf::from(text.lines().last()?.trim());
+        path.exists().then_some(path)
+    });
+    found.clone()
 }
 
 pub fn auth_status() -> Value {
@@ -125,11 +126,20 @@ pub fn tutor_ask(app: AppHandle, state: State<AppState>, prompt: String, kind: S
     cancel(&state);
 
     let mut args: Vec<String> = [
-        "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-        "--tools", &READ_ONLY_TOOLS.join(","),
-        "--restricted", "--strict-mcp-config", "--disable-slash-commands",
-        "--permission-mode", "dontAsk",
-        "--model", &model,
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
+        "--tools",
+        &READ_ONLY_TOOLS.join(","),
+        "--restricted",
+        "--strict-mcp-config",
+        "--disable-slash-commands",
+        "--permission-mode",
+        "dontAsk",
+        "--model",
+        &model,
     ]
     .iter()
     .map(|s| s.to_string())
@@ -218,7 +228,11 @@ pub fn tutor_ask(app: AppHandle, state: State<AppState>, prompt: String, kind: S
                 }
                 "rate_limit_event" => {
                     let w = &msg["rate_limit_info"]["unifiedWindows"];
-                    emit(&app, generation, json!({ "type": "usage", "fiveHour": w["five_hour"]["utilization"], "sevenDay": w["seven_day"]["utilization"] }));
+                    emit(
+                        &app,
+                        generation,
+                        json!({ "type": "usage", "fiveHour": w["five_hour"]["utilization"], "sevenDay": w["seven_day"]["utilization"] }),
+                    );
                 }
                 "result" => {
                     finished = true;
@@ -249,7 +263,8 @@ pub fn tutor_ask(app: AppHandle, state: State<AppState>, prompt: String, kind: S
         } else if let Some(message) = failure {
             emit(&app, generation, json!({ "type": "error", "message": message }));
         } else if !finished || !status.map(|s| s.success()).unwrap_or(false) {
-            let message = if stderr_text.trim().is_empty() { "The tutor stopped unexpectedly.".to_string() } else { stderr_text.trim().to_string() };
+            let message =
+                if stderr_text.trim().is_empty() { "The tutor stopped unexpectedly.".to_string() } else { stderr_text.trim().to_string() };
             emit(&app, generation, json!({ "type": "error", "message": message }));
         } else {
             emit(&app, generation, json!({ "type": "done" }));
