@@ -36,7 +36,7 @@ backend for start-up state. Each area builds its own markup in its `mount()`.
 | `files/`    | File tree, its context menu and naming field, quick open, find in files, watching the folder                                          |
 | `terminal/` | xterm.js and the shell session                                                                                                        |
 | `tests/`    | Running pytest and showing results                                                                                                    |
-| `tutor/`    | Conversation, Markdown rendering and the hidden-code check, context building, setup steps, quick actions                              |
+| `tutor/`    | The tutor engine client, conversation, lookup bar, hints, history and record, Markdown and math with the hidden-code check, setup     |
 
 How areas talk to each other:
 
@@ -62,28 +62,73 @@ components; then one file per area. `build.mjs` joins them into `dist/styles.css
 
 - **One folder.** Every path from the interface goes through `in_workspace` in `files.rs`, which
   rejects anything outside the open folder, including through `..` and symlinks.
-- **The tutor is read-only.** `tutor.rs` passes `--tools Read,Glob,Grep --restricted
---strict-mcp-config --permission-mode dontAsk`. When the CLI reports its tool list at start-up,
-  anything outside those three aborts the run.
+- **The tutor is read-only.** Every run passes `--tools Read,Glob,Grep --restricted
+--strict-mcp-config --disable-slash-commands --permission-mode dontAsk` (`tutor/cli.rs`, where
+  a test pins the exact argument list). When the CLI reports its tool list at start-up, anything
+  outside those three kills the run. A CLI whose `--help` lacks one of the flags the tutor relies
+  on is refused as too old.
 - **The user's login, never a key.** `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` are removed
   from the tutor's environment so a stray key cannot be billed by accident.
 - **The window shows only the app.** Navigation away from the bundled page is refused, the content
   security policy allows no remote or inline script, and tutor answers are sanitized before they
   are rendered (`tutor/markdown.js`). Links open in the browser.
 
-## The tutor conversation
+## The tutor engine
 
-The first question in a conversation starts `claude` with a new session id and a system prompt
-built from `tutor-prompt.md`, the folder's policy, and its `AGENTS.md` or `CLAUDE.md` if present.
-Later questions resume that session. Changing the policy starts a new conversation, because the
-system prompt is fixed for the life of a session.
+Everything that asks the tutor something goes through one function in `tutor/index.js`:
 
-The interface adds context to each question inside `<context>` tags (`tutor/context.js`): the
-open file, the cursor line, any selection, and an attached test failure.
+```js
+import { tutorRequest, renderAnswer } from '../tutor/index.js';
 
-Answers stream back as events. The interface renders them as Markdown and hides fenced code blocks
-longer than the policy allows (2 lines on Strict, 12 on Guided; shell and plain-text blocks are
-exempt) behind a button that records the reveal (`tutor/hidden-code.js`).
+const { done, cancel } = tutorRequest({
+  thread: 'note-stats_running_py-12', // caller-chosen: letters, digits, - and _
+  kind: 'review', // 'conversation' | 'lookup' | 'review' | 'failure'
+  prompt, // the full text for the model, <context> included
+  question, // optional: what the student wrote, for the transcript
+  context, // optional: short labels for what was attached
+  model, // optional: 'haiku' | 'sonnet' | 'opus'
+  about, // optional: what the usage log files it under (defaults to the kind)
+  onText: (text, delta) => renderAnswer(node, text, message), // the answer so far
+  onActivity: ({ tool, target }) => {}, // the tutor is reading or searching a file
+});
+const { status, text, error } = await done; // status: 'done' | 'cancelled' | 'error'
+```
+
+- **Threads are independent.** Each request runs its own CLI process, so threads run at once and
+  `cancel()` stops only its own. A new request on a thread replaces the one running there.
+- **Kinds shape the prompt.** The kind picks a paragraph of the system prompt (`tutor/prompt.rs`),
+  which is fixed for the life of a CLI session, so a thread keeps one kind. Lookups default to
+  haiku at low effort and keep nothing (`ephemeral`); the others use the folder's model.
+- **Threads are kept** (unless ephemeral) in `.longhand/threads/<id>.json`: the transcript and
+  the CLI session id. A later request resumes that session. If the CLI no longer has it, or the
+  policy changed since it began, a fresh session starts with the transcript as context, and the
+  request gets `onRestart()`. `listThreads(prefix)` and `loadThread(id)` read them back.
+- **Failures are specific.** `error.code` is one of `not-installed`, `too-old`, `logged-out`,
+  `rate-limited` (with `resetsAt`, seconds since the epoch), `offline`, `busy`, `read-only`,
+  `no-folder`, `invalid` or `failed`; `error.message` is a sentence a student can act on.
+  `tutor/errors.js` turns one into a message with the action that helps.
+- **Render with `renderAnswer`.** It sanitizes, draws math (KaTeX, bundled into `dist/katex/`),
+  colours Python, and applies the hidden-code check: fenced code blocks longer than the policy
+  allows (2 lines on Strict, 12 on Guided; shell and plain-text blocks are exempt) stay behind a
+  button that logs the reveal (`tutor/hidden-code.js`). Anything shown to the student must go
+  through it. `message` is `{ revealed: new Set(), streaming }`.
+- **Every request is logged** as an `ask` in `.longhand/log.jsonl`, with `about` and, for hints,
+  `rung`. `usageRecord()` returns the folder's use by day.
+- **Speed.** The CLI takes about 0.2–0.5 s to start and the first token follows about 0.5–1 s
+  later on haiku. `prepareTutor('lookup')` starts the CLI ahead of a lookup (the lookup bar does
+  this when it opens), so only the model's latency remains.
+
+The backend side is `tutor.rs` (commands `tutor_request`, `tutor_prepare`, `tutor_cancel`,
+`tutor_threads`, `tutor_thread`, `tutor_record`, `auth_status`) and `tutor/`: `cli.rs` (finding
+and checking the CLI, the arguments), `stream.rs` (reading its stream-json), `run.rs` (one
+request), `threads.rs`, `failure.rs`, `prompt.rs` and `record.rs`. Events arrive as
+`tutor:event` with `{ thread, request, type }`; the client in `tutor/engine.js` sorts them out.
+
+The conversation panel uses one `conv-…` thread at a time and reopens the folder's latest on
+start. It adds context to each question inside `<context>` tags (`tutor/context.js`): the open
+file, the cursor line, any selection, and an attached test failure; the row above the question
+box shows these and lets the student leave any out. `evals/` measures how well the prompt holds
+against attempts to get the assignment's code (see `evals/README.md`).
 
 ## Finding and watching files
 
@@ -285,7 +330,7 @@ stale, unreached, counts }`. A test's `id` is its pytest node id
 
 `.longhand/config.json` holds the policy and model. `.longhand/log.jsonl` is an append-only record
 of questions, test runs, reveals and setting changes. Neither leaves the machine. Both are handled
-in `workspace.rs`.
+in `workspace.rs`. `.longhand/threads/` holds the tutor's kept threads (`tutor/threads.rs`).
 
 ## Testing
 
