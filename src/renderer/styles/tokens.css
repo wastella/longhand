@@ -24,6 +24,25 @@
   --color-selection: #3d4150; /* selected text in the terminal */
   --color-scrollbar: #3a3c45;
   --focus-ring-color: var(--color-accent);
+
+  /* The terminal's 16 ANSI colours, tuned to read on --color-surface. "Black" stays visible on
+     the dark surface and bright black is the dim grey that shell hints and tqdm use. */
+  --color-ansi-black: #3a3c45;
+  --color-ansi-red: #e07a7a;
+  --color-ansi-green: #7fbf7f;
+  --color-ansi-yellow: #d9c05b;
+  --color-ansi-blue: #7ea6e0;
+  --color-ansi-magenta: #c595d9;
+  --color-ansi-cyan: #6fc0c0;
+  --color-ansi-white: #c3c6cf;
+  --color-ansi-bright-black: #767986;
+  --color-ansi-bright-red: #f09c9c;
+  --color-ansi-bright-green: #a2d6a2;
+  --color-ansi-bright-yellow: #ecd67e;
+  --color-ansi-bright-blue: #a2c0ee;
+  --color-ansi-bright-magenta: #d9b3e9;
+  --color-ansi-bright-cyan: #94d8d8;
+  --color-ansi-bright-white: #ffffff;
   --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
