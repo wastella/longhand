@@ -322,6 +322,30 @@ uiTest('the lookup bar answers in a popover that is not part of the conversation
   assert.equal(await isHidden(page, '#lookup'), true);
 });
 
+uiTest('every kind of question moves the title bar, which agrees with the record', async (page) => {
+  const header = () => text(page, '#reliance');
+  assert.equal(await header(), 'Today: 3 questions', "the fixture's log");
+  await askTutor(page, 'What is a residual stream?');
+  await page.waitForFunction(() => document.querySelector('#reliance').textContent === 'Today: 4 questions');
+  await page.evaluate(() => window.__emit('menu', 'lookup'));
+  await page.type('#lookup-input', 'what does torch.tril return');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.querySelector('#reliance').textContent === 'Today: 5 questions');
+  await page.keyboard.press('Escape');
+  await page.click('#stuck');
+  await page.type('#input', 'the overflow');
+  await page.click('#hints .rung:nth-child(1)');
+  await page.waitForFunction(() => document.querySelector('#reliance').textContent === 'Today: 6 questions');
+  assert.deepEqual(
+    await page.evaluate(() => window.__log.filter((e) => e.kind === 'ask').map((e) => e.about)),
+    ['question', 'question', 'question', 'question', 'lookup', 'hint'],
+    'each question is logged as an ask, whatever its kind',
+  );
+  await page.click('#show-record');
+  await page.waitForSelector('#record .record-day');
+  assert.match(await text(page, '#record'), /Today4 questions · 1 hint · 1 lookup/);
+});
+
 uiTest('lookups go through the hidden-code check too', async (page) => {
   await page.evaluate(() => window.__emit('menu', 'lookup'));
   await page.type('#lookup-input', 'please include code');

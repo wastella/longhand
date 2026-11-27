@@ -128,8 +128,10 @@ const { status, text, error } = await done; // status: 'done' | 'cancelled' | 'e
   in math), and when it exceeds the policy (2 lines on Strict, 12 on Guided) all of it stays
   behind one button that logs the reveal. Anything shown to the student must go through it.
   `message` is `{ revealed: new Set(), streaming }`.
-- **Every request is logged** as an `ask` in `.longhand/log.jsonl`, with `about` and, for hints,
-  `rung`. `usageRecord()` returns the folder's use by day.
+- **Every request is logged** as `kind: "ask"` in `.longhand/log.jsonl`, with `about`,
+  `requestKind` and, for hints, `rung` (`tutor::log_ask`; `log_event` never lets a detail replace
+  an entry's `kind`). `usageRecord()` returns the folder's use by day. The Record view and the
+  title bar's counts both read the log through `tutor/record.rs`, so they cannot disagree.
 - **Speed.** The CLI takes about 0.2–0.5 s to start and the first token follows about 0.5–1 s
   later on haiku. `prepareTutor('lookup')` starts the CLI ahead of a lookup (the lookup bar does
   this when it opens), so only the model's latency remains.

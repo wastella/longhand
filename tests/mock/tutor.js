@@ -8,14 +8,14 @@
 // Options (window.__MOCK__.tutor): threads { id: thread } to start with, failures [{ code,
 // message, resetsAt }] for the next requests to end with, refuse { code, message } for every
 // request to be refused outright, pastDays [day] for the record.
-// window.__asked records every request; window.__prepared counts warm starts.
+// window.__asked records every request; window.__prepared counts warm starts; window.__log holds
+// the usage log's entries, written and read as src-tauri/src/tutor/record.rs does.
 
 const mock = window.__mock;
 const options = mock.options.tutor || {};
 const threads = (window.__threads = structuredClone(options.threads || {}));
 const failures = [...(options.failures || [])];
 const running = new Map();
-let reveals = 0;
 window.__asked = [];
 window.__prepared = 0;
 
@@ -123,33 +123,57 @@ function start(request) {
   send((slow ? 60 + chunks.length * 50 : 60) + 40, { type: 'done' }, () => (running.delete(thread), keep(request, { role: 'tutor', text: run.text })));
 }
 
-// The questions the fixture's log already holds for today, so the title bar's count and the
-// record's Today agree, as they do in the app (both are read from the same log).
-const earlierToday = mock.workspace.log?.today?.ask || 0;
+// The usage log, as entries. It starts with what the fixture says today already holds. Requests
+// and log_record append to it, and the title bar's summary and the record are both counted from
+// it with the app's rules, so a request the counts miss shows up in the interface tests.
+const localDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const log = (window.__log = []);
+const logEntry = (kind, detail = {}) => log.push({ ...detail, date: localDate(), kind });
+for (let i = 0; i < (mock.workspace.log?.today?.ask || 0); i++) logEntry('ask', { about: 'question' });
+for (let i = 0; i < (mock.workspace.log?.today?.tests || 0); i++) logEntry('tests');
 
-function today() {
-  const asks = earlierToday ? { question: earlierToday } : {};
-  let hintRung = 0;
-  for (const r of window.__asked) {
-    const about = r.about || (r.kind === 'conversation' ? 'question' : r.kind);
-    asks[about] = (asks[about] || 0) + 1;
-    hintRung = Math.max(hintRung, r.rung || 0);
-  }
-  const d = new Date();
-  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  return { date, asks, hintRung, reveals };
+/** record.rs's `counted`: what an entry counts as. */
+function counted(entry) {
+  if (['ask', 'reveal', 'tests'].includes(entry.kind)) return entry.kind;
+  if (['conversation', 'lookup', 'review', 'failure'].includes(entry.kind) && typeof entry.about === 'string') return 'ask';
+  return null;
 }
 
-/** The title bar's counts, from the same requests and reveals as the record. */
+function tallies() {
+  const days = new Map();
+  for (const entry of log) {
+    const what = counted(entry);
+    if (!what) continue;
+    const day = days.get(entry.date) || { date: entry.date, asks: {}, hintRung: 0, reveals: 0, tests: 0 };
+    days.set(entry.date, day);
+    if (what === 'ask') {
+      day.asks[entry.about] = (day.asks[entry.about] || 0) + 1;
+      day.hintRung = Math.max(day.hintRung, entry.rung || 0);
+    } else if (what === 'reveal') day.reveals++;
+    else day.tests++;
+  }
+  return [...days.values()];
+}
+
+const questions = (day) => Object.values(day?.asks || {}).reduce((a, b) => a + b, 0);
+
+/** record.rs's `summary`. */
 function summary() {
-  const tests = mock.workspace.log?.today?.tests || 0;
-  const counts = { ask: earlierToday + window.__asked.length, reveal: reveals, tests };
-  return { today: counts, total: counts };
+  const days = tallies();
+  const counts = (ds) => ({
+    ask: ds.reduce((n, d) => n + questions(d), 0),
+    reveal: ds.reduce((n, d) => n + d.reveals, 0),
+    tests: ds.reduce((n, d) => n + d.tests, 0),
+  });
+  return { today: counts(days.filter((d) => d.date === localDate())), total: counts(days) };
 }
 
 Object.assign(mock.commands, {
   tutor_request: ({ request }) => {
     window.__asked.push(request);
+    // As tutor.rs's log_ask writes it.
+    const about = request.about || (request.kind === 'conversation' ? 'question' : request.kind);
+    logEntry('ask', { about, requestKind: request.kind, ...(request.rung ? { rung: request.rung } : {}) });
     if (options.refuse) throw options.refuse;
     if (!request.retry) keep(request, { role: 'student', text: request.question || request.prompt, context: request.context || [] });
     start(request);
@@ -165,7 +189,10 @@ Object.assign(mock.commands, {
       .map((t) => ({ id: t.id, kind: t.kind, title: t.title, updated: t.updated, messages: t.messages.length })),
   tutor_thread: ({ id }) => structuredClone(threads[id] || null),
   tutor_record: () => {
-    const days = [today(), ...(options.pastDays || [])].filter((d) => Object.keys(d.asks).length || d.reveals);
+    const days = [...tallies(), ...(options.pastDays || [])]
+      .filter((d) => questions(d) || d.reveals)
+      .map(({ tests, ...day }) => day)
+      .sort((a, b) => b.date.localeCompare(a.date));
     const total = { asks: {}, hintRung: 0, reveals: 0 };
     for (const d of days) {
       for (const [k, n] of Object.entries(d.asks)) total.asks[k] = (total.asks[k] || 0) + n;
@@ -176,7 +203,9 @@ Object.assign(mock.commands, {
   },
   log_summary: summary,
   log_record: (args) => {
-    if (args.kind === 'reveal') reveals++;
+    // As workspace.rs's log_event: the detail never changes the entry's kind.
+    const { kind: _ignored, t: _time, ...detail } = args.detail || {};
+    logEntry(args.kind, detail);
     window.__logged = [...(window.__logged || []), args];
     return summary();
   },

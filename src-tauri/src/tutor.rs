@@ -226,6 +226,23 @@ fn choose_model(requested: Option<&str>, kind: Kind, configured: &str) -> Result
     }
 }
 
+/// Logs one question as `kind: "ask"`, the shape every reader of the log counts (`record.rs`).
+/// The request's own kind goes in `requestKind`; `about` is what the Record view groups by.
+fn log_ask(ws: &Path, kind: Kind, about: Option<&str>, model: &str, chars: usize, rung: Option<u8>) {
+    let about = about.map(String::from).unwrap_or_else(|| if kind == Kind::Conversation { "question".into() } else { kind.name().into() });
+    let mut entry = json!({ "about": about, "requestKind": kind.name(), "model": model, "chars": chars });
+    if let Some(rung) = rung {
+        entry["rung"] = json!(rung);
+    }
+    log_event(ws, "ask", entry);
+}
+
+/// The title bar's counts for the folder: see `record::summary`.
+pub fn log_summary(ws: &Path) -> Value {
+    let text = std::fs::read_to_string(ws.join(".longhand/log.jsonl")).unwrap_or_default();
+    record::summary(&text, chrono::Local::now().date_naive())
+}
+
 #[derive(Deserialize)]
 pub struct Request {
     /// Chosen by the caller; every event for this request carries it.
@@ -278,12 +295,7 @@ fn start_request(app: &AppHandle, request: Request) -> Result<(), Failure> {
     let policy = folder_policy(&cfg);
     let model = choose_model(request.model.as_deref(), kind, cfg["model"].as_str().unwrap_or("sonnet"))?;
     let keep = !request.ephemeral.unwrap_or(false);
-    let about = request.about.clone().unwrap_or_else(|| if kind == Kind::Conversation { "question".into() } else { kind.name().into() });
-    let mut entry = json!({ "about": about, "kind": kind.name(), "model": model, "chars": request.prompt.chars().count() });
-    if let Some(rung) = request.rung {
-        entry["rung"] = json!(rung);
-    }
-    log_event(&ws, "ask", entry);
+    log_ask(&ws, kind, request.about.as_deref(), &model, request.prompt.chars().count(), request.rung);
 
     // From here the thread is this request's: the run before it has stopped and saved its answer,
     // so the transcript stays in order and no two runs race over its session.
@@ -514,6 +526,31 @@ mod tests {
         assert_ne!(key, warm_key(ws, "strict", Kind::Lookup, "sonnet", "P"));
         assert_ne!(key, warm_key(Path::new("/x"), "strict", Kind::Lookup, "haiku", "P"));
         assert_ne!(key, warm_key(ws, "strict", Kind::Lookup, "haiku", "P with new course rules"));
+    }
+
+    #[test]
+    fn every_kind_of_request_counts_in_the_title_bar_and_the_record() {
+        let ws = crate::workspace::tests::temp_dir("asks");
+        log_ask(&ws, Kind::Conversation, None, "sonnet", 10, None);
+        log_ask(&ws, Kind::Conversation, Some("hint"), "sonnet", 10, Some(2));
+        log_ask(&ws, Kind::Lookup, Some("lookup"), "haiku", 10, None);
+        log_ask(&ws, Kind::Review, None, "sonnet", 10, None);
+        log_ask(&ws, Kind::Failure, None, "sonnet", 10, None);
+        log_event(&ws, "reveal", json!({ "lines": 3 }));
+        // A detail that names a kind cannot change what the entry counts as.
+        log_event(&ws, "config", json!({ "kind": "ask", "policy": "strict" }));
+        let text = std::fs::read_to_string(ws.join(".longhand/log.jsonl")).unwrap();
+        assert_eq!(text.lines().filter(|l| l.contains(r#""kind":"ask""#)).count(), 5, "{text}");
+        assert!(text.contains(r#""requestKind":"lookup""#));
+
+        let summary = log_summary(&ws);
+        assert_eq!(summary["today"], json!({ "ask": 5, "reveal": 1, "tests": 0 }));
+        let record = record::from_log(&text);
+        let today = &record.days[0].tally;
+        let expected = [("failure", 1), ("hint", 1), ("lookup", 1), ("question", 1), ("review", 1)];
+        assert_eq!(today.asks, expected.iter().map(|(k, n)| (k.to_string(), *n)).collect());
+        assert_eq!(today.asks.values().sum::<u32>(), 5, "the record's Today is the title bar's");
+        std::fs::remove_dir_all(ws).unwrap();
     }
 
     #[test]
