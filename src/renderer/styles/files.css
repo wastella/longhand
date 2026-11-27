@@ -15,7 +15,7 @@
 .node.active {
   color: var(--color-text-strong);
 }
-#tree:focus .focused {
+#tree:focus-visible .focused {
   outline: 1px solid var(--focus-ring-color);
   outline-offset: -1px;
 }
@@ -23,6 +23,8 @@
 .tree-more .twist {
   width: var(--space-7);
   flex: none;
+  display: inline-flex;
+  justify-content: center;
   text-align: center;
   color: var(--color-text-muted);
   font-size: var(--text-2xs);

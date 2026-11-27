@@ -3,7 +3,7 @@
 
 import { invoke, listen } from '../backend.js';
 import { on } from '../state.js';
-import { addBottomPane, registerCommand, registerLeaveGuard, showBottomPane } from '../shell/index.js';
+import { addBottomPane, registerCommand, registerFocusTarget, registerLeaveGuard, showBottomPane } from '../shell/index.js';
 import { runningCommands } from './leave-guard.js';
 import { runFile } from './run-file.js';
 import { stopEarlierShells } from './session.js';
@@ -36,6 +36,8 @@ export function mount() {
   listen('term:data', ({ id, data, bytes }) => sessionById(id)?.receive(data, bytes));
   listen('term:exit', ({ id, code }) => sessionById(id)?.exitedWith(code));
 
+  // View > Go to Terminal (⌘3) types into the terminal in front.
+  registerFocusTarget('terminal', () => activeSession()?.xterm?.textarea || null);
   registerCommand('run-file', runFile);
   registerCommand('new-terminal', () => {
     showBottomPane('terminal');

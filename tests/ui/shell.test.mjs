@@ -254,7 +254,7 @@ uiTest('the shortcut reference lists the menu shortcuts, and Escape returns focu
   await menu(page, 'shortcuts');
   await page.waitForSelector('.shortcuts-sheet');
   const groups = await page.$$eval('.shortcut-group h3', (n) => n.map((x) => x.textContent));
-  assert.deepEqual(groups, ['Longhand', 'File', 'View', 'Run', 'Tutor']);
+  assert.deepEqual(groups, ['Longhand', 'File', 'Edit', 'View', 'Run', 'Tutor']);
   const tutorRow = await page.$$eval('.shortcut', (rows) => rows.map((r) => r.textContent).find((t) => t.startsWith('Go to Tutor')));
   assert.match(tutorRow, /Go to Tutor(⌘4|Ctrl\+4)/);
   await page.keyboard.press('Escape');
@@ -404,11 +404,30 @@ uiTest('the mock shortcut table matches the menu in menu.rs', async (page) => {
   for (const line of source.split('\n')) {
     const submenu = line.match(/SubmenuBuilder::new\(app, "([^"]+)"\)/);
     if (submenu) menuName = submenu[1];
-    for (const m of line.matchAll(/[^\w]item\("([^"]+)", "([^"]+)", "([^"]+)"\)/g)) expected.push({ id: m[1], menu: menuName, label: m[2], keys: m[3] });
+    for (const m of line.matchAll(/[^\w](?:item|hinted)\("([^"]+)", "([^"]+)", "([^"]+)"/g))
+      expected.push({ id: m[1], menu: menuName, label: m[2], keys: m[3] });
   }
   assert.ok(expected.length > 10, 'menu.rs was read');
   const mocked = await page.evaluate(() => window.__mock.commands.shortcuts_list());
   assert.deepEqual(mocked, expected);
+  // No two items share keys; nor do they take the system items' keys (Edit, Window, Hide).
+  const taken = [
+    'CmdOrCtrl+Z',
+    'CmdOrCtrl+Shift+Z',
+    'CmdOrCtrl+X',
+    'CmdOrCtrl+C',
+    'CmdOrCtrl+V',
+    'CmdOrCtrl+A',
+    'CmdOrCtrl+M',
+    'CmdOrCtrl+H',
+    'CmdOrCtrl+Alt+H',
+  ];
+  const keys = [...taken, ...expected.map((s) => s.keys)];
+  assert.deepEqual(
+    keys.filter((k, i) => keys.indexOf(k) !== i),
+    [],
+    'shortcuts used twice',
+  );
 });
 
 uiTest(
@@ -428,3 +447,16 @@ uiTest(
   },
   { auth: { installed: true, loggedIn: true, plan: 'max', tooOld: true } },
 );
+
+uiTest('the status bar follows the tutor policy when it changes', async (page) => {
+  assert.equal(await text(page, '#status-policy'), 'Tutor: Strict');
+  await page.click('#policy button[data-policy="guided"]');
+  await page.waitForFunction(() => document.querySelector('#status-policy').textContent === 'Tutor: Guided');
+});
+
+uiTest('Go to Terminal and Go to Tutor land where typing goes', async (page) => {
+  await menu(page, 'focus-terminal');
+  await page.waitForFunction(() => document.activeElement.classList.contains('xterm-helper-textarea'));
+  await menu(page, 'focus-tutor');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'input');
+});

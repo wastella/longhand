@@ -14,7 +14,7 @@ const CONTROL = 'button, select, [href], [tabindex]:not([tabindex="-1"])';
 
 /**
  * Makes `getElement()` the element that View > Go to <area> focuses, where `area` is 'files',
- * 'editor' or 'tutor'. Return null to fall back to the default.
+ * 'editor', 'terminal' or 'tutor'. Return null to fall back to the default.
  */
 export function registerFocusTarget(area, getElement) {
   targets.set(area, getElement);
@@ -39,11 +39,15 @@ export function mountFocus() {
     focusArea('files', { textFirst: false, controls: false });
   });
   // The editor region also holds the welcome screen, whose buttons take focus when no file is open.
-  registerCommand('focus-editor', () =>
-    focusArea(document.getElementById('editor').querySelector('.cm-editor:not([hidden])') ? 'editor' : 'welcome', { textFirst: true }),
-  );
-  // The terminal focuses itself when its pane is shown.
-  registerCommand('focus-terminal', () => showBottomPane('terminal'));
+  registerCommand('focus-editor', () => {
+    const welcome = document.getElementById('welcome');
+    const editing = document.getElementById('editor').querySelector('.cm-editor:not([hidden])');
+    focusArea(!editing && welcome && visible(welcome) ? 'welcome' : 'editor', { textFirst: true });
+  });
+  registerCommand('focus-terminal', () => {
+    showBottomPane('terminal');
+    focusArea('terminal', { textFirst: true });
+  });
   registerCommand('focus-tutor', () => {
     showPanel('tutor');
     focusArea('tutor', { textFirst: true });

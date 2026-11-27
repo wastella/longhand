@@ -210,6 +210,8 @@
 .tests-group .twist {
   width: var(--space-7);
   flex: none;
+  display: inline-flex;
+  justify-content: center;
   text-align: center;
   color: var(--color-text-muted);
   font-size: var(--text-2xs);

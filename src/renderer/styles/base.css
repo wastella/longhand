@@ -86,6 +86,10 @@ body {
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
 }
+.icon.tiny {
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
+}
 
 /* Buttons. The default is a raised secondary action; .primary is the one main action in a view;
    .ghost is quiet until hovered, for pane headers; .danger is a destructive secondary action.

@@ -3,7 +3,8 @@
 // leave calls confirmLeave first.
 //
 // Covered: Longhand > Quit (⌘Q, a menu item of ours rather than the system's, which would exit
-// without asking), closing the window (its button and Window > Close), and switching folder.
+// without asking), closing the window (its button and Window > Close Window, ⇧⌘W), and switching
+// folder.
 // Not covered: Quit from the Dock and logging out or shutting down, which macOS carries out
 // without giving the app a chance to object.
 

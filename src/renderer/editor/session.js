@@ -10,7 +10,7 @@
 import { EditorView } from '@codemirror/view';
 import { confirm, invoke } from '../backend.js';
 import { emit, state as app } from '../state.js';
-import { showStatus } from '../shell/index.js';
+import { notify, showStatus } from '../shell/index.js';
 import { createEditorState, languageSlot } from './setup.js';
 import { languageSupport } from './languages.js';
 import { currentThemeMode, isStale, themeMode } from './theme.js';
@@ -239,7 +239,7 @@ export async function close(path, force = false) {
 export async function fileGone(doc) {
   if (!doc.dirty) {
     await close(doc.path, true);
-    return showStatus(`${doc.path} was deleted, so its tab was closed`, 6000);
+    return notify({ message: `${doc.path} was deleted, so its tab was closed` });
   }
   doc.missing = true;
   doc.banner = { kind: 'deleted' };

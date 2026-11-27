@@ -4,8 +4,12 @@ Each file here is one state of the interface that `npm run preview` can photogra
 
 ```bash
 npm run preview -- --out /tmp/shot.png --scenario find-in-files
+npm run preview -- --out /tmp/shot.png --scenario find-in-files --theme light
 npm run preview -- --list
 ```
+
+Look at a visual change in both themes: `--theme dark` and `--theme light` set the Appearance
+setting for that picture.
 
 The page starts on the mock backend (`tests/mock/`) with the fixture folder open and nothing
 else done. A scenario file exports:

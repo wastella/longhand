@@ -27,18 +27,20 @@ The reference points are small, opinionated native Mac apps, not VS Code.
 All values live in [`src/renderer/styles/tokens.css`](../src/renderer/styles/tokens.css). Use a
 token rather than a literal; if none fits, add one there rather than inventing a value in place.
 
-| Group   | Tokens                                                                                                                                                                                                                                                                          |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Surface | `--color-surface` (editor, terminal), `--color-surface-raised` (side panels, bars), `--color-surface-hover` (hovered and selected rows, buttons), `--color-surface-sunken` (code in answers), `--color-surface-overlay` (menus, sheets, notifications), `--color-overlay-hover` |
-| Line    | `--color-border` (separators), `--color-border-control` (buttons, fields, selects), `--color-border-strong`, `--color-border-overlay` (the edge of anything floating)                                                                                                           |
-| Text    | `--color-text`, `--color-text-strong`, `--color-text-secondary`, `--color-text-muted`, `--color-on-accent`                                                                                                                                                                      |
-| Signal  | `--color-accent`, `--color-accent-soft`, `--color-success`, `--color-danger`, `--color-danger-soft`, `--color-warning`, `--focus-ring-color`, `--color-selection`, `--color-backdrop`                                                                                           |
-| Type    | `--font-ui`, `--font-mono`, `--code-size` (a setting), `--text-2xs` … `--text-display`, `--leading-ui`, `--leading-reading`, `--leading-output`                                                                                                                                 |
-| Space   | `--space-1` … `--space-10`, `--space-12`, `--space-16`, where `--space-N` is 2N px                                                                                                                                                                                              |
-| Shape   | `--radius-xs` (3px) … `--radius-3xl` (10px), `--radius-round`, `--shadow-overlay`                                                                                                                                                                                               |
-| Control | `--control-height-sm` (20px), `--control-height` (24px), `--control-height-lg` (30px), `--icon-size`, `--icon-size-sm`, `--icon-stroke`                                                                                                                                         |
-| Motion  | `--duration-fast` (hover colours), `--duration-normal` (things appearing), `--ease-out`                                                                                                                                                                                         |
-| Layout  | `--titlebar-height`, `--pane-head-height`, `--tab-bar-height`, `--status-height`, `--row-height`, default panel sizes, `--splitter-hit`, `--sheet-width`, `--palette-width`, `--notice-width`, z-index layers                                                                   |
+| Group    | Tokens                                                                                                                                                                                                                                                                          |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Surface  | `--color-surface` (editor, terminal), `--color-surface-raised` (side panels, bars), `--color-surface-hover` (hovered and selected rows, buttons), `--color-surface-sunken` (code in answers), `--color-surface-overlay` (menus, sheets, notifications), `--color-overlay-hover` |
+| Line     | `--color-border` (separators), `--color-border-control` (buttons, fields, selects), `--color-border-strong`, `--color-border-overlay` (the edge of anything floating)                                                                                                           |
+| Text     | `--color-text`, `--color-text-strong`, `--color-text-secondary`, `--color-text-muted`, `--color-on-accent`                                                                                                                                                                      |
+| Signal   | `--color-accent`, `--color-accent-soft`, `--color-success`, `--color-danger`, `--color-danger-soft`, `--color-warning`, `--focus-ring-color`, `--color-selection`, `--color-backdrop`                                                                                           |
+| Code     | `--color-code-*`: syntax colours (keyword, string, number, function, type, comment, punctuation) for the editor and code in tutor answers, and the editor's marks (line numbers, active line, matches, brackets); `--color-note-*` for tutor notes in the editor                |
+| Terminal | `--color-ansi-*`: the sixteen ANSI colours, read by `terminal/theme.js`                                                                                                                                                                                                         |
+| Type     | `--font-ui`, `--font-mono`, `--code-size` (a setting), `--text-2xs` … `--text-display`, `--leading-ui`, `--leading-reading`, `--leading-output`                                                                                                                                 |
+| Space    | `--space-1` … `--space-10`, `--space-12`, `--space-16`, where `--space-N` is 2N px                                                                                                                                                                                              |
+| Shape    | `--radius-xs` (3px) … `--radius-3xl` (10px), `--radius-round`, `--shadow-overlay`                                                                                                                                                                                               |
+| Control  | `--control-height-sm` (20px), `--control-height` (24px), `--control-height-lg` (30px), `--icon-size`, `--icon-size-sm`, `--icon-size-xs`, `--icon-stroke`                                                                                                                       |
+| Motion   | `--duration-fast` (hover colours), `--duration-normal` (things appearing), `--ease-out`                                                                                                                                                                                         |
+| Layout   | `--titlebar-height`, `--pane-head-height`, `--tab-bar-height`, `--status-height`, `--row-height`, default panel sizes, `--splitter-hit`, `--sheet-width`, `--palette-width`, `--notice-width`, z-index layers                                                                   |
 
 A few compact controls keep odd pixel paddings (3px, 7px, 9px). These are optical adjustments
 that belong to the component; layout spacing uses the scale.
@@ -86,6 +88,44 @@ large text and the edges of controls). Checked whenever a colour token changes.
 
 The light accent is a deeper amber than the dark one so it still reads as text and carries white
 labels on primary buttons.
+
+Code colours on the editor (`--color-surface`) and on code blocks in tutor answers
+(`--color-surface-sunken`). Every syntax colour is at least 4.5:1. Line numbers are a guide beside
+the text rather than text to read, and are held to 3:1 in the editor.
+
+| Token                      | Dark, editor | Dark, answer code | Light, editor | Light, answer code |
+| -------------------------- | ------------ | ----------------- | ------------- | ------------------ |
+| `--color-code-keyword`     | 7.88         | 8.31              | 6.59          | 5.93               |
+| `--color-code-string`      | 8.74         | 9.21              | 5.84          | 5.26               |
+| `--color-code-number`      | 7.71         | 8.13              | 6.08          | 5.48               |
+| `--color-code-function`    | 8.15         | 8.59              | 6.47          | 5.83               |
+| `--color-code-type`        | 8.41         | 8.87              | 6.01          | 5.41               |
+| `--color-code-comment`     | 4.62         | 4.87              | 5.10          | 4.60               |
+| `--color-code-punctuation` | 6.28         | 6.63              | 6.80          | 6.12               |
+| `--color-code-line-number` | 3.26         | 3.44              | 3.16          | 2.84               |
+
+The terminal's colours on `--color-surface`. All are at least 4.5:1 except ANSI black in the dark
+theme (3.5:1), which has to stay a dark grey to read as black, both as text and as a background
+behind light text.
+
+| Token                         | Dark  | Light |
+| ----------------------------- | ----- | ----- |
+| `--color-ansi-black`          | 3.47  | 15.12 |
+| `--color-ansi-red`            | 5.80  | 5.98  |
+| `--color-ansi-green`          | 7.75  | 5.33  |
+| `--color-ansi-yellow`         | 9.33  | 5.80  |
+| `--color-ansi-blue`           | 6.75  | 6.71  |
+| `--color-ansi-magenta`        | 6.96  | 6.34  |
+| `--color-ansi-cyan`           | 8.00  | 5.90  |
+| `--color-ansi-white`          | 9.86  | 5.83  |
+| `--color-ansi-bright-black`   | 5.64  | 6.01  |
+| `--color-ansi-bright-red`     | 7.97  | 4.87  |
+| `--color-ansi-bright-green`   | 10.17 | 4.94  |
+| `--color-ansi-bright-yellow`  | 11.62 | 4.77  |
+| `--color-ansi-bright-blue`    | 9.07  | 5.13  |
+| `--color-ansi-bright-magenta` | 9.28  | 5.12  |
+| `--color-ansi-bright-cyan`    | 10.48 | 4.94  |
+| `--color-ansi-bright-white`   | 16.84 | 8.85  |
 
 ## Shared components
 
@@ -174,5 +214,6 @@ welcome screen shows.
 
 `npm run preview -- --out shot.png --scenario <name>` renders the interface against the mock
 backend; `--list` shows the scenarios. `kitchen-sink`, `welcome`, `folder-open`, `settings`,
-`shortcuts`, `light-theme` and `narrow-window` cover the shell. Compare against
-`docs/screenshot.png` and the other scenarios before and after a visual change, in both themes.
+`shortcuts`, `light-theme` and `narrow-window` cover the shell. Add `--theme dark` or
+`--theme light` to render any scenario in that theme. Compare against `docs/screenshot.png` and
+the other scenarios before and after a visual change, in both themes.

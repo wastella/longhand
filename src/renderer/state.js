@@ -19,8 +19,6 @@
 //   theme:changed      'dark' | 'light'                           the colour theme changed; re-read tokens (token() in dom.js)
 //   settings:changed   { id, value }                              an app setting changed (shell registerSetting); also
 //                                                                 emitted once per setting when saved settings load
-//
-// Reserved for work in progress, so areas agree on the names before they exist:
 //   config:changed     config                                     the folder's settings (state.config) changed, e.g. the policy
 
 export const state = {

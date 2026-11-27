@@ -358,10 +358,13 @@ recent folders on disk (an unplugged volume could stall the launch); the interfa
 checked list (`recents_list`) once it is up.
 
 Quitting works the same way. Longhand > Quit is a menu item of ours: the interface runs
-`confirmLeave('quit')` and then calls `app_quit`. Closing the window goes through the window's
-close-requested event, which the interface can cancel. Quit from the Dock and logging out are
-carried out by macOS without asking the app, so unsaved work is not protected there; the
-`RunEvent::Exit` handler in `main.rs` still stops the terminal, the tutor and any test run.
+`confirmLeave('quit')` and then calls `app_quit`. Closing the window (its button, or Window >
+Close Window, ⇧⌘W, ours too since the system's would take ⌘W from Close Tab) goes through the
+window's close-requested event, which the interface can cancel. Quit from the Dock and logging out
+are carried out by macOS without asking the app, so unsaved work is not protected there. Whichever
+way the app ends, `stop_processes` in `main.rs` runs once, from the window's `Destroyed` event or
+`RunEvent::Exit`, whichever comes first: it stops every terminal's session, the tutor's runs and
+its warm lookup process, and any test run (`pytest::shutdown`, which also removes the reporter).
 
 ## Per-folder data
 

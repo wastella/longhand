@@ -3,6 +3,7 @@
 // entries at a time.
 
 import { emptyState, h } from '../dom.js';
+import { icon } from '../shell/icons.js';
 import { cachedListing, loadListing } from './listing.js';
 import { rememberExpanded } from './memory.js';
 import { treeView } from './panel.js';
@@ -117,7 +118,7 @@ function drawRow(row, i) {
       'aria-selected': String(entry.path === activePath),
       title: entry.path,
     },
-    h('span', { class: 'twist' }, entry.dir ? (open ? '▾' : '▸') : ''),
+    h('span', { class: 'twist' }, entry.dir ? icon(open ? 'chevron-down' : 'chevron-right', 'tiny') : ''),
     h('span', { class: 'label' }, entry.name),
   );
   node.style.paddingLeft = indent(row.depth);

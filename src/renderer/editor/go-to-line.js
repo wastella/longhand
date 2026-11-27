@@ -3,6 +3,7 @@
 import { StateEffect, StateField } from '@codemirror/state';
 import { EditorView, getPanel, showPanel } from '@codemirror/view';
 import { h } from '../dom.js';
+import { icon } from '../shell/icons.js';
 
 const setOpen = StateEffect.define();
 
@@ -56,7 +57,7 @@ function createPanel(view) {
       h('label', { class: 'search-label' }, 'Go to line'),
       field,
       hint,
-      h('button', { class: 'ghost', type: 'button', 'aria-label': 'Close (Esc)', title: 'Close (Esc)', onclick: () => close(view) }, '×'),
+      h('button', { class: 'ghost', type: 'button', 'aria-label': 'Close (Esc)', title: 'Close (Esc)', onclick: () => close(view) }, icon('x', 'small')),
     ),
   );
   return { dom, top: true, mount: () => field.focus(), update: showRange };

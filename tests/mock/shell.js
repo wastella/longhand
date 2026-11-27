@@ -23,6 +23,12 @@ const shortcuts = [
   ['save', 'File', 'Save', 'CmdOrCtrl+S'],
   ['close-tab', 'File', 'Close Tab', 'CmdOrCtrl+W'],
   ['find-in-files', 'File', 'Find in Files…', 'CmdOrCtrl+Shift+F'],
+  ['find', 'Edit', 'Find…', 'CmdOrCtrl+F'],
+  ['replace', 'Edit', 'Replace…', 'CmdOrCtrl+Alt+F'],
+  ['go-to-line', 'Edit', 'Go to Line…', 'Ctrl+G'],
+  ['toggle-comment', 'Edit', 'Toggle Comment', 'CmdOrCtrl+/'],
+  ['next-note', 'Edit', 'Next Note', 'CmdOrCtrl+Alt+]'],
+  ['previous-note', 'Edit', 'Previous Note', 'CmdOrCtrl+Alt+['],
   ['toggle-files', 'View', 'Show or Hide Files', 'CmdOrCtrl+B'],
   ['toggle-bottom', 'View', 'Show or Hide Terminal and Tests', 'CmdOrCtrl+J'],
   ['toggle-tutor', 'View', 'Show or Hide Tutor', 'CmdOrCtrl+L'],
@@ -37,9 +43,12 @@ const shortcuts = [
   ['new-terminal', 'Run', 'New Terminal', 'Ctrl+Shift+`'],
   ['run-tests-file', 'Run', 'Run Tests in Current File', 'CmdOrCtrl+T'],
   ['run-tests', 'Run', 'Run All Tests', 'CmdOrCtrl+Shift+T'],
+  ['rerun-failed-tests', 'Run', 'Rerun Failed Tests', 'CmdOrCtrl+Shift+Y'],
+  ['lookup', 'Tutor', 'Look Up…', 'CmdOrCtrl+Shift+K'],
   ['ask-selection', 'Tutor', 'Explain Selection', 'CmdOrCtrl+E'],
   ['review-file', 'Tutor', 'Review Current File', 'CmdOrCtrl+Shift+R'],
   ['new-conversation', 'Tutor', 'New Conversation', 'CmdOrCtrl+Shift+N'],
+  ['close-window', 'Window', 'Close Window', 'CmdOrCtrl+Shift+W'],
 ].map(([id, menu, label, keys]) => ({ id, menu, label, keys }));
 
 function checkFolder(dir) {

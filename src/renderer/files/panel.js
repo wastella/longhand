@@ -2,10 +2,11 @@
 // (the tree and find in files).
 
 import { h, paneHead, spacer } from '../dom.js';
+import { icon } from '../shell/icons.js';
 
 const title = h('span', { id: 'files-title' }, 'Files');
 export const findToggle = h('button', { id: 'toggle-search', class: 'ghost', title: 'Find in files (⇧⌘F)' }, 'Find');
-export const newFileButton = h('button', { id: 'new-file', class: 'ghost', title: 'New file (⌘N)', 'aria-label': 'New file' }, '+');
+export const newFileButton = h('button', { id: 'new-file', class: 'ghost', title: 'New file (⌘N)', 'aria-label': 'New file' }, icon('plus', 'small'));
 export const header = paneHead(title, spacer(), findToggle, newFileButton);
 
 export const treeView = h('div', { id: 'tree', tabindex: '0', role: 'tree', 'aria-label': 'Files' });

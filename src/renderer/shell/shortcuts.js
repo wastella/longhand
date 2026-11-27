@@ -28,10 +28,16 @@ export function withKeys(text, id) {
   return keys ? `${text} (${formatKeys(keys)})` : text;
 }
 
+/** Menus too small for a group of their own in the reference, and where they go instead. */
+const GROUPS = { Window: 'Longhand' };
+
 function showShortcuts() {
   // Map.groupBy would do this, but the macOS 12 webview predates it.
   const menus = new Map();
-  for (const shortcut of table) menus.set(shortcut.menu, [...(menus.get(shortcut.menu) || []), shortcut]);
+  for (const shortcut of table) {
+    const group = GROUPS[shortcut.menu] || shortcut.menu;
+    menus.set(group, [...(menus.get(group) || []), shortcut]);
+  }
   const body = menus.size
     ? [...menus].map(([menu, shortcuts]) =>
         h(

@@ -4,7 +4,7 @@
 
 import { invoke, listen } from '../backend.js';
 import { emit, on, state } from '../state.js';
-import { showStatus } from '../shell/index.js';
+import { notify } from '../shell/index.js';
 import { forgetListings } from './listing.js';
 import { markFilesStale } from './quick-open.js';
 import { renderTree } from './tree.js';
@@ -41,7 +41,7 @@ export async function watchFolder() {
     await invoke('fs_watch');
     watching = true;
   } catch (e) {
-    showStatus(String(e), 10000);
+    notify({ kind: 'error', message: String(e) });
   }
 }
 

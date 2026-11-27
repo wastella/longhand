@@ -4,7 +4,7 @@
 import { confirm, invoke } from '../backend.js';
 import { state } from '../state.js';
 import { activeFile, closeFilesUnder, movePaths, openFile, saveAll } from '../editor/index.js';
-import { showStatus } from '../shell/index.js';
+import { notify, showStatus } from '../shell/index.js';
 import { showContextMenu } from './context-menu.js';
 import { forgetListings } from './listing.js';
 import { moveRecent } from './memory.js';
@@ -75,7 +75,7 @@ export async function moveToTrash(entry) {
   try {
     await invoke('fs_trash', { rel: entry.path });
   } catch (e) {
-    return showStatus(`Could not move ${entry.path} to the Trash: ${e}`, 8000);
+    return notify({ kind: 'error', message: `Could not move ${entry.path} to the Trash: ${e}` });
   }
   // Keep the focus where the student was: on the next row, or the one before.
   const rows = visibleRows();
@@ -109,7 +109,7 @@ async function reveal(path) {
   try {
     await invoke('fs_reveal', { rel: path });
   } catch (e) {
-    showStatus(`Could not show ${path || 'the folder'}: ${e}`, 8000);
+    notify({ kind: 'error', message: `Could not show ${path || 'the folder'} in the Finder: ${e}` });
   }
 }
 
