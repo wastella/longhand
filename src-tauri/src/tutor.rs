@@ -13,7 +13,7 @@ mod prompt;
 mod record;
 mod run;
 mod stream;
-mod threads;
+pub(crate) mod threads;
 
 use crate::workspace::{log_event, read_config, workspace, AppState};
 use cli::Session;

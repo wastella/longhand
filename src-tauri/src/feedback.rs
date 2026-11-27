@@ -6,6 +6,7 @@
 //! loaded note keeps only fields Longhand writes, from their allow-lists and within their caps.
 //! Its text is shown through the interface's sanitizing renderer, never as markup.
 
+use crate::tutor::threads;
 use crate::workspace::{longhand_dir, workspace, AppState};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -49,6 +50,9 @@ pub struct Note {
     pub replies: u32,
     #[serde(default)]
     pub created: String,
+    /// The review the note came from, so the code in one review's notes is checked together.
+    #[serde(default)]
+    pub review: String,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -72,6 +76,13 @@ fn valid_path(path: &str) -> bool {
         && path.split('/').all(|part| !part.is_empty() && part != "." && part != "..")
 }
 
+/// A timestamp as the interface writes them (`toISOString()`): ASCII digits and separators only,
+/// so nothing in it can be multibyte or markup.
+fn valid_created(created: &str) -> bool {
+    (1..=40).contains(&created.len()) && created.bytes().all(|b| b.is_ascii_digit() || b"-:.TZ+".contains(&b))
+}
+
+/// Cuts `text` to `max` characters (never inside one), marking the cut.
 fn truncate(text: &mut String, max: usize) {
     if let Some((cut, _)) = text.char_indices().nth(max) {
         text.truncate(cut);
@@ -91,14 +102,21 @@ fn sanitize(mut note: Note) -> Option<Note> {
     if !STATUSES.contains(&note.status.as_str()) {
         note.status = "open".into();
     }
-    if !valid_id(&note.thread) {
+    // A note's replies live on the thread the interface names after it, and only that one: a
+    // planted file must not attach some other conversation to a note.
+    if note.thread != format!("note-{}", note.id) {
         note.thread = String::new();
         note.replies = 0;
     }
     truncate(&mut note.text, MAX_TEXT_CHARS);
     note.anchor.truncate(MAX_ANCHOR_LINES);
     note.anchor.iter_mut().for_each(|line| truncate(line, MAX_ANCHOR_LINE_CHARS));
-    note.created.truncate(40);
+    if !note.review.is_empty() && !valid_id(&note.review) {
+        note.review = String::new();
+    }
+    if !valid_created(&note.created) {
+        note.created = String::new();
+    }
     Some(note)
 }
 
@@ -106,22 +124,54 @@ fn file(ws: &Path) -> std::path::PathBuf {
     ws.join(".longhand/notes.json")
 }
 
-pub fn load(ws: &Path) -> Vec<Note> {
+/// The folder's notes, or None when the file exists but cannot be read as notes.
+fn read(ws: &Path) -> Option<Vec<Note>> {
     let path = file(ws);
-    if fs::metadata(&path).map_or(true, |m| m.len() > MAX_FILE_BYTES) {
-        return vec![];
+    let Ok(meta) = fs::metadata(&path) else { return Some(vec![]) };
+    if meta.len() > MAX_FILE_BYTES {
+        return None;
     }
-    let Some(saved) = fs::read_to_string(path).ok().and_then(|s| serde_json::from_str::<NotesFile>(&s).ok()) else {
-        return vec![];
-    };
-    saved.notes.into_iter().filter_map(sanitize).take(MAX_NOTES).collect()
+    let saved = fs::read_to_string(path).ok().and_then(|s| serde_json::from_str::<NotesFile>(&s).ok())?;
+    Some(saved.notes.into_iter().filter_map(sanitize).take(MAX_NOTES).collect())
+}
+
+#[cfg(test)]
+fn load(ws: &Path) -> Vec<Note> {
+    read(ws).unwrap_or_default()
+}
+
+/// Thread files this area writes: a note's replies, an explanation, help on a failing test.
+const THREAD_PREFIXES: [&str; 3] = ["note-", "explain-", "fail-"];
+
+/// Deletes the thread files `ids` (only ones this area names), for notes that were removed.
+pub fn forget_threads(ws: &Path, ids: &[String]) {
+    for id in ids {
+        if threads::valid_id(id) && THREAD_PREFIXES.iter().any(|p| id.starts_with(p)) {
+            let _ = fs::remove_file(ws.join(".longhand/threads").join(format!("{id}.json")));
+        }
+    }
+}
+
+/// On opening a folder: thread files no note or panel can show again go. Explanations and
+/// failure help last one session; a note's replies last as long as the note.
+fn prune_threads(ws: &Path, notes: &[Note]) {
+    let Ok(entries) = fs::read_dir(ws.join(".longhand/threads")) else { return };
+    let stale: Vec<String> = entries
+        .flatten()
+        .filter_map(|e| e.file_name().to_str()?.strip_suffix(".json").map(str::to_string))
+        .filter(|id| {
+            id.starts_with("explain-") || id.starts_with("fail-") || (id.starts_with("note-") && !notes.iter().any(|n| &n.thread == id))
+        })
+        .collect();
+    forget_threads(ws, &stale);
 }
 
 /// Replaces the folder's notes. Written beside the file and renamed over it, under one lock, so
 /// a crash or two quick saves never leave half a file.
 pub fn save(ws: &Path, notes: Vec<Note>) -> std::io::Result<()> {
     static WRITING: Mutex<()> = Mutex::new(());
-    let _guard = WRITING.lock().unwrap();
+    // The lock guards no data, so a panic elsewhere while holding it leaves nothing to distrust.
+    let _guard = WRITING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let notes: Vec<Note> = notes.into_iter().filter_map(sanitize).take(MAX_NOTES).collect();
     longhand_dir(ws)?;
     let path = file(ws);
@@ -132,17 +182,37 @@ pub fn save(ws: &Path, notes: Vec<Note>) -> std::io::Result<()> {
 
 // ---- commands ----
 
-/// The open folder's margin notes.
+/// The open folder's margin notes. Thread files left by earlier sessions that nothing can show
+/// again are deleted; nothing is deleted when the notes file cannot be read.
 #[tauri::command]
 pub fn feedback_notes_load(state: State<AppState>) -> Result<Vec<Note>, String> {
-    Ok(load(&workspace(&state)?))
+    let ws = workspace(&state)?;
+    let Some(notes) = read(&ws) else { return Ok(vec![]) };
+    prune_threads(&ws, &notes);
+    Ok(notes)
 }
 
-/// Replaces the open folder's margin notes with `notes`.
+/// The open folder, if it is `folder`: a save or deletion queued for one folder must never land
+/// in the next.
+fn same_folder(state: &AppState, folder: &str) -> Result<Option<std::path::PathBuf>, String> {
+    let ws = workspace(state)?;
+    Ok((ws == Path::new(folder)).then_some(ws))
+}
+
+/// Replaces the margin notes of `folder` (which must still be the open folder) with `notes`.
 #[tauri::command]
-pub fn feedback_notes_save(state: State<AppState>, notes: Vec<Note>) -> Result<(), String> {
-    let ws = workspace(&state)?;
+pub fn feedback_notes_save(state: State<AppState>, folder: String, notes: Vec<Note>) -> Result<(), String> {
+    let Some(ws) = same_folder(&state, &folder)? else { return Ok(()) };
     save(&ws, notes).map_err(|e| format!("Could not save the tutor's notes in .longhand/notes.json: {e}"))
+}
+
+/// Deletes the thread files `ids` of notes that were removed from `folder`.
+#[tauri::command]
+pub fn feedback_threads_forget(state: State<AppState>, folder: String, ids: Vec<String>) -> Result<(), String> {
+    if let Some(ws) = same_folder(&state, &folder)? {
+        forget_threads(&ws, &ids);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -163,6 +233,7 @@ mod tests {
             thread: format!("note-{id}"),
             replies: 2,
             created: "2026-11-27T10:00:00+00:00".into(),
+            review: "review-abc".into(),
         }
     }
 
@@ -223,6 +294,63 @@ mod tests {
         assert_eq!(loaded[0].text.chars().count(), MAX_TEXT_CHARS + 1);
         assert_eq!(loaded[0].anchor.len(), MAX_ANCHOR_LINES);
         assert_eq!(loaded[0].anchor[0].chars().count(), MAX_ANCHOR_LINE_CHARS + 1);
+        fs::remove_dir_all(ws).unwrap();
+    }
+
+    #[test]
+    fn multibyte_and_garbage_fields_never_panic() {
+        let ws = temp_dir("notes-garbage");
+        fs::create_dir_all(ws.join(".longhand")).unwrap();
+        // A multibyte character straddling every cut the sanitiser makes.
+        let wide = "é".repeat(MAX_TEXT_CHARS + 3);
+        let hostile = serde_json::json!({ "notes": [
+            { "id": "a", "path": "a.py", "fromLine": 1, "toLine": 1, "text": wide, "created": format!("{}é{}", "1".repeat(39), "é".repeat(30)),
+              "anchor": ["€".repeat(MAX_ANCHOR_LINE_CHARS + 1)], "thread": "note-a", "replies": 1 },
+            { "id": "é", "path": "a.py", "fromLine": 1, "toLine": 1, "text": "t" },
+            { "id": "b", "path": "é/ü.py", "fromLine": 1, "toLine": 1, "text": "🙂", "created": "<img src=x>", "thread": "note-a", "replies": 3 },
+            { "id": "c", "path": "a.py", "fromLine": 4294967295u32, "toLine": 4294967295u32, "text": "t" },
+            { "id": "d", "path": "a.py", "fromLine": 1, "toLine": 1, "text": "t", "kind": 5, "status": null },
+        ]});
+        fs::write(file(&ws), hostile.to_string()).unwrap();
+        // A wrongly typed field makes the whole file unreadable, which loads as no notes.
+        assert_eq!(load(&ws), vec![]);
+        let mut fixed = hostile.clone();
+        fixed["notes"].as_array_mut().unwrap().pop();
+        fs::write(file(&ws), fixed.to_string()).unwrap();
+        let loaded = load(&ws);
+        assert_eq!(loaded.iter().map(|n| n.id.as_str()).collect::<Vec<_>>(), ["a", "b"]);
+        assert_eq!(loaded[0].created, "");
+        assert_eq!(loaded[0].text.chars().count(), MAX_TEXT_CHARS + 1);
+        assert_eq!(loaded[0].anchor[0].chars().count(), MAX_ANCHOR_LINE_CHARS + 1);
+        assert_eq!((loaded[0].thread.as_str(), loaded[0].replies), ("note-a", 1));
+        assert_eq!(
+            (loaded[1].created.as_str(), loaded[1].thread.as_str(), loaded[1].replies),
+            ("", "", 0),
+            "another note's thread is not attached"
+        );
+        // Saving the same garbage goes through the same checks and does not panic either.
+        save(&ws, loaded).unwrap();
+        save(&ws, vec![Note { created: "é".repeat(50), ..note("z") }]).unwrap();
+        assert_eq!(load(&ws)[0].created, "");
+        fs::remove_dir_all(ws).unwrap();
+    }
+
+    #[test]
+    fn only_this_areas_stale_threads_are_deleted() {
+        let ws = temp_dir("notes-threads");
+        let dir = ws.join(".longhand/threads");
+        fs::create_dir_all(&dir).unwrap();
+        for id in ["note-a", "note-gone", "explain-x", "fail-y", "conv-z", "lookup-w"] {
+            fs::write(dir.join(format!("{id}.json")), "{}").unwrap();
+        }
+        prune_threads(&ws, &[note("a")]);
+        let mut left: Vec<String> = fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        left.sort();
+        assert_eq!(left, ["conv-z.json", "lookup-w.json", "note-a.json"]);
+        // Only this area's threads, by a safe id, can be named for deletion.
+        forget_threads(&ws, &["conv-z".into(), "../notes".into(), "note-a".into()]);
+        assert!(dir.join("conv-z.json").exists());
+        assert!(!dir.join("note-a.json").exists());
         fs::remove_dir_all(ws).unwrap();
     }
 

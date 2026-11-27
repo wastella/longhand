@@ -140,6 +140,7 @@ fn main() {
             // Feedback: the tutor's margin notes, kept per folder (feedback.rs).
             feedback::feedback_notes_load,
             feedback::feedback_notes_save,
+            feedback::feedback_threads_forget,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start Longhand")
