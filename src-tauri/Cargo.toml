@@ -20,6 +20,8 @@ uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
 libc = "0.2"
 trash = "5"
+ignore = "0.4"
+notify = "9"
 
 [profile.release]
 opt-level = 3
