@@ -33,3 +33,25 @@ uiTest('the file tree menu creates, renames and trashes', async (page) => {
   await page.waitForFunction(() => !document.querySelector('#tree .node[data-path="journal.md"]'));
   assert.equal(await count(page, '#tabs .tab'), 0);
 });
+
+uiTest(
+  'a renamed file keeps tracking unsaved edits',
+  async (page) => {
+    await page.click('#tree .node[data-path="draft.py"]');
+    await page.waitForSelector('.cm-content');
+    await page.click('#tree .node[data-path="draft.py"]', { button: 'right' });
+    await page.click('.ctx-item:nth-of-type(3)');
+    await page.$eval('#tree .new-name', (n) => (n.value = 'final.py'));
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#tree .node[data-path="final.py"]');
+
+    await page.click('.cm-content');
+    await page.keyboard.type('y = 2');
+    assert.equal(await count(page, '#tabs .tab.dirty'), 1);
+    await page.evaluate(() => window.__emit('menu', 'save'));
+    await page.waitForFunction(() => !document.querySelector('#tabs .tab.dirty'));
+    assert.match(await page.evaluate(() => window.__files['final.py']), /y = 2/);
+    assert.equal(await page.evaluate(() => 'draft.py' in window.__files), false);
+  },
+  { files: { 'draft.py': 'x = 1\n' } },
+);

@@ -33,6 +33,10 @@ mock.files = window.__files = {
     'from stats.running import RunningStats\n\n\ndef test_mean():\n    s = RunningStats()\n    for x in [2.0, 4.0, 6.0]:\n        s.push(x)\n    assert s.mean == 4.0\n\n\ndef test_variance():\n    s = RunningStats()\n    for x in [2.0, 4.0, 6.0]:\n        s.push(x)\n    assert s.variance() == 4.0\n',
 };
 
+// A test that needs other files passes them as the `files` option (path -> text) instead of
+// changing the shared fixture, which other areas' tests assert on.
+Object.assign(mock.files, mock.options.files || {});
+
 mock.workspace = {
   path: '/demo/running-stats',
   name: 'running-stats',

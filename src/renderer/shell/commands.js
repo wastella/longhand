@@ -1,5 +1,6 @@
 // Named actions that menu items (src-tauri/src/menu.rs) and other areas can trigger. Each area
-// registers its own commands when it mounts, so adding one never means editing another area.
+// registers its own commands when it mounts. A command that also needs a menu item or a keyboard
+// shortcut gets one line in menu.rs, the one place where shortcuts can be checked for clashes.
 
 const commands = new Map();
 

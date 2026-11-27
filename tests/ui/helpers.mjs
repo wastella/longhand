@@ -12,7 +12,8 @@ after(() => browser?.close());
 
 /**
  * Declares a test that gets a fresh page on the interface, opened on the fixture folder.
- * `options` are passed to the mock backend (see tests/mock/core.js). The test also fails if
+ * `options` are passed to the mock backend (see tests/mock/core.js); `options.files` adds files
+ * to the fixture folder for this test only. The test also fails if
  * the page throws an uncaught error.
  */
 export function uiTest(name, fn, options = {}) {

@@ -35,7 +35,19 @@ export function once(event) {
   });
 }
 
-/** Notifies every subscriber, in the order they subscribed. Resolves when all their handlers have. */
+/**
+ * Notifies every subscriber, in the order they subscribed. Resolves when all their handlers have.
+ * One area's handler failing must not stop the others from hearing the event (a folder change
+ * that reached only some areas would leave them pointing at different folders), so failures are
+ * logged and the rest still run.
+ */
 export function emit(event, payload) {
-  return Promise.all([...(handlers.get(event) || [])].map((handler) => handler(payload)));
+  const settle = async (handler) => {
+    try {
+      await handler(payload);
+    } catch (error) {
+      console.error(`A handler for "${event}" failed:`, error);
+    }
+  };
+  return Promise.all([...(handlers.get(event) || [])].map(settle));
 }
