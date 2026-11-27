@@ -55,18 +55,11 @@ And the guardrails:
 
 ## Install
 
-1. Download the latest `.dmg` from [Releases](https://github.com/wastella/longhand/releases) and
-   drag Longhand to Applications.
-2. The app is not yet notarized by Apple, so the first launch is blocked. Open
-   **System Settings → Privacy & Security** and choose **Open Anyway**, or run:
+There is no packaged release yet. For now, [build from source](#build-from-source).
 
-   ```bash
-   xattr -dr com.apple.quarantine /Applications/Longhand.app
-   ```
-
-3. For the tutor, install [Claude Code](https://claude.com/claude-code) and log in once by running
-   `claude` in a terminal. Longhand shows these steps itself if the tutor is not connected. The
-   editor, terminal and tests work without it.
+For the tutor, install [Claude Code](https://claude.com/claude-code) and log in once by running
+`claude` in a terminal. Longhand shows these steps itself if the tutor is not connected. The
+editor, terminal and tests work without it.
 
 The test panel runs `uv run pytest` when the folder has a `pyproject.toml`, and
 `python3 -m pytest` otherwise.
@@ -91,8 +84,9 @@ chatbot is always one window away. Treat the policies as a commitment you chose,
 - Files the tutor reads, and your questions, go to Anthropic through your own Claude account,
   under the terms of that account.
 - Longhand has no server, no telemetry and no accounts of its own.
-- The usage log and per-folder settings stay in `.longhand/` inside the folder. Add it to
-  `.gitignore` if you do not want to commit it.
+- Your tutor conversations, margin notes, usage log and per-folder settings stay in `.longhand/`
+  inside the folder. Longhand tells Git to ignore that folder, so they are not committed by
+  accident.
 
 ## Build from source
 
