@@ -25,3 +25,6 @@ writeFileSync('dist/styles.css', [...first, ...areas].map((name) => `/* ${name} 
 
 cpSync('src/renderer/index.html', 'dist/index.html');
 cpSync('node_modules/@xterm/xterm/css/xterm.css', 'dist/xterm.css');
+// KaTeX's stylesheet and fonts for math in tutor answers; the browser only ever loads the woff2 files.
+cpSync('node_modules/katex/dist/katex.min.css', 'dist/katex/katex.min.css');
+cpSync('node_modules/katex/dist/fonts', 'dist/katex/fonts', { recursive: true, filter: (path) => !/\.(woff|ttf)$/.test(path) });

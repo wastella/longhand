@@ -57,14 +57,24 @@ pub fn read_config(ws: &Path) -> Value {
     cfg
 }
 
-pub fn log_event(ws: &Path, kind: &str, detail: Value) {
+/// The folder's `.longhand/`, created if needed. It holds tutor transcripts and the usage log, so
+/// it carries its own `.gitignore` and `git add .` never picks any of it up.
+pub fn longhand_dir(ws: &Path) -> std::io::Result<PathBuf> {
     let dir = ws.join(".longhand");
-    if fs::create_dir_all(&dir).is_err() {
-        return;
+    fs::create_dir_all(&dir)?;
+    let ignore = dir.join(".gitignore");
+    if !ignore.exists() {
+        fs::write(ignore, "*\n")?;
     }
+    Ok(dir)
+}
+
+pub fn log_event(ws: &Path, kind: &str, detail: Value) {
+    let Ok(dir) = longhand_dir(ws) else { return };
     let mut entry = json!({ "t": chrono::Local::now().to_rfc3339(), "kind": kind });
     if let Value::Object(d) = detail {
-        for (k, v) in d {
+        // The detail never replaces the entry's time or kind: every reader counts by `kind`.
+        for (k, v) in d.into_iter().filter(|(k, _)| k != "t" && k != "kind") {
             entry[k] = v;
         }
     }
@@ -73,30 +83,9 @@ pub fn log_event(ws: &Path, kind: &str, detail: Value) {
     }
 }
 
+/// The title bar's counts, from the same reader as the tutor's Record view (`tutor/record.rs`).
 fn log_summary_for(ws: &Path) -> Value {
-    let kinds = ["ask", "reveal", "tests"];
-    let mut today = [0u32; 3];
-    let mut total = [0u32; 3];
-    let now = chrono::Local::now().date_naive();
-    if let Ok(text) = fs::read_to_string(ws.join(".longhand/log.jsonl")) {
-        for line in text.lines() {
-            let Ok(e) = serde_json::from_str::<Value>(line) else { continue };
-            let Some(i) = kinds.iter().position(|k| e["kind"] == *k) else { continue };
-            total[i] += 1;
-            let is_today = e["t"]
-                .as_str()
-                .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-                .map(|t| t.with_timezone(&chrono::Local).date_naive() == now)
-                .unwrap_or(false);
-            if is_today {
-                today[i] += 1;
-            }
-        }
-    }
-    json!({
-        "today": { "ask": today[0], "reveal": today[1], "tests": today[2] },
-        "total": { "ask": total[0], "reveal": total[1], "tests": total[2] },
-    })
+    tutor::log_summary(ws)
 }
 
 // ---- opening a folder ----
@@ -168,7 +157,7 @@ pub fn config_set(state: State<AppState>, patch: Value) -> R<Value> {
             cfg[k] = v.clone();
         }
     }
-    fs::create_dir_all(ws.join(".longhand")).map_err(err)?;
+    longhand_dir(&ws).map_err(err)?;
     fs::write(ws.join(".longhand/config.json"), serde_json::to_string_pretty(&cfg).map_err(err)?).map_err(err)?;
     log_event(&ws, "config", patch);
     Ok(cfg)
@@ -220,6 +209,8 @@ pub mod tests {
         let summary = log_summary_for(&ws);
         assert_eq!(summary["today"], json!({ "ask": 2, "reveal": 1, "tests": 0 }));
         assert_eq!(summary["total"]["ask"], 2);
+        // Transcripts and the log live here, so Git is told to leave all of it alone.
+        assert_eq!(fs::read_to_string(ws.join(".longhand/.gitignore")).unwrap(), "*\n");
         fs::remove_dir_all(ws).unwrap();
     }
 }

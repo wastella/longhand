@@ -4,8 +4,8 @@ import { h } from '../dom.js';
 import { state } from '../state.js';
 import { activeFile, save } from '../editor/index.js';
 import { showStatus } from '../shell/index.js';
-import { ask } from './chat.js';
-import { input } from './composer.js';
+import { ask } from './conversation.js';
+import { ladder, openLadder } from './hints.js';
 
 export function explainSelection() {
   if (!state.workspace) return;
@@ -20,17 +20,10 @@ export async function reviewFile() {
   ask(`Review ${activeFile().path}, which I wrote. Give me observations and questions tied to line ranges. Do not rewrite it.`, 'review');
 }
 
-// Starts the sentence and leaves the rest to the student.
-function stuck() {
-  if (!state.workspace) return;
-  input.value = "I'm stuck on ";
-  input.focus();
-}
-
 export const quickActions = h(
   'div',
   { id: 'quick' },
-  h('button', { onclick: explainSelection }, 'Explain selection'),
-  h('button', { onclick: reviewFile }, 'Review this file'),
-  h('button', { onclick: stuck }, "I'm stuck"),
+  h('button', { onclick: explainSelection, title: 'Explain the selected code (⌘E)' }, 'Explain selection'),
+  h('button', { onclick: reviewFile, title: 'Observations on the open file (⇧⌘R)' }, 'Review this file'),
+  h('button', { id: 'stuck', onclick: () => (ladder.hidden ? openLadder() : ladder.querySelector('.rung').focus()) }, "I'm stuck"),
 );
