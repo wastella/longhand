@@ -92,10 +92,14 @@ fn main() {
             term::term_resolve,
             pytest::tests_run,
             pytest::tests_cancel,
+            // The tutor: requests on independent threads, their transcripts and the usage record.
             tutor::auth_status,
-            tutor::tutor_ask,
+            tutor::tutor_request,
+            tutor::tutor_prepare,
             tutor::tutor_cancel,
-            tutor::tutor_reset,
+            tutor::tutor_threads,
+            tutor::tutor_thread,
+            tutor::tutor_record,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start Longhand")
