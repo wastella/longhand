@@ -185,13 +185,27 @@ kbd {
   color: var(--color-syntax-operator);
 }
 
-/* Math (tutor/math.js). Display formulas scroll sideways rather than overflow the panel. */
-.math-display {
+/* Math (tutor/math.js). Display formulas scroll sideways rather than overflow the panel. Every
+   formula is clipped to its own box (paint containment), so a formula that moves its content
+   (\raisebox, \kern, \rule) cannot draw over the rest of the panel. */
+.msg .math {
+  display: inline-block;
+  max-width: 100%;
+  contain: paint;
+  padding: 0.12em 0;
+  vertical-align: baseline;
+}
+.msg .math-display {
   display: block;
   overflow-x: auto;
   overflow-y: hidden;
   margin: 0 0 9px;
   padding: var(--space-1) 0;
+}
+.withheld.inline {
+  display: inline;
+  padding: 0 var(--space-1);
+  font-style: italic;
 }
 .msg.tutor .katex {
   font-size: 1.08em;
@@ -271,10 +285,18 @@ kbd {
   font-size: var(--text-xs);
   color: var(--color-text-muted);
 }
-.record-intro {
+.record-intro,
+.storage-note {
   margin: var(--space-3) var(--space-6) var(--space-6);
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+}
+.storage-note {
+  margin-top: var(--space-6);
+  line-height: 1.5;
+}
+.storage-note code {
+  font-size: 0.95em;
 }
 .record-day {
   padding: var(--space-4) var(--space-6);

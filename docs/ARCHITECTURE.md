@@ -95,23 +95,38 @@ const { status, text, error } = await done; // status: 'done' | 'cancelled' | 'e
 ```
 
 - **Threads are independent.** Each request runs its own CLI process, so threads run at once and
-  `cancel()` stops only its own. A new request on a thread replaces the one running there.
+  `cancel()` stops only its own. Within a thread requests take turns: a new one stops the one
+  running there and waits until it has saved its answer (as stopped) before adding its question.
 - **Kinds shape the prompt.** The kind picks a paragraph of the system prompt (`tutor/prompt.rs`),
-  which is fixed for the life of a CLI session, so a thread keeps one kind. Lookups default to
-  haiku at low effort and keep nothing (`ephemeral`); the others use the folder's model.
-- **Threads are kept** (unless ephemeral) in `.longhand/threads/<id>.json`: the transcript and
-  the CLI session id. A later request resumes that session. If the CLI no longer has it, or the
-  policy changed since it began, a fresh session starts with the transcript as context, and the
-  request gets `onRestart()`. `listThreads(prefix)` and `loadThread(id)` read them back.
+  which is fixed for the life of a CLI session, so a thread keeps one kind. Lookups use haiku at
+  low effort, get **no tools** (`--tools ""`: they answer about the language, libraries, tools,
+  errors and concepts, not the folder), never keep a CLI session, and have a tight framing that
+  turns "write my assignment step" into one sentence pointing to the tutor panel. The others use
+  the folder's model and the read-only tools.
+- **Threads are kept** (unless `ephemeral`) in `.longhand/threads/<id>.json`: the transcript and
+  the CLI session id. Lookups are kept too, one thread a day (`lookup-YYYY-MM-DD`). A later
+  request resumes the session. If the CLI no longer has it, or the policy changed since it
+  began, a fresh session starts with the transcript as context, and the request gets
+  `onRestart()`. `listThreads(prefix)` and `loadThread(id)` read them back. Kept: 400 messages a
+  thread, 64 000 characters a message, 300 threads a folder (the least recently used go).
+- **`.longhand/` is untrusted.** A starter repository can ship it. A loaded thread keeps a session
+  id only if it is a plain UUID (passed as `--resume=<id>`, never as a separate argument), a
+  policy and kind only from their allow-lists, and messages only with a known role; a session
+  resumes only under the policy it was started with. Only `"guided"` in `config.json` loosens the
+  policy. `.longhand/.gitignore` (`*`) is written when the folder is created.
+- **Fail closed.** Nothing the model writes is passed on until the CLI's init message has listed
+  its tools and they are a subset of Read, Glob and Grep; a missing list stops the run.
 - **Failures are specific.** `error.code` is one of `not-installed`, `too-old`, `logged-out`,
   `rate-limited` (with `resetsAt`, seconds since the epoch), `offline`, `busy`, `read-only`,
   `no-folder`, `invalid` or `failed`; `error.message` is a sentence a student can act on.
   `tutor/errors.js` turns one into a message with the action that helps.
 - **Render with `renderAnswer`.** It sanitizes, draws math (KaTeX, bundled into `dist/katex/`),
-  colours Python, and applies the hidden-code check: fenced code blocks longer than the policy
-  allows (2 lines on Strict, 12 on Guided; shell and plain-text blocks are exempt) stay behind a
-  button that logs the reveal (`tutor/hidden-code.js`). Anything shown to the student must go
-  through it. `message` is `{ revealed: new Set(), streaming }`.
+  colours Python, and applies the hidden-code check (`tutor/hidden-code.js`): code is counted
+  across the whole answer (code blocks, shell-labelled blocks whose body is Python, inline code
+  forming its own line or a statement, `<code>` with `<br>`, and `\texttt`/`\verb`/code-like text
+  in math), and when it exceeds the policy (2 lines on Strict, 12 on Guided) all of it stays
+  behind one button that logs the reveal. Anything shown to the student must go through it.
+  `message` is `{ revealed: new Set(), streaming }`.
 - **Every request is logged** as an `ask` in `.longhand/log.jsonl`, with `about` and, for hints,
   `rung`. `usageRecord()` returns the folder's use by day.
 - **Speed.** The CLI takes about 0.2–0.5 s to start and the first token follows about 0.5–1 s
@@ -331,6 +346,8 @@ stale, unreached, counts }`. A test's `id` is its pytest node id
 `.longhand/config.json` holds the policy and model. `.longhand/log.jsonl` is an append-only record
 of questions, test runs, reveals and setting changes. Neither leaves the machine. Both are handled
 in `workspace.rs`. `.longhand/threads/` holds the tutor's kept threads (`tutor/threads.rs`).
+`workspace::longhand_dir` creates the folder with a `.gitignore` of `*`, so none of it is
+committed by accident; the History and Record views say where it is and how to delete it.
 
 ## Testing
 

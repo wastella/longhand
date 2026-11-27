@@ -40,7 +40,8 @@ const READ_ONLY = ['Read', 'Glob', 'Grep'];
 
 /** One CLI run, the way src-tauri/src/tutor/run.rs drives it. Resolves with the reply text. */
 function ask(run) {
-  const args = config.args[run.kind].map((a) => (a === '{{SYSTEM_PROMPT}}' ? config.systemPrompts[run.policy][run.kind] : a));
+  const prompt = config.systemPrompts[run.policy][run.kind];
+  const args = config.args[run.kind].map((a) => a.replace('{{SYSTEM_PROMPT}}', () => prompt));
   const env = { ...process.env };
   delete env.ANTHROPIC_API_KEY;
   delete env.ANTHROPIC_AUTH_TOKEN;
@@ -49,14 +50,21 @@ function ask(run) {
     let text = '';
     let buffer = '';
     let error = '';
+    // Fail closed, as the app does: no text counts until the init message's tools are checked.
+    let checked = false;
     const handle = (m) => {
       const top = !m.parent_tool_use_id;
-      if (m.type === 'system' && m.subtype === 'init' && m.tools.some((t) => !READ_ONLY.includes(t))) {
-        error = `unexpected tools: ${m.tools}`;
-        child.kill();
-      } else if (m.type === 'stream_event' && top && m.event.type === 'content_block_start' && m.event.content_block.type === 'text' && text) text += '\n\n';
-      else if (m.type === 'stream_event' && top && m.event.type === 'content_block_delta' && m.event.delta.type === 'text_delta') text += m.event.delta.text;
-      else if (m.type === 'result' && m.is_error) error = m.result || (m.errors || []).join('\n');
+      if (m.type === 'system' && m.subtype === 'init') {
+        const tools = Array.isArray(m.tools) && m.tools.every((t) => typeof t === 'string') ? m.tools : null;
+        if (!tools || tools.some((t) => !READ_ONLY.includes(t))) {
+          error = tools ? `unexpected tools: ${tools}` : 'the init message listed no tools';
+          checked = false;
+          child.kill();
+        } else checked = true;
+      } else if (m.type === 'result' && m.is_error) error ||= m.result || (m.errors || []).join('\n');
+      else if (!checked) return;
+      else if (m.type === 'stream_event' && top && m.event?.type === 'content_block_start' && m.event.content_block?.type === 'text' && text) text += '\n\n';
+      else if (m.type === 'stream_event' && top && m.event?.type === 'content_block_delta' && m.event.delta?.type === 'text_delta') text += m.event.delta.text;
     };
     child.stdout.on('data', (chunk) => {
       buffer += chunk;
@@ -64,15 +72,20 @@ function ask(run) {
       while ((i = buffer.indexOf('\n')) >= 0) {
         const line = buffer.slice(0, i);
         buffer = buffer.slice(i + 1);
+        let message;
         try {
-          handle(JSON.parse(line));
+          message = JSON.parse(line);
         } catch {
-          // Not a JSON line; the CLI prints nothing else on stdout in this mode.
+          continue; // Not a JSON line; the CLI prints nothing else on stdout in this mode.
         }
+        handle(message);
       }
     });
     child.stderr.on('data', (chunk) => (error += chunk));
-    child.on('close', () => resolve({ text: text.trim(), error: error.trim() }));
+    child.on('close', () => {
+      if (!checked && !error) error = 'the CLI never sent an init message';
+      resolve({ text: checked ? text.trim() : '', error: error.trim() });
+    });
     child.stdin.end(JSON.stringify({ type: 'user', message: { role: 'user', content: run.prompt } }) + '\n');
   });
 }

@@ -53,9 +53,26 @@ const answers = {
     (_, i) => `Paragraph ${i + 1}: the gradient of the loss with respect to the logits is the softmax minus the one-hot target.`,
   ).join('\n\n'),
   lookup: '`torch.tril(input, diagonal=0)` returns a copy of `input` with everything above the diagonal set to zero.',
+  // Ways to carry code past the hidden-code check ("smuggle <way>"), and one table that is not code.
+  smuggle: {
+    texttt: '$$\\begin{array}{l}\\texttt{def f(q, k, v):}\\\\ \\texttt{\\ \\ s = q @ k.T}\\\\ \\texttt{\\ \\ return s.softmax(-1) @ v}\\end{array}$$',
+    verb: '$$\\begin{matrix}\\verb|m = x.max(-1)| \\\\ \\verb|e = (x - m).exp()| \\\\ \\verb|return e / e.sum()|\\end{matrix}$$',
+    split:
+      'First:\n\n```python\nm = x.max(dim=-1, keepdim=True).values\n```\n\nThen:\n\n```python\ne = torch.exp(x - m)\n```\n\nFinally:\n\n```python\nreturn e / e.sum(dim=-1, keepdim=True)\n```',
+    bash: '```bash\ndef softmax(x, dim):\n    m = x.max(dim=dim, keepdim=True).values\n    return torch.exp(x - m) / torch.exp(x - m).sum(dim=dim, keepdim=True)\n```',
+    table:
+      '| step | code |\n| --- | --- |\n| 1 | `m = x.max(dim=-1, keepdim=True).values` |\n| 2 | `e = torch.exp(x - m)` |\n| 3 | `e / e.sum(dim=-1, keepdim=True)` |',
+    breaks: '`m = x.max(-1).values`  \n`e = torch.exp(x - m)`  \n`out = e / e.sum(-1)`',
+    raw: 'Here: <code>m = x.max(-1).values<br>e = torch.exp(x - m)<br>return e / e.sum(-1)</code>',
+    api: '| call | returns |\n| --- | --- |\n| `torch.tril(input, diagonal=0)` | the lower triangle |\n| `torch.triu(input, diagonal=0)` | the upper triangle |\n| `Tensor.masked_fill(mask, value)` | a filled copy |',
+  },
+  raisebox: 'Before $\\raisebox{60em}{X}\\rule{200em}{3em}\\kern{-90em}Y$ after.',
 };
 
 function answerFor(prompt) {
+  const smuggled = prompt.match(/smuggle (\w+)/);
+  if (smuggled) return answers.smuggle[smuggled[1]];
+  if (prompt.includes('raisebox')) return answers.raisebox;
   if (prompt.includes('include code')) return answers.code;
   if (prompt.includes('be hostile')) return answers.hostile;
   if (prompt.includes('math hostile')) return answers.mathHostile;
@@ -68,7 +85,7 @@ function answerFor(prompt) {
 const now = () => new Date().toISOString();
 
 function keep(request, message) {
-  if (request.ephemeral ?? request.kind === 'lookup') return;
+  if (request.ephemeral) return;
   const thread = (threads[request.thread] ||= { id: request.thread, kind: request.kind, title: '', created: now(), updated: now(), messages: [] });
   thread.messages.push({ at: now(), ...message });
   thread.title ||= thread.messages.find((m) => m.role === 'student')?.text.split('\n')[0] || '';
@@ -106,8 +123,12 @@ function start(request) {
   send((slow ? 60 + chunks.length * 50 : 60) + 40, { type: 'done' }, () => (running.delete(thread), keep(request, { role: 'tutor', text: run.text })));
 }
 
+// The questions the fixture's log already holds for today, so the title bar's count and the
+// record's Today agree, as they do in the app (both are read from the same log).
+const earlierToday = mock.workspace.log?.today?.ask || 0;
+
 function today() {
-  const asks = {};
+  const asks = earlierToday ? { question: earlierToday } : {};
   let hintRung = 0;
   for (const r of window.__asked) {
     const about = r.about || (r.kind === 'conversation' ? 'question' : r.kind);
@@ -119,7 +140,12 @@ function today() {
   return { date, asks, hintRung, reveals };
 }
 
-const logRecord = mock.commands.log_record;
+/** The title bar's counts, from the same requests and reveals as the record. */
+function summary() {
+  const tests = mock.workspace.log?.today?.tests || 0;
+  const counts = { ask: earlierToday + window.__asked.length, reveal: reveals, tests };
+  return { today: counts, total: counts };
+}
 
 Object.assign(mock.commands, {
   tutor_request: ({ request }) => {
@@ -148,9 +174,10 @@ Object.assign(mock.commands, {
     }
     return { days, total };
   },
-  // Counts reveals for the record, then logs them as the shared mock does.
+  log_summary: summary,
   log_record: (args) => {
     if (args.kind === 'reveal') reveals++;
-    return logRecord(args);
+    window.__logged = [...(window.__logged || []), args];
+    return summary();
   },
 });

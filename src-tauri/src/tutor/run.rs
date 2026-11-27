@@ -24,13 +24,14 @@ pub struct Job {
     pub model: String,
     pub policy: String,
     pub prompt: String,
-    pub ephemeral: bool,
+    /// The question and answer go into the thread's transcript.
+    pub keep: bool,
 }
 
 /// What one CLI process produced.
 struct Outcome {
     text: String,
-    /// The CLI got as far as starting the session, so it can be resumed later.
+    /// The CLI started and its tools were checked, so the session can be resumed later.
     started: bool,
     failure: Option<Failure>,
 }
@@ -46,8 +47,10 @@ fn emit(app: &AppHandle, job: &Job, mut event: Value) {
 pub fn launch(app: &AppHandle, job: &Job, session: &Session, preamble: Option<String>, warm: Option<Child>) -> Result<Child, Failure> {
     let mut child = match warm {
         Some(child) => child,
-        None => cli::spawn(&job.bin, &cli::args(&job.model, job.kind.effort(), session), &job.ws)
-            .map_err(|e| Failure::new("failed", format!("Could not start Claude Code: {e}")))?,
+        None => {
+            let args = cli::args(&job.model, job.kind, session).map_err(|e| Failure::new("invalid", e))?;
+            cli::spawn(&job.bin, &args, &job.ws).map_err(|e| Failure::new("failed", format!("Could not start Claude Code: {e}")))?
+        }
     };
     if !super::set_pid(&app.state::<AppState>(), job, child.id()) {
         let _ = child.kill();
@@ -64,8 +67,9 @@ pub fn launch(app: &AppHandle, job: &Job, session: &Session, preamble: Option<St
 }
 
 /// Follows `child` to the end on a background thread, retrying once in a fresh session if the
-/// CLI no longer has the one being resumed.
-pub fn follow(app: AppHandle, job: Job, mut session: Session, mut child: Child) {
+/// CLI no longer has the one being resumed. `slot` holds the thread for this run (see
+/// `tutor.rs`) and is released only once the answer is saved.
+pub fn follow(app: AppHandle, job: Job, mut session: Session, mut child: Child, slot: super::Slot) {
     std::thread::spawn(move || {
         let send = |event: Value| emit(&app, &job, event);
         let mut outcome = drive(&mut child, &send);
@@ -73,8 +77,8 @@ pub fn follow(app: AppHandle, job: Job, mut session: Session, mut child: Child) 
         if missing && matches!(session, Session::Resume { .. }) {
             session = Session::New { id: uuid::Uuid::new_v4().to_string(), system_prompt: system_prompt(&job.ws, &job.policy, job.kind) };
             let earlier = threads::load(&job.ws, &job.thread).map(|t| t.messages).unwrap_or_default();
-            // The last message is the question being asked now.
-            let preamble = threads::history(&earlier[..earlier.len().saturating_sub(1)]);
+            // Everything before the question being asked now, which the prompt carries itself.
+            let preamble = threads::history(threads::before_last_question(&earlier));
             match launch(&app, &job, &session, preamble, None) {
                 Ok(mut fresh) => {
                     emit(&app, &job, json!({ "type": "restarted" }));
@@ -84,6 +88,7 @@ pub fn follow(app: AppHandle, job: Job, mut session: Session, mut child: Child) 
             }
         }
         finish(&app, &job, &session, outcome);
+        drop(slot);
     });
 }
 
@@ -103,15 +108,25 @@ fn drive(child: &mut Child, send: &dyn Fn(Value)) -> Outcome {
         for event in stream::parse(&line) {
             match event {
                 Event::Init { tools } => {
-                    // Defence in depth: stop if the CLI offers anything beyond the read tools.
-                    let extra = stream::unexpected_tools(&tools);
-                    if !extra.is_empty() {
-                        out.failure = Some(Failure::read_only(&extra));
+                    // Defence in depth: stop if the CLI offers anything beyond the read tools, or
+                    // does not say what it offers.
+                    let problem = match tools {
+                        None => Some(Failure::unchecked_tools()),
+                        Some(tools) => {
+                            let extra = stream::unexpected_tools(&tools);
+                            (!extra.is_empty()).then(|| Failure::read_only(&extra))
+                        }
+                    };
+                    if let Some(failure) = problem {
+                        out.failure = Some(failure);
+                        out.started = false;
                         let _ = child.kill();
                         break 'lines;
                     }
                     out.started = true;
                 }
+                // Fail closed: nothing the model writes is passed on before its tools are checked.
+                Event::Block | Event::Text(_) | Event::Tool { .. } if !out.started => {}
                 Event::Block if !out.text.is_empty() && !out.text.ends_with("\n\n") => {
                     out.text.push_str("\n\n");
                     send(json!({ "type": "text", "text": "\n\n" }));
@@ -135,10 +150,13 @@ fn drive(child: &mut Child, send: &dyn Fn(Value)) -> Outcome {
     let succeeded = child.wait().map(|s| s.success()).unwrap_or(false);
     let stderr_text = stderr_reader.join().unwrap_or_default();
     if out.failure.is_none() {
+        // Only error output is classified: an answer that went well and then a crash says
+        // nothing about why in its text.
         out.failure = match result {
-            Some((false, _)) if succeeded => None,
-            Some((_, text)) => Some(classify(&format!("{text}\n{stderr_text}"), limit.as_ref())),
-            None => Some(classify(&stderr_text, limit.as_ref())),
+            Some((false, _)) if succeeded && out.started => None,
+            Some((false, _)) if succeeded => Some(Failure::unchecked_tools()),
+            Some((true, text)) => Some(classify(&format!("{text}\n{stderr_text}"), limit.as_ref())),
+            Some((false, _)) | None => Some(classify(&stderr_text, limit.as_ref())),
         };
     }
     out
@@ -146,7 +164,7 @@ fn drive(child: &mut Child, send: &dyn Fn(Value)) -> Outcome {
 
 fn finish(app: &AppHandle, job: &Job, session: &Session, outcome: Outcome) {
     let stopped = super::end_run(&app.state::<AppState>(), job);
-    if !job.ephemeral {
+    if job.keep {
         let status = if stopped { Some("stopped") } else { outcome.failure.as_ref().map(|_| "error") };
         let missing = outcome.failure.as_ref().is_some_and(|f| f.code == "session-missing");
         let saved = threads::update(&job.ws, &job.thread, job.kind.name(), |t| {
@@ -205,7 +223,7 @@ mod tests {
 
     /// Runs a stand-in for the CLI that prints `lines`, then runs `then` in the shell.
     fn fake_cli(lines: &[String], then: &str) -> (Outcome, Vec<Value>, Duration) {
-        let script = lines.iter().map(|l| format!("printf '%s\\n' '{l}'")).collect::<Vec<_>>().join("; ");
+        let script = lines.iter().map(|l| format!("printf '%s\\n' '{l}'")).chain(["true".into()]).collect::<Vec<_>>().join("; ");
         let mut child = Command::new("sh")
             .args(["-c", &format!("{script}; {then}")])
             .stdin(Stdio::null())
@@ -238,6 +256,31 @@ mod tests {
     }
 
     #[test]
+    fn nothing_is_passed_on_before_the_tools_are_checked() {
+        // Text before the init message, then an init without a tool list.
+        let no_tools = r#"{"type":"system","subtype":"init"}"#.to_string();
+        let (out, events, _) = fake_cli(&[BLOCK.into(), text("early"), no_tools, text("late"), OK.into()], "exit 0");
+        assert_eq!(out.failure.unwrap().code, "read-only");
+        assert!(!out.started && out.text.is_empty() && events.is_empty());
+        // No init at all, though the run says it succeeded.
+        let (out, events, _) = fake_cli(&[text("unchecked"), OK.into()], "exit 0");
+        assert_eq!(out.failure.unwrap().code, "read-only");
+        assert!(out.text.is_empty() && events.is_empty());
+        // Text before a valid init is dropped; text after it is kept.
+        let (out, _, _) = fake_cli(&[text("early "), INIT.into(), text("late"), OK.into()], "exit 0");
+        assert!(out.failure.is_none());
+        assert_eq!(out.text, "late");
+    }
+
+    #[test]
+    fn an_answer_is_never_read_as_an_error_message() {
+        let answer = text("A neural network is not a network connection error.");
+        let (out, _, _) = fake_cli(&[INIT.into(), answer, OK.into()], "echo 'Segmentation fault' >&2; exit 139");
+        let failure = out.failure.unwrap();
+        assert_eq!((failure.code, failure.message.as_str()), ("failed", "Segmentation fault"));
+    }
+
+    #[test]
     fn a_rejected_usage_limit_reports_when_it_resets() {
         let limit = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1795756800}}"#.to_string();
         let result = r#"{"type":"result","is_error":true,"result":"You have hit your limit"}"#.to_string();
@@ -250,7 +293,8 @@ mod tests {
     #[test]
     fn a_missing_session_and_a_crash_are_told_apart() {
         let (out, _, _) = fake_cli(&[], "echo 'No conversation found with session ID: x' >&2; exit 1");
-        assert_eq!(out.failure.unwrap().code, "session-missing");
+        let f = out.failure.unwrap();
+        assert_eq!(f.code, "session-missing", "{}", f.message);
         let (out, _, _) = fake_cli(&[INIT.into(), text("Half")], "echo 'Segmentation fault' >&2; exit 139");
         let failure = out.failure.unwrap();
         assert_eq!((failure.code, failure.message.as_str()), ("failed", "Segmentation fault"));

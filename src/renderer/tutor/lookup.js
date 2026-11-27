@@ -1,6 +1,8 @@
 // The lookup bar (⇧⌘K): a quick, direct answer in a popover that Escape dismisses. Lookups are
-// not part of the conversation and are kept nowhere, but they go through the same read-only
-// engine, the folder's policy and the hidden-code check, and the usage log counts them.
+// not part of the conversation, and the tutor cannot read the folder for them (they are about the
+// language, libraries, tools, errors and concepts). They go through the same engine, the
+// folder's policy and the hidden-code check; the usage log counts them and, like conversations,
+// their questions and answers are kept in this folder (one thread a day, `lookup-YYYY-MM-DD`).
 
 import { h } from '../dom.js';
 import { state } from '../state.js';
@@ -19,7 +21,7 @@ const field = h('input', {
   'aria-label': 'Look up',
 });
 const answer = h('div', { id: 'lookup-answer', class: 'msg tutor', 'aria-live': 'polite', hidden: true });
-const foot = h('div', { id: 'lookup-foot' }, 'Enter to look up · Esc to close · not added to the conversation');
+const foot = h('div', { id: 'lookup-foot' }, 'Enter to look up · Esc to close · not added to the conversation, kept in .longhand/');
 const form = h('form', { id: 'lookup-form' }, field);
 export const lookupBar = h('div', { id: 'lookup', role: 'dialog', 'aria-label': 'Look up', hidden: true }, form, answer, foot);
 
@@ -51,6 +53,14 @@ export function closeLookup() {
   returnFocus?.focus?.();
 }
 
+export const LOOKUP_PREFIX = 'lookup-';
+
+/** Today's lookup thread, by the local date. */
+function lookupThread(now = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${LOOKUP_PREFIX}${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 function look(question) {
   stop();
   answer.hidden = false;
@@ -61,7 +71,7 @@ function look(question) {
     if (current === message) renderAnswer(answer, message.text, message);
   };
   message.handle = tutorRequest({
-    thread: 'lookup',
+    thread: lookupThread(),
     kind: 'lookup',
     prompt: question,
     about: 'lookup',

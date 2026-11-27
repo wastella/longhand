@@ -22,7 +22,10 @@ export function renderAnswer(node, text, message) {
   formulas = [];
   const html = marked.parse(text);
   const found = formulas;
-  node.innerHTML = DOMPurify.sanitize(html, { FORBID_TAGS: ['style', 'form', 'input', 'button', 'img', 'math', 'svg'], FORBID_ATTR: ['style'] });
+  node.innerHTML = DOMPurify.sanitize(html, {
+    FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'img', 'math', 'svg'],
+    FORBID_ATTR: ['style'],
+  });
   for (const link of node.querySelectorAll('a')) {
     const href = link.getAttribute('href') || '';
     link.removeAttribute('href');

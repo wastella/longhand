@@ -16,7 +16,12 @@ purifier.addHook('uponSanitizeAttribute', (_node, data) => {
   if (data.attrName === 'style' && (!SAFE_STYLE.test(data.attrValue) || UNSAFE_STYLE.test(data.attrValue))) data.keepAttr = false;
 });
 
-const KATEX = { throwOnError: false, trust: false, strict: 'ignore', maxSize: 20, maxExpand: 300 };
+// maxSize caps every size a formula sets (\rule, \raisebox, \kern…), in em; the CSS also clips
+// each formula to its own box, so nothing drawn can land outside it.
+const KATEX = { throwOnError: false, trust: false, strict: 'ignore', maxSize: 4, maxExpand: 300 };
+
+/** The TeX of each drawn formula, by its node, for the hidden-code check (hidden-code.js). */
+export const formulaTex = new WeakMap();
 
 /** Draws `tex` as safe nodes inside `into`. */
 function drawFormula(into, tex, displayMode) {
@@ -79,7 +84,9 @@ export function drawFormulas(node, formulas) {
   for (const slot of node.querySelectorAll('[data-math]')) {
     const formula = formulas[Number(slot.dataset.math)];
     slot.removeAttribute('data-math');
-    if (formula) drawFormula(slot, formula.tex, formula.display);
+    if (!formula) continue;
+    drawFormula(slot, formula.tex, formula.display);
+    formulaTex.set(slot, formula.tex);
   }
 }
 

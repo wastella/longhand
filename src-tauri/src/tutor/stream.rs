@@ -5,9 +5,10 @@ use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
-    /// The CLI started and lists the tools the model may use.
+    /// The CLI started and lists the tools the model may use. None when it sent no list of
+    /// strings, which the run treats as a failure: it cannot be checked.
     Init {
-        tools: Vec<String>,
+        tools: Option<Vec<String>>,
     },
     /// A new block of answer text begins.
     Block,
@@ -40,7 +41,7 @@ pub fn parse(line: &str) -> Vec<Event> {
     let Ok(msg) = serde_json::from_str::<Value>(line) else { return vec![] };
     match msg["type"].as_str().unwrap_or("") {
         "system" if msg["subtype"] == "init" => {
-            let tools = msg["tools"].as_array().into_iter().flatten().filter_map(|t| t.as_str()).map(String::from).collect();
+            let tools = msg["tools"].as_array().and_then(|list| list.iter().map(|t| t.as_str().map(String::from)).collect());
             vec![Event::Init { tools }]
         }
         "stream_event" if msg["parent_tool_use_id"].is_null() => {
@@ -103,7 +104,12 @@ mod tests {
     #[test]
     fn start_up_lists_the_tools_and_extra_ones_are_caught() {
         let tools: Vec<String> = ["Glob", "Grep", "Read"].map(String::from).to_vec();
-        assert_eq!(parse(INIT), vec![Event::Init { tools: tools.clone() }]);
+        assert_eq!(parse(INIT), vec![Event::Init { tools: Some(tools.clone()) }]);
+        // No list, or a list with something other than names, cannot be checked.
+        assert_eq!(parse(r#"{"type":"system","subtype":"init"}"#), vec![Event::Init { tools: None }]);
+        assert_eq!(parse(r#"{"type":"system","subtype":"init","tools":"Bash"}"#), vec![Event::Init { tools: None }]);
+        assert_eq!(parse(r#"{"type":"system","subtype":"init","tools":["Read",{"name":"Bash"}]}"#), vec![Event::Init { tools: None }]);
+        assert_eq!(parse(r#"{"type":"system","subtype":"init","tools":[]}"#), vec![Event::Init { tools: Some(vec![]) }]);
         assert!(unexpected_tools(&tools).is_empty());
         let more: Vec<String> = ["Read", "Bash", "Edit"].map(String::from).to_vec();
         assert_eq!(unexpected_tools(&more), vec!["Bash", "Edit"]);

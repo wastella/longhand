@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { askTutor, count, isHidden, openFromTree, sleep, text, uiTest } from './helpers.mjs';
 
 const lastAsked = (page) => page.evaluate(() => window.__asked.at(-1));
+const THREE_DAYS = Math.floor(Date.now() / 1000) + 3 * 86400;
 const ATTACK = '.msg.tutor script, .msg.tutor img, .msg.tutor iframe, .msg.tutor a[href], .msg.tutor [onclick], .msg.tutor [onerror]';
 
 async function failTestAndAsk(page) {
@@ -65,6 +66,51 @@ uiTest('code beyond the strict limit is hidden until revealed, and the reveal is
   await page.click('.msg.tutor .withheld button');
   await page.waitForFunction(() => document.querySelectorAll('.msg.tutor pre').length === 2);
   assert.match(await text(page, '#reliance'), /1 code reveal/);
+});
+
+// Each answer below carries three lines of a softmax past a check that looked only at fenced
+// blocks one at a time. Strict allows two lines in an answer, counted across all of it.
+for (const [way, how] of Object.entries({
+  texttt: 'in \\texttt rows of a display formula',
+  verb: 'in \\verb inside a matrix',
+  split: 'split across three one-line blocks',
+  bash: 'in a fence marked bash',
+  table: 'one line per table row',
+  breaks: 'in inline code joined by hard line breaks',
+  raw: 'in raw <code> with <br>',
+})) {
+  uiTest(`code ${how} is hidden too, and revealed all at once`, async (page) => {
+    await askTutor(page, `smuggle ${way}`);
+    const answer = await text(page, '.msg.tutor .answer-body');
+    assert.doesNotMatch(answer, /x\.max|exp\(|\.exp|softmax\(-1\)/, answer);
+    assert.equal(await count(page, '.msg.tutor .withheld button'), 1, 'one Reveal for the whole answer');
+    assert.match(await text(page, '.msg.tutor .withheld:has(button)'), /3 lines of code, hidden under the strict policy/);
+    await page.click('.msg.tutor .withheld button');
+    await page.waitForFunction(() => !document.querySelector('.msg.tutor .withheld'));
+    assert.match(await text(page, '.msg.tutor .answer-body'), /max/);
+    assert.deepEqual(await page.evaluate(() => window.__logged.map((l) => [l.kind, l.detail.lines])), [['reveal', 3]]);
+  });
+}
+
+uiTest('a table of function signatures and ordinary math are not hidden', async (page) => {
+  await askTutor(page, 'smuggle api');
+  assert.equal(await count(page, '.msg.tutor .withheld'), 0);
+  assert.match(await text(page, '.msg.tutor table'), /torch\.tril\(input, diagonal=0\)/);
+  await askTutor(page, 'explain the math');
+  assert.equal(await count(page, '.msg.tutor .withheld'), 0);
+});
+
+uiTest('a formula cannot draw outside its own box', async (page) => {
+  await askTutor(page, 'raisebox');
+  const { formula, panel } = await page.evaluate(() => {
+    const box = (n) => n.getBoundingClientRect().toJSON();
+    const math = document.querySelector('.msg.tutor .math');
+    // The formula's painted area is clipped to its box, which stays within the answer.
+    return { formula: { ...box(math), contain: getComputedStyle(math).contain }, panel: box(document.querySelector('.msg.tutor')) };
+  });
+  assert.match(formula.contain, /paint/);
+  assert.ok(formula.right <= panel.right + 1 && formula.left >= panel.left - 1, JSON.stringify({ formula, panel }));
+  assert.ok(formula.height < 200, `a lowered maxSize keeps the box small (${formula.height}px)`);
 });
 
 uiTest('the guided policy shows short examples, with syntax colours', async (page) => {
@@ -137,7 +183,8 @@ uiTest(
   async (page) => {
     await askTutor(page, 'What is AdamW?');
     await page.waitForSelector('.msg.error');
-    assert.match(await text(page, '.msg.error'), /usage limit\. It resets at \d{1,2}:\d{2}/);
+    // "at 3:40 pm" today; on another day the date comes first.
+    assert.match(await text(page, '.msg.error'), /usage limit\. It resets (at|on .+ at) \d{1,2}:\d{2}/);
     await page.click('.msg.error .retry');
     await page.waitForFunction(() => !document.querySelector('.msg.error') && document.querySelector('.msg.tutor'));
     await page.waitForFunction(() => !document.querySelector('#send').hidden);
@@ -147,6 +194,17 @@ uiTest(
     assert.equal(await count(page, '.msg.user'), 1);
   },
   { tutor: { failures: [{ code: 'rate-limited', message: 'You have reached your Claude usage limit.', resetsAt: Math.floor(Date.now() / 1000) + 3600 }] } },
+);
+
+uiTest(
+  'a usage limit that resets on another day says which day',
+  async (page) => {
+    await askTutor(page, 'What is AdamW?');
+    await page.waitForSelector('.msg.error');
+    const expected = await page.evaluate((s) => new Date(s * 1000).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }), THREE_DAYS);
+    assert.ok((await text(page, '.msg.error')).includes(`It resets on ${expected} at `), await text(page, '.msg.error'));
+  },
+  { tutor: { failures: [{ code: 'rate-limited', message: 'You have reached your Claude usage limit.', resetsAt: THREE_DAYS }] } },
 );
 
 uiTest(
@@ -181,6 +239,7 @@ uiTest(
     await page.waitForSelector('#history-list .thread');
     assert.equal(await count(page, '#history-list .thread'), 2);
     assert.match(await text(page, '#history-list .thread.active'), /residual stream/);
+    assert.match(await text(page, '#history .storage-note'), /Conversations and lookups are kept in this folder/);
     await page.click('#history-list .thread:not(.active)');
     await page.waitForFunction(() => document.querySelector('#history').hidden && !document.querySelector('#chat').hidden);
     assert.match(await text(page, '#chat'), /causal mask[\s\S]*-inf/);
@@ -225,6 +284,10 @@ uiTest('the hint ladder climbs one explicit step at a time and the record shows 
   await page.waitForSelector('#record .record-day');
   assert.match(await text(page, '#record'), /Today[\s\S]*2 hints · hints up to step 2 \(key idea\)/);
   assert.doesNotMatch(await text(page, '#record'), /streak|score|great/i);
+  // The title bar and the record count the same log: the fixture's 3 earlier questions and 2 hints.
+  assert.match(await text(page, '#record'), /Today3 questions · 2 hints/);
+  assert.equal(await text(page, '#reliance'), 'Today: 5 questions');
+  assert.match(await text(page, '#record .storage-note'), /kept in this folder, in \.longhand\/threads\/.*Git ignores them.*delete/);
   await page.keyboard.press('Escape');
   assert.equal(await isHidden(page, '#chat'), false);
 });
@@ -238,7 +301,9 @@ uiTest('the lookup bar answers in a popover that is not part of the conversation
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => /diagonal set to zero/.test(document.querySelector('#lookup-answer').textContent));
   const sent = await lastAsked(page);
-  assert.deepEqual([sent.thread, sent.kind, sent.about, sent.prompt], ['lookup', 'lookup', 'lookup', 'what does torch.tril return']);
+  assert.deepEqual([sent.kind, sent.about, sent.prompt, sent.ephemeral], ['lookup', 'lookup', 'what does torch.tril return', undefined]);
+  assert.match(sent.thread, /^lookup-\d{4}-\d{2}-\d{2}$/, "today's lookup thread");
+  await page.waitForFunction((id) => window.__threads[id]?.messages.length === 2, {}, sent.thread);
   assert.equal(await count(page, '#chat .msg'), 0);
   assert.match(await text(page, '#reliance'), /question/, 'the usage counter was refreshed');
   await page.keyboard.press('Escape');

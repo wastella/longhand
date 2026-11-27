@@ -34,6 +34,14 @@ impl Failure {
         )
     }
 
+    /// The CLI answered without first saying which tools it offers, so nothing it wrote is shown.
+    pub fn unchecked_tools() -> Self {
+        Self::new(
+            "read-only",
+            "The tutor stopped before answering because Claude Code did not report which tools it offers, so Longhand could not check that it is read-only. Updating Claude Code with `claude update` usually fixes this.",
+        )
+    }
+
     pub fn read_only(extra: &[String]) -> Self {
         Self::new(
             "read-only",
@@ -45,39 +53,43 @@ impl Failure {
     }
 }
 
-const SESSION_MISSING: [&str; 1] = ["no conversation found"];
-const LOGGED_OUT: [&str; 7] =
-    ["not logged in", "/login", "invalid api key", "oauth token", "authentication_error", "invalid bearer", "token has been revoked"];
-const RATE_LIMITED: [&str; 5] = ["usage limit", "hit your limit", "limit reached", "rate_limit_error", "rate limit"];
-const OFFLINE: [&str; 9] = [
-    "connection error",
-    "enotfound",
-    "econnrefused",
-    "econnreset",
-    "etimedout",
-    "eai_again",
-    "unable to connect",
-    "fetch failed",
-    "network",
-];
-const BUSY: [&str; 2] = ["overloaded", "529"];
+/// Patterns for the CLI's own error messages, matched line by line against error output only
+/// (an error result and standard error, never the answer). Each names a whole phrase or error
+/// code, so an answer that mentions "network" or "rate limit" can never look like a failure.
+const SESSION_MISSING: &str = r"(?i)^(error: )?no conversation found with session id\b";
+const LOGGED_OUT: &str = r"(?i)\bnot logged in\b|\bplease run /login\b|^(api error: )?invalid api key\b|\boauth token (has expired|has been revoked|is invalid)\b|\bauthentication_error\b|\binvalid bearer token\b";
+const RATE_LIMITED: &str =
+    r"(?i)\busage limit reached\b|\byou('ve| have) hit your (usage )?limit\b|\brate_limit_error\b|^(api error: )?429\b";
+const OFFLINE: &str = r"(?i)^(api error: )?connection error\b|\bgetaddrinfo (enotfound|eai_again)\b|\b(connect )?(econnrefused|econnreset|etimedout)\b|^(typeerror: )?fetch failed\b|\bunable to connect to (the )?(anthropic )?api\b";
+const BUSY: &str = r"(?i)^(api error: )?529\b|\boverloaded_error\b|^(api error: )?(529 )?overloaded\b";
 
-/// Sorts out a failed run from the CLI's error text (its result and standard error) and the
-/// last usage-limit report it sent.
+fn matches(pattern: &str, lines: &[&str]) -> bool {
+    let re = regex::Regex::new(pattern).expect("valid pattern");
+    lines.iter().any(|line| re.is_match(line))
+}
+
+/// Sorts out a failed run from the CLI's error output (an error result and standard error, never
+/// the answer) and the last usage-limit report it sent.
 pub fn classify(text: &str, limit: Option<&Limit>) -> Failure {
-    let lower = text.to_lowercase();
-    let has = |needles: &[&str]| needles.iter().any(|n| lower.contains(n));
+    // Error output is short; a long text is not one to search.
+    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).take(40).collect();
+    let has = |pattern: &str| matches(pattern, &lines);
     let rejected = limit.is_some_and(|l| l.status == "rejected");
-    if has(&SESSION_MISSING) {
+    if has(SESSION_MISSING) {
         Failure::new("session-missing", "The earlier conversation is no longer available.")
-    } else if rejected || has(&RATE_LIMITED) {
+    } else if rejected || has(RATE_LIMITED) {
         let resets_at = limit.and_then(|l| l.resets_at).or_else(|| reset_time_in(text));
-        Failure { resets_at, ..Failure::new("rate-limited", "You have reached your Claude usage limit.") }
-    } else if has(&LOGGED_OUT) {
+        // Without a time to show, the CLI's own line carries when the limit resets.
+        let message = match (resets_at, lines.iter().find(|l| regex::Regex::new(RATE_LIMITED).unwrap().is_match(l))) {
+            (None, Some(line)) => format!("You have reached your Claude usage limit. Claude Code says: {}", line.replace('|', " ")),
+            _ => "You have reached your Claude usage limit.".to_string(),
+        };
+        Failure { resets_at, ..Failure::new("rate-limited", message) }
+    } else if has(LOGGED_OUT) {
         Failure::new("logged-out", "Claude Code is not logged in. Run `claude` in the terminal, log in, then try again.")
-    } else if has(&OFFLINE) {
+    } else if has(OFFLINE) {
         Failure::new("offline", "Could not reach Claude. Check your internet connection, then try again.")
-    } else if has(&BUSY) {
+    } else if has(BUSY) {
         Failure::new("busy", "Claude is overloaded right now. Try again in a minute.")
     } else {
         let first = text.trim().lines().next().unwrap_or("").chars().take(400).collect::<String>();
@@ -105,6 +117,29 @@ mod tests {
         assert_eq!(code("API Error: 529 Overloaded"), "busy");
         assert_eq!(code("Claude AI usage limit reached|1795756800"), "rate-limited");
         assert_eq!(code("You've hit your limit · resets 3pm"), "rate-limited");
+        assert_eq!(code("Error: No conversation found with session ID: 4f0c"), "session-missing");
+    }
+
+    #[test]
+    fn words_in_an_answer_are_not_errors() {
+        let code = |text: &str| classify(text, None).code;
+        for answer in [
+            "A neural network learns its weights by gradient descent.",
+            "Use a learning-rate schedule; the rate limit of the optimiser is not the issue.",
+            "The 529 examples in the batch are overloaded with padding.",
+            "If you hit a usage limit on the cluster, ask staff.",
+            "The connection error in your test means the server fixture did not start.",
+        ] {
+            assert_eq!(code(answer), "failed", "{answer}");
+        }
+    }
+
+    #[test]
+    fn a_limit_without_a_time_keeps_what_the_cli_said() {
+        let failure = classify("You've hit your limit · resets Dec 1, 3pm", None);
+        assert_eq!(failure.resets_at, None);
+        assert!(failure.message.ends_with("Claude Code says: You've hit your limit · resets Dec 1, 3pm"), "{}", failure.message);
+        assert_eq!(classify("Claude AI usage limit reached|1795756800", None).message, "You have reached your Claude usage limit.");
     }
 
     #[test]

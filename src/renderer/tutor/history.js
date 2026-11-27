@@ -3,6 +3,7 @@
 import { emptyState, h } from '../dom.js';
 import { CONVERSATION_PREFIX, currentThread, openThread } from './conversation.js';
 import { listThreads } from './engine.js';
+import { storageNote } from './record.js';
 
 /** "14:02" today, "Yesterday", or "26 Nov". */
 export function when(iso, now = new Date()) {
@@ -15,7 +16,7 @@ export function when(iso, now = new Date()) {
 }
 
 const list = h('div', { id: 'history-list', role: 'list' });
-export const historyView = h('div', { id: 'history', class: 'tutor-view', hidden: true }, list);
+export const historyView = h('div', { id: 'history', class: 'tutor-view', hidden: true }, list, storageNote());
 
 /** Fills the list; `onOpen` runs after a conversation is picked. */
 export async function showHistory(onOpen) {

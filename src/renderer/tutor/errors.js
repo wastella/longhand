@@ -5,18 +5,22 @@ import { h } from '../dom.js';
 import { typeInTerminal } from '../terminal/index.js';
 import { recheckAuth } from './setup.js';
 
-/** When a usage limit resets, in the student's own clock: "3:40 pm", or "Mon 30 Nov, 3:40 pm". */
+/**
+ * When a usage limit resets, in the student's own clock: "at 3:40 pm" today, otherwise with the
+ * date, "on Mon 30 Nov at 3:40 pm" (and the year when it is not this one).
+ */
 export function resetTime(seconds, now = new Date()) {
   const at = new Date(seconds * 1000);
   const time = at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  if (at.toDateString() === now.toDateString()) return time;
-  return `${at.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}, ${time}`;
+  if (at.toDateString() === now.toDateString()) return `at ${time}`;
+  const year = at.getFullYear() === now.getFullYear() ? undefined : 'numeric';
+  return `on ${at.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year })} at ${time}`;
 }
 
 /** The sentence for `error` ({ code, message, resetsAt }). */
 export function failureText(error) {
   if (error.code === 'rate-limited')
-    return error.resetsAt ? `You have reached your Claude usage limit. It resets at ${resetTime(error.resetsAt)}.` : error.message;
+    return error.resetsAt ? `You have reached your Claude usage limit. It resets ${resetTime(error.resetsAt)}.` : error.message;
   return error.message;
 }
 

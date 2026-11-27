@@ -36,12 +36,27 @@ function dayName(date, now = new Date()) {
   return day.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: y === now.getFullYear() ? undefined : 'numeric' });
 }
 
+/** Where the tutor's records live and how to remove them, shown under History and Record. */
+export const storageNote = () =>
+  h(
+    'p',
+    { class: 'storage-note' },
+    'Conversations and lookups are kept in this folder, in ',
+    h('code', {}, '.longhand/threads/'),
+    ', and this record in ',
+    h('code', {}, '.longhand/log.jsonl'),
+    '. They stay on this computer and Git ignores them. To delete them, delete those files, or the whole ',
+    h('code', {}, '.longhand'),
+    ' folder (it also holds the tutor settings for this folder).',
+  );
+
 const body = h('div', { id: 'record-body' });
 export const recordView = h(
   'div',
   { id: 'record', class: 'tutor-view', hidden: true },
-  h('p', { class: 'record-intro' }, 'Your own use of the tutor in this folder, kept in .longhand/log.jsonl on this computer.'),
+  h('p', { class: 'record-intro' }, 'Your own use of the tutor in this folder, by day.'),
   body,
+  storageNote(),
 );
 
 export async function showRecord() {

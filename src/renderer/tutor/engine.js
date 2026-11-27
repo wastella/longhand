@@ -42,11 +42,15 @@ const asFailure = (error) => (error && error.code ? error : { code: 'failed', me
  *   model       'haiku' | 'sonnet' | 'opus' (lookups default to haiku, others to the folder's)
  *   about       what the usage log files it under: question, explain, review, failure, hint, lookup
  *   rung        for hints, the ladder rung (1-3)
- *   ephemeral   keep nothing (defaults to true for lookups only)
+ *   ephemeral   keep no transcript and no CLI session (default false; lookups keep a
+ *               transcript but never a CLI session, and get no tools)
  *   retry       ask the thread's last question again without repeating it in the transcript
  *   onText(text, delta)          the answer so far, as it streams
  *   onActivity({ tool, target }) the tutor is reading or searching a file
  *   onRestart()                  the CLI session had expired; a new one has the transcript
+ *
+ * Requests on one thread take turns: a new one stops the one running there, which saves its
+ * answer (as stopped) before the new question is added.
  *
  * Returns { id, done, cancel }. `done` always resolves, never rejects, with
  * { status: 'done' | 'cancelled' | 'error', text, error?: { code, message, resetsAt? } }.

@@ -86,7 +86,6 @@ function copyButton(body) {
   return button;
 }
 
-/** A finished answer from `text`, with its Copy button. */
 /** An answer's box. Its actions row is there from the start, so finishing does not shift the layout. */
 function answerBox(...content) {
   const body = h('div', { class: 'answer-body' }, ...content);
@@ -94,6 +93,7 @@ function answerBox(...content) {
   return { node, body };
 }
 
+/** A finished answer from `text`, with its Copy button. */
 function answer(text) {
   const { node, body } = answerBox();
   renderAnswer(body, text, { revealed: new Set(), streaming: false });

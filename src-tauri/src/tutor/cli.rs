@@ -1,9 +1,12 @@
 //! Finding the user's `claude` CLI, checking it can run the tutor safely, and the exact
 //! arguments every tutor run starts with.
 
+use super::prompt::Kind;
+use super::threads::valid_session;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
+use std::time::SystemTime;
 
 pub const READ_ONLY_TOOLS: [&str; 3] = ["Read", "Glob", "Grep"];
 
@@ -25,15 +28,19 @@ const REQUIRED_FLAGS: [&str; 9] = [
 pub enum Session {
     /// A new conversation the CLI keeps under `id`, so later runs can resume it.
     New { id: String, system_prompt: String },
-    /// A conversation the CLI already has.
-    Resume { id: String },
+    /// A conversation the CLI already has. The CLI reuses the system prompt it recorded for it;
+    /// `system_prompt` (the current policy's) is passed too, and applies if that record is gone.
+    Resume { id: String, system_prompt: String },
     /// A one-off answer the CLI does not keep (lookups).
     Ephemeral { system_prompt: String },
 }
 
 /// The arguments for one run. The first block is what makes the tutor read-only; the test below
-/// pins it, so any change to it is a deliberate one.
-pub fn args(model: &str, effort: Option<&str>, session: &Session) -> Vec<String> {
+/// pins it, so any change to it is a deliberate one. Lookups get no tools at all.
+///
+/// Every value that could come from a file is joined to its flag with `=`, so it can never be
+/// read as a flag of its own, and a session id must be a plain UUID.
+pub fn args(model: &str, kind: Kind, session: &Session) -> Result<Vec<String>, String> {
     let mut args: Vec<String> = [
         "-p",
         "--input-format",
@@ -43,7 +50,7 @@ pub fn args(model: &str, effort: Option<&str>, session: &Session) -> Vec<String>
         "--verbose",
         "--include-partial-messages",
         "--tools",
-        "Read,Glob,Grep",
+        kind.tools(),
         "--restricted",
         "--strict-mcp-config",
         "--disable-slash-commands",
@@ -55,19 +62,27 @@ pub fn args(model: &str, effort: Option<&str>, session: &Session) -> Vec<String>
     .iter()
     .map(|s| s.to_string())
     .collect();
-    if let Some(effort) = effort {
+    if let Some(effort) = kind.effort() {
         args.extend(["--effort".into(), effort.into()]);
     }
     match session {
         Session::New { id, system_prompt } => {
-            args.extend(["--session-id".into(), id.clone(), "--system-prompt".into(), system_prompt.clone()])
+            if !valid_session(id) {
+                return Err(format!("not a session id: {id:?}"));
+            }
+            args.extend([format!("--session-id={id}"), format!("--system-prompt={system_prompt}")])
         }
-        Session::Resume { id } => args.extend(["--resume".into(), id.clone()]),
+        Session::Resume { id, system_prompt } => {
+            if !valid_session(id) {
+                return Err(format!("not a session id: {id:?}"));
+            }
+            args.extend([format!("--resume={id}"), format!("--system-prompt={system_prompt}")])
+        }
         Session::Ephemeral { system_prompt } => {
-            args.extend(["--no-session-persistence".into(), "--system-prompt".into(), system_prompt.clone()])
+            args.extend(["--no-session-persistence".into(), format!("--system-prompt={system_prompt}")])
         }
     }
-    args
+    Ok(args)
 }
 
 /// The line written to the CLI's standard input to ask `prompt` (stream-json input).
@@ -133,19 +148,29 @@ pub fn missing_flags(help: &str) -> Vec<&'static str> {
     REQUIRED_FLAGS.iter().copied().filter(|flag| !help.split(|c: char| c.is_whitespace() || c == ',').any(|word| word == *flag)).collect()
 }
 
-/// Checks the CLI at `bin`. The `--help` check runs once per version, since it costs a process.
+/// The binary as it is on disk now. `claude update` replaces the file (or the link's target), so
+/// a change of path or modification time means the CLI must be checked again.
+fn fingerprint(bin: &Path) -> (PathBuf, Option<SystemTime>) {
+    let resolved = bin.canonicalize().unwrap_or_else(|_| bin.to_path_buf());
+    let modified = std::fs::metadata(&resolved).and_then(|m| m.modified()).ok();
+    (resolved, modified)
+}
+
+/// Checks the CLI at `bin`. `--version` and `--help` each cost a process, so the result is kept
+/// until the binary changes on disk.
 pub fn capabilities(bin: &Path) -> Capabilities {
-    static CHECKED: Mutex<Option<Capabilities>> = Mutex::new(None);
+    type Checked = Option<((PathBuf, Option<SystemTime>), Capabilities)>;
+    static CHECKED: Mutex<Checked> = Mutex::new(None);
+    let key = fingerprint(bin);
+    if let Some((_, known)) = CHECKED.lock().unwrap().as_ref().filter(|(k, _)| *k == key) {
+        return known.clone();
+    }
     let run = |arg: &str| {
         Command::new(bin).arg(arg).stdin(Stdio::null()).output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default()
     };
     let version = parse_version(&run("--version")).unwrap_or_else(|| "unknown".into());
-    let mut checked = CHECKED.lock().unwrap();
-    if let Some(known) = checked.as_ref().filter(|c| c.version == version) {
-        return known.clone();
-    }
     let found = Capabilities { missing: missing_flags(&run("--help")), version };
-    *checked = Some(found.clone());
+    *CHECKED.lock().unwrap() = Some((key, found.clone()));
     found
 }
 
@@ -153,47 +178,75 @@ pub fn capabilities(bin: &Path) -> Capabilities {
 mod tests {
     use super::*;
 
-    const READ_ONLY_BLOCK: [&str; 14] = [
-        "-p",
-        "--input-format",
-        "stream-json",
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        "--include-partial-messages",
-        "--tools",
-        "Read,Glob,Grep",
-        "--restricted",
-        "--strict-mcp-config",
-        "--disable-slash-commands",
-        "--permission-mode",
-        "dontAsk",
-    ];
+    const ID: &str = "45a4908f-1c2d-4e5f-8a9b-0c1d2e3f4a5b";
 
-    fn expected(tail: &[&str]) -> Vec<String> {
-        READ_ONLY_BLOCK.iter().chain(tail).map(|s| s.to_string()).collect()
+    fn read_only_block(tools: &str) -> Vec<String> {
+        [
+            "-p",
+            "--input-format",
+            "stream-json",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--include-partial-messages",
+            "--tools",
+            tools,
+            "--restricted",
+            "--strict-mcp-config",
+            "--disable-slash-commands",
+            "--permission-mode",
+            "dontAsk",
+        ]
+        .map(String::from)
+        .to_vec()
+    }
+
+    fn expected(tools: &str, tail: &[&str]) -> Vec<String> {
+        read_only_block(tools).into_iter().chain(tail.iter().map(|s| s.to_string())).collect()
     }
 
     #[test]
     fn every_run_is_read_only_and_the_arguments_are_exactly_these() {
-        let new = Session::New { id: "abc".into(), system_prompt: "SYS".into() };
-        assert_eq!(args("sonnet", None, &new), expected(&["--model", "sonnet", "--session-id", "abc", "--system-prompt", "SYS"]));
-        let resume = Session::Resume { id: "abc".into() };
-        assert_eq!(args("opus", None, &resume), expected(&["--model", "opus", "--resume", "abc"]));
+        let new = Session::New { id: ID.into(), system_prompt: "SYS".into() };
+        assert_eq!(
+            args("sonnet", Kind::Conversation, &new).unwrap(),
+            expected("Read,Glob,Grep", &["--model", "sonnet", &format!("--session-id={ID}"), "--system-prompt=SYS"])
+        );
+        let resume = Session::Resume { id: ID.into(), system_prompt: "SYS".into() };
+        assert_eq!(
+            args("opus", Kind::Review, &resume).unwrap(),
+            expected("Read,Glob,Grep", &["--model", "opus", &format!("--resume={ID}"), "--system-prompt=SYS"])
+        );
+        // Lookups are about the language and its libraries, not the folder: no tools at all.
         let lookup = Session::Ephemeral { system_prompt: "SYS".into() };
         assert_eq!(
-            args("haiku", Some("low"), &lookup),
-            expected(&["--model", "haiku", "--effort", "low", "--no-session-persistence", "--system-prompt", "SYS"])
+            args("haiku", Kind::Lookup, &lookup).unwrap(),
+            expected("", &["--model", "haiku", "--effort", "low", "--no-session-persistence", "--system-prompt=SYS"])
         );
         assert_eq!(READ_ONLY_TOOLS.join(","), "Read,Glob,Grep");
     }
 
     #[test]
+    fn a_session_id_from_a_file_can_never_become_a_flag() {
+        for bad in ["--settings=/tmp/hooks.json", "--mcp-config=x.json", "", "abc", &format!("{ID} --settings=x")] {
+            for session in [
+                Session::Resume { id: bad.to_string(), system_prompt: "s".into() },
+                Session::New { id: bad.to_string(), system_prompt: "s".into() },
+            ] {
+                assert!(args("sonnet", Kind::Conversation, &session).is_err(), "{bad:?}");
+            }
+        }
+        // A system prompt that looks like a flag stays the value of --system-prompt.
+        let list = args("haiku", Kind::Lookup, &Session::Ephemeral { system_prompt: "--settings=x".into() }).unwrap();
+        assert_eq!(list.last().unwrap(), "--system-prompt=--settings=x");
+    }
+
+    #[test]
     fn nothing_that_writes_or_runs_is_ever_named() {
         let all = [
-            args("sonnet", None, &Session::New { id: "a".into(), system_prompt: "s".into() }),
-            args("haiku", Some("low"), &Session::Ephemeral { system_prompt: "s".into() }),
-            args("opus", None, &Session::Resume { id: "a".into() }),
+            args("sonnet", Kind::Conversation, &Session::New { id: ID.into(), system_prompt: "s".into() }).unwrap(),
+            args("haiku", Kind::Lookup, &Session::Ephemeral { system_prompt: "s".into() }).unwrap(),
+            args("opus", Kind::Failure, &Session::Resume { id: ID.into(), system_prompt: "s".into() }).unwrap(),
         ];
         for list in all {
             for banned in ["Bash", "Edit", "Write", "WebFetch", "bypassPermissions", "--dangerously-skip-permissions", "--add-dir"] {
@@ -221,5 +274,32 @@ mod tests {
         assert_eq!(missing_flags(&old), vec!["--restricted", "--effort"]);
         // An option listed with an alias, as in "--allowedTools, --allowed-tools".
         assert!(!missing_flags("--tools, --tool-list").contains(&"--tools"));
+    }
+
+    #[test]
+    fn the_cli_is_checked_once_until_it_changes_on_disk() {
+        let dir = crate::workspace::tests::temp_dir("caps");
+        let bin = dir.join("claude");
+        let counter = dir.join("runs");
+        std::fs::write(
+            &bin,
+            format!("#!/bin/sh\necho x >> '{}'\n[ \"$1\" = --version ] && echo '9.9.9 (Claude Code)'\nexit 0\n", counter.display()),
+        )
+        .unwrap();
+        Command::new("chmod").args(["+x", bin.to_str().unwrap()]).status().unwrap();
+        let runs = || std::fs::read_to_string(&counter).unwrap_or_default().lines().count();
+        let first = capabilities(&bin);
+        assert_eq!(first.version, "9.9.9");
+        assert_eq!(runs(), 2, "--version and --help");
+        assert_eq!(capabilities(&bin), first);
+        assert_eq!(runs(), 2, "nothing runs while the binary is unchanged");
+        // An update replaces the binary.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let text = std::fs::read_to_string(&bin).unwrap().replace("9.9.9", "9.9.10");
+        std::fs::write(&bin, text).unwrap();
+        let modified = SystemTime::now() + std::time::Duration::from_secs(5);
+        std::fs::File::options().write(true).open(&bin).unwrap().set_modified(modified).unwrap();
+        assert_eq!(capabilities(&bin).version, "9.9.10");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
