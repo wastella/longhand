@@ -6,7 +6,7 @@ effects, and a web interface in the system webview that owns everything on scree
 ```
 ┌───────────────────────────── interface (src/renderer) ─────────────────────────────┐
 │  shell/  layout, panels, title and status bars, welcome, text size, commands       │
-│  editor/ · files/ · terminal/ · tests/ · tutor/      one directory per area        │
+│  editor/ · files/ · terminal/ · tests/ · tutor/ · language/   one directory each   │
 │  state.js  shared state + event bus          backend.js  the only door to Rust     │
 └───────────────────┬────────────────────────────────────────────▲───────────────────┘
             commands (invoke)                               events (emit)
@@ -21,6 +21,7 @@ effects, and a web interface in the system webview that owns everything on scree
 │  term.rs       up to four login shells on pseudo-terminals                         │
 │  pytest.rs     `uv run pytest` → parsed results                                    │
 │  tutor.rs      `claude -p` with read-only tools → streamed answer                  │
+│  lsp.rs        language servers found on the machine, started and relayed          │
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -37,12 +38,13 @@ backend for start-up state. Each area builds its own markup in its `mount()`.
 | `files/`    | File tree, its context menu and naming field, quick open, find in files, watching the folder                                                                                                     |
 | `terminal/` | xterm.js and the shell session                                                                                                                                                                   |
 | `tests/`    | Running pytest and showing results                                                                                                                                                               |
+| `language/` | Language servers: starting them, keeping them in step with the open files, problems, definitions and the status-bar item                                                                         |
 | `tutor/`    | The tutor engine client, conversation, lookup bar, hints, history and record, Markdown and math with the hidden-code check, setup                                                                |
 
 How areas talk to each other:
 
 - **Events** (`on`, `once`, `emit` in `state.js`) say what happened: `workspace:opened`,
-  `editor:active`, `editor:cursor`, `tests:finished`, `tutor:finished`, `usage:changed`,
+  `editor:active`, `editor:cursor`, `editor:opened`, `editor:changed`, `tests:finished`, `tutor:finished`, `usage:changed`,
   `auth:changed`, `panel:toggled`, `text-size:changed`, `theme:changed`, `settings:changed`. The
   list with payloads is at the top of `state.js`.
 - **Commands** (`registerCommand`, `runCommand` from `shell/`) are named actions. Menu items in
@@ -269,6 +271,116 @@ kind?, head?, actions? }`: 1-based inclusive lines and a DOM node the caller own
 The interface tests and previews reach these through `window.__editor`, which exists only
 under the mock backend.
 
+## Language servers
+
+Errors underlined as the student types, documentation on hover, go to definition and completion
+come from the language servers already on the machine. Longhand never bundles or downloads one.
+Deliberately absent: quick fixes, rename, formatting, inlay hints and anything else that writes
+code for the student. Completion inserts the name chosen and nothing more: snippets are not
+offered to the server and the edits a server attaches to an item (added imports) are dropped.
+
+**Nothing runs until the student says so, per folder.** A language server runs the folder's
+code: Pyright and pylsp start the folder's interpreter, rust-analyzer runs build scripts and
+procedural macros, gopls runs `go`, and Longhand prefers a server installed in the folder
+itself. So a folder starts with code checking off. `lsp_start` answers `{ status: 'off' }`
+without looking for anything, and looking for a server never executes a program that belongs to
+the folder or runs anything inside it. The decision is kept per folder path in the app's own
+`state.json` (`prefs.rs`, `codeChecking`), never in the folder, and the check is in `lsp.rs`, so
+the page cannot start a server for a folder that was not turned on. Once it is on, the folder is
+trusted: its `.venv` and `node_modules/.bin` servers are used, and the servers run its code.
+
+**The backend is a transport** (`lsp.rs` and `lsp/`). It knows nothing of the protocol beyond its
+framing.
+
+- `lsp_consent()` answers `'on'`, `'off'` or `null` (not decided) for the open folder, and
+  `lsp_consent_set(on)` records the decision; turning it off stops the folder's servers.
+- `lsp_start(kind, look)` finds and starts the server for `python`, `clang` (C and C++), `java`,
+  `typescript` (and JavaScript), `rust` or `go` in the open folder, one per kind. It answers
+  `{ status: 'started', id, server, path, root, python }`, `{ status: 'missing' }`,
+  `{ status: 'failed', message }` or `{ status: 'off' }`. `look` says what to do about the search
+  path after a miss: `remembered` uses the one already read, `fresh` asks the login shell again
+  if it was last asked more than 15 seconds ago, and `now` asks it at once.
+  `lsp_send(id, message)` writes one JSON-RPC message,
+  `lsp_stop(id)` ends the server, and the events are `lsp:message` (`{ id, message, bytes }`) and
+  `lsp:exit` (`{ id, code, stderr }`, not sent for a server Longhand stopped on request).
+- `lsp/discover.rs` decides which executable. Python looks in the folder's own environment first
+  (`.venv/bin`, `venv/bin`, then an active `VIRTUAL_ENV`), then the search path, for
+  `basedpyright-langserver`, `pyright-langserver` and `pylsp` in that order. The others are
+  `clangd` (also through `xcrun`), `jdtls`, `typescript-language-server` (the folder's
+  `node_modules/.bin` first), `rust-analyzer` and `gopls` (also in `~/go/bin`). The search path
+  is the login shell's (`lsp/search_path.rs`), which also supplies `JAVA_HOME`, `GOPATH`,
+  `GOROOT`, `CARGO_HOME` and `RUSTUP_HOME` for the servers. Relative entries of the path are
+  never searched, so the folder supplies a server only from the places named above.
+- For Rust, a rustup proxy is never run, because a proxy downloads the toolchain a folder's
+  `rust-toolchain.toml` names. The folder's toolchain is worked out from rustup's files and the
+  server is the `rust-analyzer` inside it; a toolchain that is not installed, or has no
+  `rust-analyzer` component, means no server. Servers are started with `RUSTUP_AUTO_INSTALL=0`.
+- Probes (`lsp/probe.rs`: the login shell, `xcrun`, `go env`) run in their own process group
+  with a time limit, and the whole group is killed when it passes.
+- The Python server is started with the folder's environment active (`VIRTUAL_ENV`, its `bin`
+  first on the path), which is what makes `import torch` resolve against the project's `.venv`.
+- `lsp/process.rs` runs one server: a reader thread decoding frames (`lsp/framing.rs`, 64 MB a
+  message at most), a writer thread, and the last of its stderr kept for the exit report. The
+  interface acknowledges what it has handled (`lsp_ack`) and the reader waits while more than
+  4 MB is unhandled; a server that stops reading its input is killed once 16 MB is queued. Every
+  server is stopped when another folder opens and in `stop_processes`.
+
+**The interface** (`src/renderer/language/`) speaks the protocol, using `@codemirror/lsp-client`
+for hover, completion and signature help.
+
+- `servers.js` owns the lifecycle: a server starts when the first file of its kind opens and
+  stops 30 seconds after the last one closes. A crash restarts it after 1, 5 and 15 seconds; more
+  than three within three minutes and it gives up with one notification and "language server
+  stopped" in the status bar, where a sheet shows what the server last printed and offers Start
+  Again. The policy lives here rather than in the backend because a restart has to initialize
+  the server and reopen its files. A server that exits before the page has its id is treated the
+  same way. `environment.js` follows the folder's Python environment and `install.js` looks
+  again for a missing server.
+- `consent.js` is the asking: with code checking undecided, the first file a server could check
+  brings one notification, and the status bar says "Code checking is off", which opens the sheet
+  that turns it on. Keep Off is remembered and asks nothing again; File > Code Checking for This
+  Folder… opens the same sheet to turn it off or on later.
+- `documents.js` is the library's `Workspace`. The editor has one view and a state per file, so
+  it reads the text of each open file from the editor (`fileState`), unsaved edits included, and
+  sends changes 300 ms after the typing pauses or just before any request. An edit never begins
+  or ends inside a surrogate pair. It follows
+  `editor:opened`, `editor:changed`, `editor:renamed`, `editor:closed` and `editor:saved`; a
+  rename closes the file under the old name and opens it under the new one.
+- `problems.js` turns `textDocument/publishDiagnostics` into `@codemirror/lint` diagnostics on
+  the file's state, so a tab in the background has them when it is shown. Results for an older
+  version of the text are dropped, hints are left out, and positions are mapped through edits
+  not yet sent. An error or warning is a wavy underline and a coloured line number; the review
+  notes keep the gutter's bar and the line's tint, so the two do not collide.
+- `definition.js` handles Go to Definition (F12, or ⌘-click) and Go Back (⌃-). A definition
+  outside the open folder is named in the status bar and not opened: the editor shows only the
+  folder's files.
+- `status.js` is the status-bar item: the count of problems (a click goes to the next), or one
+  quiet line when a server is missing or stopped. For a missing server the sheet behind it has
+  the one install command and Put in Terminal, which types the command into a terminal without
+  running it. A missing server is looked for again when the window regains focus and when
+  another file of its kind opens (both `remembered`: the login shell is not run again), for
+  three minutes after Put in Terminal (`fresh`), and on Check Again (`now`).
+- Pyright asks the editor which Python to use (`workspace/configuration`); the answer is the
+  folder's interpreter. A change to the environment on disk (`.venv`, `uv.lock`,
+  `pyproject.toml`, …) makes the interface send `workspace/didChangeConfiguration`, which has
+  Pyright look again at what can be imported, and a folder that only now has a `.venv` gets its
+  server started again inside it.
+- Server requests the interface does not serve (`workspace/applyEdit`, `window/showDocument`,
+  …) are answered "method not found" by `transport.js`, and `window/showMessage` is dropped.
+  The client library has no setting for leaving capabilities out, so `servers.js` removes
+  formatting, rename, references and the like from the `initialize` request as it is sent.
+  Documentation from a server is untrusted: it is sanitized, and links and images are dropped.
+- The setting "Check code as I type" (`language.servers`) turns all of this off.
+
+The editor's side is small: `registerFileExtension(provide)` adds CodeMirror extensions per file
+and returns a function that recomputes them, and `fileState`, `fileView` and `updateFile` read
+and change an open file whether or not its tab is showing. Without a server, or for a language
+without one, completion falls back to the editor's own (Python names, words in the file).
+
+Tests: `tests/mock/language.js` is a scripted server behind the same commands and events.
+`cargo test` starts a real `clangd` when one is installed, and a real Python server when
+`LONGHAND_TEST_PYTHON_FOLDER` names a folder whose `.venv` has one and the `attrs` package.
+
 ## The test panel
 
 `pytest.rs` runs `uv run pytest` (when the folder has `pyproject.toml` or `uv.lock`) or
@@ -451,7 +563,8 @@ window's close-requested event, which the interface can cancel. Quit from the Do
 are carried out by macOS without asking the app, so unsaved work is not protected there. Whichever
 way the app ends, `stop_processes` in `main.rs` runs once, from the window's `Destroyed` event or
 `RunEvent::Exit`, whichever comes first: it stops every terminal's session, the tutor's runs and
-its warm lookup process, and any test run (`pytest::shutdown`, which also removes the reporter).
+its warm lookup process, any test run (`pytest::shutdown`, which also removes the reporter) and
+the language servers.
 
 ## Per-folder data
 

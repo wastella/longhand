@@ -10,6 +10,7 @@ import * as terminal from './terminal/index.js';
 import * as tests from './tests/index.js';
 import * as tutor from './tutor/index.js';
 import * as feedback from './feedback/index.js';
+import * as language from './language/index.js';
 import { runSmoke } from './smoke.js';
 
 const region = (id) => document.getElementById(id);
@@ -31,6 +32,8 @@ async function main() {
   tutor.mount(region('tutor'));
   // After the editor, tests and tutor: it attaches to all three.
   feedback.mount();
+  // After the editor: it follows the editor's open files, and must hear of a new folder second.
+  language.mount();
 
   listen('workspace:opened', openWorkspace);
   listen('menu', (id) => shell.runCommand(id));

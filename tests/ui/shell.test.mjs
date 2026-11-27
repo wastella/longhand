@@ -201,7 +201,7 @@ uiTest(
     await menu(page, 'settings');
     await page.waitForSelector('.settings-sheet');
     const labels = await page.$$eval('.setting-row label', (n) => n.map((x) => x.textContent));
-    assert.deepEqual(labels, ['Appearance', 'Code text size']);
+    assert.deepEqual(labels, ['Appearance', 'Code text size', 'Check code as I type']);
     assert.equal(await text(page, '#app-version'), 'Longhand 0.1.0');
     await page.select('#setting-theme', 'dark');
     assert.equal(await surface(page), '#1c1d21');

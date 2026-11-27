@@ -11,6 +11,13 @@ Nothing has been released yet. This is what the first release will contain.
 
 - Editor for coursework: Python-first editing, tabs that reopen with the folder, find and replace,
   go to line, and banners instead of silent loss when a save fails or a file changes on disk
+- Language servers already on the machine are used for Python, C, C++, Java, JavaScript,
+  TypeScript, Rust and Go: errors and warnings underlined as you type, documentation on hover,
+  Go to Definition (F12 or ⌘-click) with Go Back, and completion. Python is checked against the
+  folder's own environment. Longhand installs nothing itself: when a server is missing, the
+  status bar says so and offers the one command that installs it. Checking runs tools on the
+  folder, so it is off for each folder until you turn it on
+- Syntax colouring and indentation for C, C++, Java, JavaScript, TypeScript, Rust and Go
 - Files: Go to File (⌘P), find in files, and a keyboard-driven tree that updates as files change,
   with new file, new folder, rename and move to Trash
 - Up to four terminals, with Run File (⌘R) and clickable `path:line` locations

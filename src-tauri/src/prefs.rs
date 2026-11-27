@@ -1,7 +1,8 @@
 //! App-wide preferences, kept in the app data directory rather than in any folder:
 //! `settings.json` holds the student's settings (theme, text size, and whatever other areas
 //! register), and `state.json` what the app remembers between launches (the last folder, recent
-//! folders and the panel layout). Window size and position are kept by tauri-plugin-window-state.
+//! folders, the panel layout, and the folders the student has decided about code checking for).
+//! Window size and position are kept by tauri-plugin-window-state.
 
 use crate::workspace::{err, R};
 use serde_json::{json, Map, Value};
@@ -13,6 +14,7 @@ use tauri::{AppHandle, Manager};
 const SETTINGS: &str = "settings.json";
 const STATE: &str = "state.json";
 const MAX_RECENTS: usize = 10;
+const CODE_CHECKING: &str = "codeChecking";
 
 /// Both files are read-modify-written from several commands, which may run at the same time.
 static FILES: Mutex<()> = Mutex::new(());
@@ -94,6 +96,31 @@ fn describe_recents(recents: &Value, check: bool) -> Value {
         Some(json!({ "path": path, "shortPath": short, "name": name, "openedAt": r["openedAt"], "exists": exists }))
     });
     Value::Array(described.collect())
+}
+
+// ---- code checking, per folder ----
+
+/// What the student decided about code checking (lsp.rs) for `folder`: on, off, or `None` when
+/// they have not been asked. It is kept here, by the folder's path, and never inside the
+/// folder: a folder must not be able to say of itself that it is trusted.
+fn code_checking_in(dir: &Path, folder: &Path) -> Option<bool> {
+    read_object(dir, STATE).get(CODE_CHECKING)?.get(folder.to_string_lossy().as_ref())?.as_bool()
+}
+
+fn set_code_checking_in(dir: &Path, folder: &Path, on: bool) -> R<()> {
+    update_object(dir, STATE, |state| {
+        let mut folders = state.get(CODE_CHECKING).and_then(Value::as_object).cloned().unwrap_or_default();
+        folders.insert(folder.to_string_lossy().into_owned(), json!(on));
+        state.insert(CODE_CHECKING.into(), Value::Object(folders));
+    })
+}
+
+pub fn code_checking(app: &AppHandle, folder: &Path) -> Option<bool> {
+    code_checking_in(&data_dir(app).ok()?, folder)
+}
+
+pub fn set_code_checking(app: &AppHandle, folder: &Path, on: bool) -> R<()> {
+    set_code_checking_in(&data_dir(app)?, folder, on)
 }
 
 /// Records `folder` as the last one opened and the most recent.
@@ -218,6 +245,28 @@ mod tests {
         update_object(&dir, SETTINGS, |s| merge(s, &json!({ "textSize": null, "other": true }))).unwrap();
         assert_eq!(Value::Object(read_object(&dir, SETTINGS)), json!({ "theme": "light", "other": true }));
         assert!(!dir.join("settings.json.tmp").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn code_checking_is_remembered_per_folder_and_undecided_until_set() {
+        let dir = temp_dir("code-checking");
+        let (trusted, other) = (Path::new("/Users/ada/cs336"), Path::new("/Users/ada/Downloads/starter"));
+        assert_eq!(code_checking_in(&dir, trusted), None);
+        update_object(&dir, STATE, |state| state.insert("layout".into(), json!({ "files": true }))).unwrap();
+        set_code_checking_in(&dir, trusted, true).unwrap();
+        set_code_checking_in(&dir, other, false).unwrap();
+        assert_eq!(code_checking_in(&dir, trusted), Some(true));
+        assert_eq!(code_checking_in(&dir, other), Some(false));
+        assert_eq!(code_checking_in(&dir, Path::new("/Users/ada/cs336/a1")), None, "a folder inside a trusted one is its own");
+        set_code_checking_in(&dir, trusted, false).unwrap();
+        assert_eq!(code_checking_in(&dir, trusted), Some(false));
+        assert_eq!(read_object(&dir, STATE)["layout"], json!({ "files": true }), "the rest of the state is kept");
+        // Anything but true or false there is no decision.
+        fs::write(dir.join(STATE), r#"{ "codeChecking": { "/Users/ada/cs336": "yes" } }"#).unwrap();
+        assert_eq!(code_checking_in(&dir, trusted), None);
+        fs::write(dir.join(STATE), r#"{ "codeChecking": true }"#).unwrap();
+        assert_eq!(code_checking_in(&dir, trusted), None);
         fs::remove_dir_all(dir).unwrap();
     }
 

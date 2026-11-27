@@ -1,5 +1,5 @@
 // The status bar holds only what a student glances at while writing: the open file and whether
-// it is saved, the tutor's policy, and the cursor position. Messages that need noticing are
+// it is saved, its problems, the tutor's policy, and the cursor position. Messages that need noticing are
 // notifications (notify.js); showStatus keeps working for passing remarks.
 
 import { h, spacer } from '../dom.js';
@@ -20,6 +20,14 @@ export function showStatus(text, ms = 4000) {
   message.textContent = text || '';
   clearTimeout(clearTimer);
   if (text && ms) clearTimer = setTimeout(() => (message.textContent = ''), ms);
+}
+
+/**
+ * Adds an item another area keeps up to date (the language server's problem count), before the
+ * tutor's policy. Its owner hides it when it has nothing to say.
+ */
+export function addStatusItem(node) {
+  policy.before(node);
 }
 
 // The policy is read from shared state each time the bar updates, so it stays current even

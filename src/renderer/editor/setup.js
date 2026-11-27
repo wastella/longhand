@@ -17,6 +17,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from '@codemirror/language';
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search';
+import { fileExtensionSlot, fileExtensions } from './extensions.js';
 import { languageSupport } from './languages.js';
 import { lineEndingsFor } from './line-endings.js';
 import { currentThemeMode, editorTheme, themeMode } from './theme.js';
@@ -82,6 +83,7 @@ export function createEditorState(doc, text, { selection, endings, onUpdate }) {
       selectionActions(() => doc.path),
       keymap.of(editorKeymap),
       languageSlot.of(languageSupport(doc.path, text)),
+      fileExtensionSlot.of(fileExtensions(doc.path)),
       themeMode.of(currentThemeMode()),
       editorTheme,
       EditorView.updateListener.of(onUpdate),

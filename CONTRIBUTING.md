@@ -27,6 +27,7 @@ The first build compiles the Rust dependencies and takes a few minutes. Later bu
 | `src/renderer/files/`           | File tree, its menu, find in files                                         |
 | `src/renderer/terminal/`        | The terminal (xterm.js)                                                    |
 | `src/renderer/tests/`           | The test panel                                                             |
+| `src/renderer/language/`        | Language servers: problems, hover, definitions, the status-bar item        |
 | `src/renderer/tutor/`           | The tutor panel: chat, Markdown and hidden code, context, setup steps      |
 | `src/renderer/styles/`          | Design tokens, shared components and one stylesheet per area               |
 | `src-tauri/src/main.rs`         | Start-up and command registration                                          |
@@ -38,6 +39,7 @@ The first build compiles the Rust dependencies and takes a few minutes. Later bu
 | `src-tauri/src/tutor-prompt.md` | The tutor's instructions                                                   |
 | `src-tauri/src/pytest.rs`       | Runs pytest and parses its output                                          |
 | `src-tauri/src/term.rs`         | The terminal                                                               |
+| `src-tauri/src/lsp.rs`          | Finds and starts language servers and relays their messages                |
 | `tests/ui/`                     | Interface tests, one file per area                                         |
 | `tests/mock/`                   | A mock backend for the interface tests and previews, one file per area     |
 | `scripts/`                      | The headless-Chrome launcher and the preview command with its scenarios    |
