@@ -3,6 +3,7 @@
 mod documents;
 mod feedback;
 mod files;
+mod lsp;
 mod menu;
 mod prefs;
 mod pytest;
@@ -31,8 +32,8 @@ fn ensure_user_env() {
 }
 
 /// Stops everything the app started, so nothing outlives it: every terminal's session, the
-/// tutor's runs and its warm lookup process, and any test run (waiting for it, then removing the
-/// pytest reporter). Runs once, from whichever comes first: the window being destroyed (closing
+/// tutor's runs and its warm lookup process, any test run (waiting for it, then removing the
+/// pytest reporter) and every language server. Runs once, from whichever comes first: the window being destroyed (closing
 /// it) or the app exiting (Quit, which exits without destroying the window).
 fn stop_processes(app: &tauri::AppHandle) {
     static STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -43,6 +44,7 @@ fn stop_processes(app: &tauri::AppHandle) {
     term::kill(&state);
     tutor::cancel(&state);
     pytest::shutdown(&state);
+    lsp::shutdown(&state);
 }
 
 fn main() {
@@ -141,6 +143,11 @@ fn main() {
             feedback::feedback_notes_load,
             feedback::feedback_notes_save,
             feedback::feedback_threads_forget,
+            // Language servers (lsp.rs): starting the one for a kind of code, and its messages.
+            lsp::lsp_start,
+            lsp::lsp_send,
+            lsp::lsp_ack,
+            lsp::lsp_stop,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start Longhand")

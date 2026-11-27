@@ -1,7 +1,7 @@
 //! The open folder: which one it is, and its per-folder settings and usage log in `.longhand/`.
 //! App-wide preferences, including the recent folders, are in `prefs.rs`.
 
-use crate::{prefs, pytest, term, tutor};
+use crate::{lsp, prefs, pytest, term, tutor};
 use serde_json::{json, Value};
 use std::fs;
 use std::io::Write;
@@ -16,6 +16,7 @@ pub struct AppState {
     pub term: Mutex<Option<term::Term>>,
     pub tests: Mutex<pytest::TestRun>,
     pub tutor: Mutex<tutor::TutorState>,
+    pub lsp: Mutex<lsp::Lsp>,
 }
 
 pub type R<T> = Result<T, String>;
@@ -95,6 +96,7 @@ fn open_workspace(app: &AppHandle, dir: PathBuf) -> R<()> {
     tutor::reset(&state);
     term::kill(&state);
     pytest::cancel(&state);
+    lsp::kill(&state);
     let _ = app.emit(
         "workspace:opened",
         json!({
