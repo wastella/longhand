@@ -8,7 +8,7 @@ import { once, state } from './state.js';
 import { activeFile, openFile, save } from './editor/index.js';
 import { runCommand, showBottomPane } from './shell/index.js';
 import { sendToTerminal, terminalSize } from './terminal/index.js';
-import { ask, renderAnswer } from './tutor/index.js';
+import { ask, renderAnswer, tutorRequest } from './tutor/index.js';
 
 const $ = (selector) => document.querySelector(selector);
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -93,6 +93,16 @@ async function checkTutor(r) {
     hasFence: a.text.includes('```'),
   };
   r.reliance = $('#reliance').textContent;
+  // A lookup runs with no tools at all and is counted like any other question.
+  const lookup = await tutorRequest({ thread: 'lookup-smoke', kind: 'lookup', prompt: 'In one sentence: what does len() return for a Python list?' }).done;
+  r.lookup = { status: lookup.status, text: lookup.text.slice(0, 200), error: lookup.error };
+  await wait(400);
+  r.relianceAfterLookup = $('#reliance').textContent;
+}
+
+async function checkFiles(r) {
+  const { files } = await invoke('fs_files');
+  r.quickOpen = { hasCode: files.includes('calc.py'), hasIgnored: files.some((f) => f.startsWith('.venv/') || f.startsWith('.longhand/')) };
 }
 
 async function checkHiddenCode(r) {
@@ -141,6 +151,7 @@ export async function runSmoke(dir) {
     r.policy = state.config.policy;
 
     await checkEditor(r);
+    await checkFiles(r);
     await checkTerminal(r);
     await checkTests(r);
     if (!window.__SMOKE_SKIP_TUTOR) await checkTutor(r);
@@ -154,7 +165,15 @@ export async function runSmoke(dir) {
       r.escape !== 'ALLOWED' &&
       r.terminal &&
       r.tests.statuses.length === 2 &&
-      (!r.tutor1 || (r.tutor1.type === 'done' && r.tutor1.text.length > 0));
+      r.quickOpen.hasCode &&
+      !r.quickOpen.hasIgnored &&
+      (!r.tutor1 ||
+        (r.tutor1.type === 'done' &&
+          r.tutor1.text.length > 0 &&
+          r.tutor2.type === 'done' &&
+          r.reliance.includes('2 questions') &&
+          r.lookup.status === 'done' &&
+          r.relianceAfterLookup.includes('3 questions')));
   } catch (e) {
     r.ok = false;
     r.error = String(e && e.stack ? e.stack : e);
