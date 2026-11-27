@@ -44,12 +44,22 @@ async function checkEditor(r) {
 
 async function checkTerminal(r) {
   let output = '';
-  const unlisten = await listen('term:data', ({ data }) => (output += data));
-  await wait(1500);
-  await sendToTerminal('echo smoke-$((40+2))\r');
-  await until(() => output.includes('smoke-42'), 10000, 'terminal echo');
-  r.terminal = true;
-  unlisten();
+  let lastData = Date.now();
+  const unlisten = await listen('term:data', ({ data }) => {
+    output += data;
+    lastData = Date.now();
+  });
+  try {
+    // A login shell can take seconds to print its first prompt; typing before then can be lost.
+    await until(() => output.length > 0 && Date.now() - lastData > 700, 20000, 'the shell prompt');
+    await sendToTerminal('echo smoke-$((40+2))\r');
+    await until(() => output.includes('smoke-42'), 20000, 'terminal echo');
+    r.terminal = true;
+  } catch (e) {
+    throw new Error(`${e.message}; terminal output ended with ${JSON.stringify(output.slice(-300))}`);
+  } finally {
+    unlisten();
+  }
 }
 
 async function checkTests(r) {
