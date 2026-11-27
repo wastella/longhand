@@ -344,6 +344,14 @@ uiTest('each tab keeps its own cursor', async (page) => {
 
 // ---- editing ----
 
+uiTest('the Look Up shortcut does not delete the line under the cursor', async (page) => {
+  await openFromTree(page, 'stats/running.py');
+  await page.click('.cm-line:nth-child(3)');
+  const before = await lines(page);
+  await chord(page, ['Shift', 'Mod', 'KeyK']);
+  assert.deepEqual(await lines(page), before);
+});
+
 uiTest('go to line, toggle comment and find with a match count', async (page) => {
   await openFromTree(page, 'stats/running.py');
   await page.click('.cm-content');
