@@ -69,9 +69,11 @@ test('the open file and selection travel with a question', async (page) => {
   await page.evaluate(() => window.__emit('menu', 'ask-selection'));
   assert.match(await text(page, '#status-msg'), /Select some code/);
   await page.click('.cm-content');
-  await page.keyboard.down('Meta');
+  // Select all: Cmd on macOS, Ctrl elsewhere.
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+  await page.keyboard.down(mod);
   await page.keyboard.press('a');
-  await page.keyboard.up('Meta');
+  await page.keyboard.up(mod);
   await page.evaluate(() => window.__emit('menu', 'ask-selection'));
   await page.waitForFunction(() => window.__asked.length === 1);
   const sent = await page.evaluate(() => window.__asked[0]);
