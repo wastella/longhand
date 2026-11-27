@@ -17,7 +17,7 @@ effects, and a web interface in the system webview that owns everything on scree
 │  files.rs      file commands, in_workspace, quick open, find in files, watching    │
 │  menu.rs       the native menu; item ids become `menu` events                      │
 │  system.rs     confirm dialog, opening links, self-test result                     │
-│  term.rs       login shell on a pseudo-terminal                                    │
+│  term.rs       up to four login shells on pseudo-terminals                         │
 │  pytest.rs     `uv run pytest` → parsed results                                    │
 │  tutor.rs      `claude -p` with read-only tools → streamed answer                  │
 └────────────────────────────────────────────────────────────────────────────────────┘
@@ -107,6 +107,20 @@ batch on to other areas as `files:changed`, leaving out the editor's own saves.
 
 Which folders were expanded and which files were opened recently are kept per folder in
 `tree-memory.json` in the app's data directory, not in the student's folder.
+
+## The terminals
+
+Each terminal is a login shell on its own pseudo-terminal, named by an id the interface makes up
+before calling `term_start`, so no early output is lost. Output reaches the interface through
+`term/output.rs`: a reader thread, a pump that decodes UTF-8 across reads and coalesces output
+into batches (`term:data` with `{ id, data, bytes }`), and flow control: the interface calls
+`term_ack` once xterm.js has drawn a batch, and the pump stops reading while more than 512 KB is
+undrawn, so a program printing too fast is held back by its own writes rather than freezing the
+window. Each shell is a session leader, so `term/process.rs` can stop everything a terminal
+started (background jobs included) by session id, and can tell a busy terminal by comparing the
+pseudo-terminal's foreground process group with the shell's (`term_busy`, used by the leave
+guard and Run File). Locations printed in the output are checked with `term_resolve`, which only
+accepts files inside the open folder.
 
 ## Per-folder data
 
