@@ -2,7 +2,7 @@
 // first file it reads is opened, told about every open file and every edit, restarted if it
 // crashes, and stopped a little after its last file closes.
 //
-// A server runs the folder's code (its Python environment, its build scripts), so none is
+// A server runs the folder's code (its Python environment), so none is
 // started, or even looked for, until the student has turned code checking on for the folder.
 // The backend remembers that per folder and enforces it; `checking()` is what it said.
 //
@@ -299,7 +299,7 @@ export function fileChanged(path) {
   server.syncTimer = setTimeout(() => server.client?.sync(), timing.sync);
 }
 
-/** It was written to disk. Some servers only run their fuller checks then (rust-analyzer runs cargo check). */
+/** It was written to disk. Some servers only run their fuller checks then. */
 export function fileSaved(path) {
   const server = serverFor(path);
   const file = server?.status === 'running' && server.documents.fileAt(path);

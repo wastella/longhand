@@ -8,7 +8,7 @@ export const options = { languageServers: { python: 'basedpyright' }, files: { '
 
 export default async function (page) {
   await openFromTree(page, 'stats/summary.py');
-  await page.waitForFunction(() => document.querySelector('#status-language')?.textContent === 'No problems');
+  await page.waitForFunction(() => window.__lsp.docs['file:///demo/running-stats/stats/summary.py']);
   const line = await page.$('.cm-line:nth-child(4)');
   const box = await line.boundingBox();
   await page.mouse.move(box.x + 60, box.y + box.height / 2);

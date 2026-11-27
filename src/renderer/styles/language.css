@@ -153,6 +153,12 @@
 
 /* ---- the sheet behind a missing or stopped server ---- */
 
+/* The code-checking sheet's way to the install sheet, on a line of its own under its sentence. */
+.checking-sheet .language-note .button {
+  display: flex;
+  margin-top: var(--space-3);
+}
+
 .language-sheet p {
   margin: 0 0 var(--space-5);
   line-height: var(--leading-reading);

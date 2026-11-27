@@ -1,7 +1,6 @@
 // Language servers: errors underlined as the student types, documentation on hover, go to
-// definition, and completion that knows the code, for Python, C, C++, Java, JavaScript,
-// TypeScript, Rust and Go. Longhand runs whichever server is installed on the machine and
-// installs none itself. What is deliberately absent: quick fixes, renaming, formatting and
+// definition, and completion that knows the code, for Python (kinds.js). Longhand runs whichever
+// server is installed on the machine and installs none itself. What is deliberately absent: quick fixes, renaming, formatting and
 // anything else that writes the student's code for them. Nothing runs for a folder until the
 // student has turned code checking on for it (consent.js).
 //
@@ -34,7 +33,7 @@ import {
   watchChecking,
   watchServers,
 } from './servers.js';
-import { announceStopped, describeProblemAtCursor, item, renderStatus } from './status.js';
+import { announce, describeProblemAtCursor, item, renderStatus } from './status.js';
 
 const SETTING = 'language.servers';
 // How long the pointer rests on a name before its documentation shows.
@@ -114,7 +113,7 @@ export function mount() {
   watchServers((kind) => {
     refresh((path) => languageOf(path)?.kind === kind);
     renderStatus();
-    announceStopped(kind);
+    announce(kind);
   });
   watchProblems((path) => path === activeFile()?.path && renderStatus());
   watchChecking(() => {
