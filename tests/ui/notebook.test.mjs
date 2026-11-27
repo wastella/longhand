@@ -556,7 +556,9 @@ const HOSTILE = notebook([
           metadata: {},
           data: {
             'text/html':
-              '<script>window.__pwned = "html"</script><img src="https://example.com/p.png" onerror="window.__pwned=2"><a href="javascript:window.__pwned=3" id="js">x</a><iframe src="https://example.com"></iframe><style>body{display:none}</style><svg onload="window.__pwned=4"><script>window.__pwned=5</script></svg><form action="https://example.com"><input></form>',
+              '<script>window.__pwned = "html"</script><img src="https://example.com/p.png" onerror="window.__pwned=2"><a href="javascript:window.__pwned=3" id="js">x</a><iframe src="https://example.com"></iframe><style>body{display:none}</style><svg onload="window.__pwned=4"><script>window.__pwned=5</script></svg><form action="https://example.com"><input></form>' +
+              '<img id="mapped" alt="map" usemap="#m" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="><map name="m"><area shape="default" href="index.html"></map>' +
+              '<a href="index.html" class="rel">relative</a><div class="sheet-backdrop dataframe" id="app" name="n">covers?</div><table class="dataframe"><tr><td background="https://example.com/bg.png">1</td></tr></table>',
             'text/plain': 'html',
           },
         },
@@ -602,8 +604,19 @@ uiTest(
       'JavaScript output. Longhand does not run scripts from notebooks.',
       'An interactive widget. Longhand does not show widgets; open the notebook in Jupyter to use it.',
     ]);
-    // Clicking the javascript: link does nothing.
-    await page.click('#js');
+    // Image maps, ids, names and the app's own classes are gone; output styling classes stay.
+    assert.equal(await count(page, '.notebook map, .notebook area, .notebook [usemap], .nb-output [id], .nb-output [name], .nb-output .sheet-backdrop'), 0);
+    assert.equal(await count(page, '.nb-html table.dataframe'), 1);
+    assert.deepEqual(
+      await page.$$eval('.nb-output, .nb-rendered', (nodes) => [...new Set(nodes.map((n) => getComputedStyle(n).contain))]),
+      ['layout paint'],
+      'positioned content cannot leave its cell',
+    );
+    // Clicking the javascript: link, the relative link or the image does nothing.
+    for (const words of ['x', 'relative']) {
+      await page.$$eval('.nb-html a', (links, words) => links.find((a) => a.textContent === words).click(), words);
+    }
+    await page.click('.nb-html img');
     await sleep(100);
     assert.equal(await page.evaluate(() => window.__pwned), undefined);
     assert.ok(page.url().endsWith('index.html'));
