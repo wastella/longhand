@@ -188,7 +188,7 @@ styles. `npm run preview -- --scenario kitchen-sink` shows every one in both the
 
 `icon(name, className)` from `shell/index.js` returns an inline SVG from a small set drawn by
 [Lucide](https://lucide.dev) (ISC licence, compatible with MIT; the full notice is in THIRD_PARTY_NOTICES.md and a short one in
-`shell/icons.js`): plus, x, chevron-right, chevron-down, folder, folder-open, file, search,
+`shell/icons.js`): plus, x, chevron-left, chevron-right, chevron-down, folder, folder-open, file, search,
 settings, check, alert, info, trash, panel-left, panel-bottom, panel-right, play, stop, refresh,
 external. They are 16px (`.small` is 14px) with a 1.75 stroke in the text colour. Add one by
 copying its shapes from Lucide into `icons.js`; do not mix in another set.

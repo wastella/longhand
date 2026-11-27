@@ -257,15 +257,36 @@
 /* ---- tutor notes ---- */
 
 #editor-host .cm-note-gutter .cm-gutterElement {
-  width: var(--space-4);
+  min-width: var(--space-4);
   display: flex;
   justify-content: center;
   cursor: pointer;
+}
+/* One bar per note on the line; overlapping notes sit side by side, each in its own lane. */
+.cm-note-marks {
+  display: flex;
+  gap: 2px;
+  height: 100%;
 }
 .cm-note-mark {
   width: 3px;
   height: 100%;
   background: var(--color-note-mark);
+}
+.cm-note-mark.empty {
+  background: none;
+}
+.cm-note-mark.bug {
+  background: var(--color-danger);
+}
+.cm-note-mark.fragile {
+  background: var(--color-warning);
+}
+.cm-note-mark.good {
+  background: var(--color-success);
+}
+.cm-note-mark:is(.bug, .fragile, .good):not(.open) {
+  opacity: 0.6;
 }
 .cm-note-mark.start {
   border-top-left-radius: var(--radius-xs);
@@ -275,7 +296,7 @@
   border-bottom-left-radius: var(--radius-xs);
   border-bottom-right-radius: var(--radius-xs);
 }
-.cm-note-mark.open {
+.cm-note-mark.open:not(.bug, .fragile, .good) {
   background: var(--color-accent);
 }
 #editor-host .cm-note-line {
@@ -308,10 +329,15 @@
   letter-spacing: var(--tracking-label);
   color: var(--color-text-muted);
 }
-.cm-note-head button {
-  font-size: var(--text-xs);
+.cm-note-head {
+  gap: var(--space-3);
+}
+.cm-note-head > :not(.cm-note-lines) {
   text-transform: none;
   letter-spacing: 0;
+}
+.cm-note-head button {
+  font-size: var(--text-xs);
 }
 .cm-note-body > :first-child {
   margin-top: var(--space-1);

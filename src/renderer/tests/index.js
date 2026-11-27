@@ -112,6 +112,12 @@ function select(test, { focus = false } = {}) {
   renderDetail();
 }
 
+/** "Ask tutor" on a failing row: shows the failure and moves to the help attached beneath it. */
+function askAbout(test) {
+  select(test);
+  detail.querySelector('.tests-failure-panel :is(input, textarea, button)')?.focus();
+}
+
 function showOutput() {
   view.output = !view.output || !view.selectedId;
   if (view.output) {
@@ -161,7 +167,7 @@ function renderList(focus = false) {
   const fresh = tree({
     tests: [...shownErrors(), ...rowsToShow(stale.waiting)],
     staleIds: stale,
-    on: { select: (test) => select(test, { focus: true }), run: runTests, rerender: (key) => ((view.focusKey = key), renderList(true)) },
+    on: { select: (test) => select(test, { focus: true }), run: runTests, ask: askAbout, rerender: (key) => ((view.focusKey = key), renderList(true)) },
   });
   // Rows with the same content are kept rather than replaced, so a click that lands while
   // results arrive still reaches its row. Selection and focus are applied to them afterwards.
@@ -254,13 +260,14 @@ function render(what) {
 function finished(done) {
   const { results } = runner;
   try {
-    if (results.ran) prunePanels([...results.tests, ...results.errors]);
+    // A panel may leave something beneath a test that now passes: draw the detail again.
+    if (results.ran && prunePanels([...results.tests, ...results.errors])) view.shown = null;
     const selected = view.selectedId && findResult(view.selectedId);
     if (!selected && !view.output) {
       // Collection errors come first: until a file imports, none of its tests can run.
       const [first] = failures();
       first && !results.problem ? select(first) : renderDetail();
-    }
+    } else if (!view.shown) renderDetail();
   } finally {
     emit('tests:finished', { tests: [], errors: [], ...done });
   }

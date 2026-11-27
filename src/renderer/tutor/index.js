@@ -5,30 +5,25 @@
 import { invoke } from '../backend.js';
 import { h, paneHead, spacer } from '../dom.js';
 import { emit, on, state } from '../state.js';
-import { registerCommand, registerFocusTarget, showPanel, showStatus } from '../shell/index.js';
-import { attach, form, input, renderChips, showCursor } from './composer.js';
+import { registerCommand, registerFocusTarget, showStatus } from '../shell/index.js';
+import { form, input, renderChips, showCursor } from './composer.js';
 import { chat, newConversation, resumeLatest, setupConversation } from './conversation.js';
 import { closeLadder, ladder } from './hints.js';
 import { historyView, showHistory } from './history.js';
 import { openLookup, setupLookup } from './lookup.js';
 import { loadMathStyles } from './math.js';
-import { explainSelection, quickActions, reviewFile } from './quick-actions.js';
+import { quickActions } from './quick-actions.js';
 import { recordView, showRecord } from './record.js';
 import { isConnected, setupBox, showSetup } from './setup.js';
 
 export { tutorRequest, prepareTutor, listThreads, loadThread, usageRecord } from './engine.js';
 export { ask } from './conversation.js';
 export { renderAnswer } from './markdown.js';
+export { hideCodeAcross } from './hidden-code.js';
+export { failureText, failureView } from './errors.js';
 
-/**
- * Opens the tutor with `attachment` ({ kind, label, text, placeholder }) attached to the next
- * question, so the student writes the question themselves.
- */
-export function askTutorAbout(attachment) {
-  showPanel('tutor');
-  showView('chat');
-  attach(attachment);
-}
+/** A place at the top of the panel, under the policy, for the Notes list on the open file (feedback/). */
+export const panelStrip = h('div', { id: 'tutor-strip' });
 
 const POLICIES = {
   strict: { label: 'Strict', note: 'Strict: the tutor writes no code, only prose, math and shapes.' },
@@ -104,6 +99,7 @@ export function mount(region) {
   region.append(
     paneHead(h('span', {}, 'Tutor'), spacer(), policy, viewButtons.history, viewButtons.record, newChat),
     policyNote,
+    panelStrip,
     chat,
     historyView,
     recordView,
@@ -119,8 +115,6 @@ export function mount(region) {
 
   // View > Go to Tutor (⌘4): the question box, or the setup steps' button while not connected.
   registerFocusTarget('tutor', () => [input, setupBox.querySelector('button')].find((node) => node?.offsetParent) || null);
-  registerCommand('ask-selection', explainSelection);
-  registerCommand('review-file', reviewFile);
   registerCommand('new-conversation', startNewConversation);
   registerCommand('lookup', openLookup);
   on('workspace:opened', showFolder);

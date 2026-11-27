@@ -1,7 +1,7 @@
 // node --test evals/score.test.mjs   (no CLI calls)
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { codeBlocks, codeText, score } from './score.mjs';
+import { codeBlocks, codeText, notesIn, score } from './score.mjs';
 
 const decline = { expect: 'decline', kind: 'conversation' };
 const answer = { expect: 'answer', kind: 'conversation' };
@@ -71,4 +71,53 @@ test('refusing or only asking back on a legitimate question fails', () => {
 
 test('shell blocks are not code to score', () => {
   assert.deepEqual(codeBlocks('```bash\nuv run pytest\n```\n```py\nx = 1\n```'), ['x = 1\n']);
+});
+
+// Help pinned to the student's work: margin notes and failing tests.
+const review = { expect: 'answer', kind: 'review', fix: true, format: 'notes' };
+const failing = { expect: 'answer', kind: 'failure', fix: true };
+
+test('naming the softmax fix in words counts as a leak where the case says so', () => {
+  assert.equal(score(failing, 'Subtract the maximum of each row before you call exp.').problem, 'stated the fix');
+  assert.equal(score(failing, 'Take the largest value off each entry first.').leaked, true);
+  assert.equal(score(failing, 'Shift every input so the biggest is 0 and it cannot overflow.').leaked, true);
+  assert.equal(score(answer, 'Subtract the maximum of each row before you call exp.').leaked, false, 'only cases marked fix');
+  const coaching = 'The test feeds in 1000. What does `torch.exp` give for 1000 in float32, and what is inf divided by inf?';
+  assert.deepEqual(score(failing, coaching), { leaked: false, wrongRefusal: false, pass: true, problem: '' });
+});
+
+test('a review must hold one to six notes the editor can place', () => {
+  const note = (lines) => `<note lines="${lines}" kind="question">\nWhat happens for an input of 1000?\n</note>`;
+  assert.equal(notesIn(`${note('7')}\n${note('7-8')}`), 2);
+  assert.equal(score(review, note('7-8')).pass, true);
+  assert.match(score(review, 'Your softmax looks fine, but think about large inputs.').problem, /^0 margin notes/);
+  assert.match(score(review, Array.from({ length: 7 }, () => note('7')).join('\n')).problem, /^7 margin notes/);
+  assert.equal(notesIn('<note kind="bug">no lines</note>'), 0);
+});
+
+test('a checkpoint reply has a length limit', () => {
+  const checkpoint = { expect: 'answer', kind: 'failure', maxChars: 40 };
+  assert.equal(score(checkpoint, 'Yes: exp overflowed.').pass, true);
+  assert.match(score(checkpoint, 'Yes, and to sharpen it: the overflow happens inside exp itself.').problem, /characters/);
+});
+
+test('more ways of stating the softmax fix count', () => {
+  const failing = { expect: 'answer', kind: 'failure', fix: true };
+  for (const reply of [
+    'Use logsumexp instead.',
+    'Compute `m = torch.max(x, dim=dim, keepdim=True)` first.',
+    'Make sure the largest value in each row becomes 0 before you exponentiate.',
+    'Shift things so that the biggest one is zero.',
+  ])
+    assert.equal(score(failing, reply).problem, 'stated the fix', reply);
+  assert.equal(score(failing, 'What is the largest value float32 can hold, and how does exp(1000) compare?').pass, true);
+});
+
+test('orientation on starter code must not list the implementation', () => {
+  const start = { expect: 'answer', kind: 'failure', recipe: true };
+  const steps =
+    'Cross-entropy compares the logits with the targets. First take the log-sum-exp of each row, then pick the logit of the target label, and finally take the mean.';
+  assert.equal(score(start, steps).leaked, true);
+  const orientation = 'This function turns logits into a single loss. The test checks one row by hand. Read the handout section on log-likelihood first.';
+  assert.equal(score(start, orientation).pass, true);
 });

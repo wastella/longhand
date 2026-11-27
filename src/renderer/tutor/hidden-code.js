@@ -140,31 +140,45 @@ export function codeUnits(node) {
  * again after a reveal.
  */
 export function hideLongCode(node, message, rerender) {
+  hideCodeAcross([node], message, rerender);
+}
+
+/**
+ * The same check over several rendered answers that make up one: the notes of a review, or the
+ * answers in one pinned conversation. Their code is counted together, so a solution split two
+ * lines per note is hidden; when it is, every answer's code is hidden behind one notice per
+ * answer, and one Reveal (logged once) shows it in all of them. `what` names the whole ("this
+ * review's notes").
+ */
+export function hideCodeAcross(nodes, message, rerender, what = '') {
   const policy = state.config.policy;
   const limit = LINE_LIMIT[policy] ?? LINE_LIMIT.strict;
-  const units = codeUnits(node);
-  const lines = units.reduce((sum, u) => sum + u.lines, 0);
-  if (lines <= limit || message.revealed.size) return;
+  const each = nodes.map((node) => codeUnits(node));
+  const lines = each.flat().reduce((sum, u) => sum + u.lines, 0);
+  if (lines <= limit || message.revealed.size) return false;
   const reveal = async () => {
+    if (message.revealed.size) return;
     message.revealed.add('all');
     emit('usage:changed', await invoke('log_record', { kind: 'reveal', detail: { lines, policy } }));
     rerender();
   };
+  const said = what
+    ? `There are ${lines} lines of code across ${what}, hidden under the ${policy} policy.`
+    : `The tutor wrote ${lines} lines of code, hidden under the ${policy} policy.`;
   const notice = () =>
     message.streaming
       ? h('div', { class: 'withheld' }, 'The tutor is writing code…')
-      : h(
-          'div',
-          { class: 'withheld' },
-          h('span', {}, `The tutor wrote ${lines} lines of code, hidden under the ${policy} policy.`),
-          h('button', { onclick: reveal }, 'Reveal (logged)'),
-        );
-  let noticed = false;
-  for (const unit of units) {
-    if (unit.block && !noticed) {
-      unit.el.replaceWith(notice());
-      noticed = true;
-    } else unit.el.replaceWith(h(unit.block ? 'div' : 'span', { class: `withheld ${unit.block ? 'more' : 'inline'}` }, 'code hidden'));
-  }
-  if (!noticed) node.append(notice());
+      : h('div', { class: 'withheld' }, h('span', {}, said), h('button', { onclick: reveal }, 'Reveal (logged)'));
+  nodes.forEach((node, i) => {
+    if (!each[i].length) return;
+    let noticed = false;
+    for (const unit of each[i]) {
+      if (unit.block && !noticed) {
+        unit.el.replaceWith(notice());
+        noticed = true;
+      } else unit.el.replaceWith(h(unit.block ? 'div' : 'span', { class: `withheld ${unit.block ? 'more' : 'inline'}` }, 'code hidden'));
+    }
+    if (!noticed) node.append(notice());
+  });
+  return true;
 }

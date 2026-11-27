@@ -17,7 +17,10 @@ const marked = new Marked(
   mathExtension((formula) => formulas.push(formula) - 1),
 );
 
-/** Renders `text` (Markdown) into `node`. `message` is { revealed: Set, streaming } (see hidden-code.js). */
+/**
+ * Renders `text` (Markdown) into `node`. `message` is { revealed: Set, streaming, grouped? } (see
+ * hidden-code.js); a `grouped` answer skips the check here because its group runs hideCodeAcross.
+ */
 export function renderAnswer(node, text, message) {
   formulas = [];
   const html = marked.parse(text);
@@ -36,5 +39,6 @@ export function renderAnswer(node, text, message) {
   }
   highlightBlocks(node);
   drawFormulas(node, found);
-  hideLongCode(node, message, () => renderAnswer(node, text, message));
+  // An answer that is part of a larger one (feedback's code groups) is checked with the rest.
+  if (!message.grouped) hideLongCode(node, message, () => renderAnswer(node, text, message));
 }

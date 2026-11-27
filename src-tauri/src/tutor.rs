@@ -13,7 +13,7 @@ mod prompt;
 mod record;
 mod run;
 mod stream;
-mod threads;
+pub(crate) mod threads;
 
 use crate::workspace::{log_event, read_config, workspace, AppState};
 use cli::Session;
@@ -451,7 +451,7 @@ mod tests {
     fn the_eval_runner_uses_the_apps_configuration() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../evals");
         let fixture = root.join("fixture");
-        let kinds = [Kind::Conversation, Kind::Lookup];
+        let kinds = [Kind::Conversation, Kind::Lookup, Kind::Review, Kind::Failure];
         let mut args = json!({});
         let mut prompts = json!({});
         for kind in kinds {

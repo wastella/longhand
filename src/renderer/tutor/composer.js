@@ -19,15 +19,13 @@ export const form = h(
   h('div', { class: 'row' }, h('span', { class: 'dim', id: 'ask-hint' }, 'Enter to send · Shift+Enter for a new line'), spacer(), stopButton, sendButton),
 );
 
-/** Something attached to the next question: { kind, label, text, placeholder }. */
-let attachment = null;
-/** Context the student removed from the next question: 'file', 'selection', 'attachment'. */
+/** Context the student removed from the next question: 'file', 'selection'. */
 const omit = new Set();
 let lastPath = null;
 let lastSelection = null;
 
 export function renderChips() {
-  const items = contextItems(attachment, omit);
+  const items = contextItems(omit);
   chips.replaceChildren(
     h('span', { class: 'sees' }, items.length ? 'Sees' : 'Sees only your question'),
     ...items.map((item) =>
@@ -52,10 +50,7 @@ export function renderChips() {
 }
 
 function remove(key) {
-  if (key === 'attachment') {
-    attachment = null;
-    input.placeholder = DEFAULT_PLACEHOLDER;
-  } else omit.add(key);
+  omit.add(key);
   if (key === 'file') omit.add('selection');
   renderChips();
   input.focus();
@@ -72,21 +67,10 @@ export function showCursor(cursor) {
   renderChips();
 }
 
-/** Attaches context to the next question and invites the student to write it. */
-export function attach(next) {
-  attachment = next;
-  omit.delete('attachment');
-  input.placeholder = next.placeholder || DEFAULT_PLACEHOLDER;
-  input.focus();
-  renderChips();
-}
-
-/** Takes what the next question carries: { attachment, omit }. Removed items come back afterwards. */
+/** Takes what the next question leaves out: { omit }. Removed items come back afterwards. */
 export function takeContext() {
-  const taken = { attachment, omit: new Set(omit) };
-  attachment = null;
+  const taken = { omit: new Set(omit) };
   omit.clear();
-  input.placeholder = DEFAULT_PLACEHOLDER;
   renderChips();
   return taken;
 }

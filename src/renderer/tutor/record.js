@@ -8,7 +8,9 @@ const KINDS = [
   ['question', 'question', 'questions'],
   ['explain', 'explanation', 'explanations'],
   ['review', 'review', 'reviews'],
+  ['review-reply', 'reply to a note', 'replies to notes'],
   ['failure', 'test failure', 'test failures'],
+  ['checkpoint', 'checkpoint', 'checkpoints'],
   ['hint', 'hint', 'hints'],
   ['lookup', 'lookup', 'lookups'],
 ];
