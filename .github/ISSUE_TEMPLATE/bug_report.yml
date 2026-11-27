@@ -1,0 +1,28 @@
+name: Bug report
+description: Something does not work the way it should
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened
+      description: What you did, what you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Longhand version
+      description: Longhand → About Longhand
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: macOS version and Mac type
+      placeholder: macOS 26.4, Apple Silicon
+  - type: dropdown
+    attributes:
+      label: Which part
+      options: [Editor, File tree, Terminal, Tests, Tutor, Installing or launching, Something else]
+  - type: textarea
+    attributes:
+      label: Anything else
+      description: Error messages, screenshots, or the output of `claude --version` for tutor problems.
