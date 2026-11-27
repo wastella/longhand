@@ -7,6 +7,8 @@ import { activeFile } from '../editor/index.js';
 const MAX_SELECTION_CHARS = 6000;
 
 const lineRange = ({ fromLine, toLine }) => (fromLine === toLine ? `line ${fromLine}` : `lines ${fromLine}–${toLine}`);
+/** Where the student is in the file: "the cursor on line 4", or in a notebook "in cell 3 of 12". */
+const whereIn = (file) => (file.cursorLine != null ? `the cursor on line ${file.cursorLine}` : file.place ? `the student in ${file.place}` : '');
 
 /**
  * What the next question would carry, as chips for the composer: [{ key, label, title }].
@@ -16,7 +18,7 @@ export function contextItems(omit) {
   const items = [];
   const file = activeFile();
   if (file && !omit.has('file')) {
-    items.push({ key: 'file', label: file.path.split('/').pop(), title: `The tutor sees ${file.path}, with the cursor on line ${file.cursorLine}` });
+    items.push({ key: 'file', label: file.path.split('/').pop(), title: `The tutor sees ${file.path}${whereIn(file) ? `, with ${whereIn(file)}` : ''}` });
     if (file.selection && !omit.has('selection'))
       items.push({ key: 'selection', label: lineRange(file.selection), title: `The selected ${lineRange(file.selection)} are sent with the question` });
   }
@@ -26,7 +28,8 @@ export function contextItems(omit) {
 function describeEditor(omit) {
   const file = activeFile();
   if (!file || omit.has('file')) return '';
-  const lines = [`Open file: ${file.path} (cursor on line ${file.cursorLine})`];
+  const where = file.cursorLine != null ? `cursor on line ${file.cursorLine}` : file.place && `the student is in ${file.place}`;
+  const lines = [`Open file: ${file.path}${where ? ` (${where})` : ''}`];
   if (file.dirty) lines.push('The file has unsaved edits, so the copy on disk is older than what the student sees.');
   if (file.selection && !omit.has('selection')) {
     const { fromLine, toLine, text } = file.selection;

@@ -31,3 +31,8 @@ Nothing has been released yet. This is what the first release will contain.
   and reveals by day, kept locally per folder and opened from the title bar's count
 - Welcome screen with recent folders, light and dark themes, settings, and a remembered layout
 - Setup steps in the tutor panel when Claude Code is missing or logged out
+- Jupyter notebooks open as cells: edit code and Markdown, add and delete cells, and run them
+  (Shift+Enter, Run All, Interrupt, Restart) in the folder's own Python, started only when you
+  run something. Outputs include colours, progress bars, tables, plots and math; nothing in a
+  notebook can run script or load from the web. Saving writes the file exactly as Jupyter would.
+  When ipykernel is missing, the notebook shows the one command that installs it

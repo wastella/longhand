@@ -79,7 +79,7 @@ fn group_alive(pgid: i32) -> bool {
 }
 
 /// Stops every process in the run's group: the shell, uv, pytest and anything a test started.
-fn stop_group(pgid: i32) {
+pub(crate) fn stop_group(pgid: i32) {
     unsafe { libc::kill(-pgid, libc::SIGTERM) };
     // A test can ignore SIGTERM or hang in native code. Group ids are not reused while any
     // member lives, and reuse by a new group within the grace period is vanishingly unlikely.
@@ -91,7 +91,7 @@ fn stop_group(pgid: i32) {
 
 /// Like `stop_group`, but returns only once the group is gone, for when the app is quitting
 /// and a thread left to finish the job would not get the chance.
-fn stop_group_now(pgid: i32, grace: Duration) {
+pub(crate) fn stop_group_now(pgid: i32, grace: Duration) {
     unsafe { libc::kill(-pgid, libc::SIGTERM) };
     let start = Instant::now();
     while group_alive(pgid) && start.elapsed() < grace {
@@ -102,7 +102,7 @@ fn stop_group_now(pgid: i32, grace: Duration) {
 
 /// Quotes a word for a POSIX shell (or zsh). Every word is quoted, so nothing in it is special:
 /// zsh would read `test_a[1-2]` as a pattern and refuse the command when nothing matched.
-fn shell_quote(s: &str) -> String {
+pub(crate) fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
@@ -225,7 +225,7 @@ fn command(shell: &str, folder: &Path, script: &str, report: &Path, selection: O
     command
 }
 
-fn login_shell() -> String {
+pub(crate) fn login_shell() -> String {
     std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/zsh".into())
 }
 
