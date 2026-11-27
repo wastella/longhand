@@ -67,17 +67,25 @@ export class Kernel {
     return [...this.byId.values()].some((run) => run.state === 'queued' || run.state === 'running');
   }
 
+  /**
+   * Starts a kernel unless one is running or starting. A kernel stopped while it was starting
+   * (Restart, closing the tab) is stopped again once the backend has it, so none is left behind;
+   * messages from it are ignored, since only the current id is routed here.
+   */
   async start() {
-    this.id = `nb-${crypto.randomUUID()}`;
-    kernels.set(this.id, this);
+    if (this.id) return;
+    const id = (this.id = `nb-${crypto.randomUUID()}`);
+    kernels.set(id, this);
     Object.assign(this, { status: 'starting', problem: null, stopped: null, stuck: false });
     this.changed();
     try {
-      await invoke('notebook_start', { id: this.id, path: this.path });
+      await invoke('notebook_start', { id, path: this.path });
     } catch (e) {
+      if (this.id !== id) return;
       this.forget();
-      this.fail({ title: 'Python could not start', detail: String(e) });
+      return this.fail({ title: 'Python could not start', detail: String(e) });
     }
+    if (this.id !== id) await invoke('notebook_stop', { id }).catch(() => {});
   }
 
   forget() {
@@ -154,6 +162,8 @@ export class Kernel {
         break;
       case 'output':
         if (!run) return;
+        // Output before its start message (which a flood can delay) still means it is running.
+        if (run.state === 'queued') Object.assign(run, { state: 'running', started: performance.now() });
         this.output(run, message.output, message.display);
         break;
       case 'update':
@@ -192,7 +202,7 @@ export class Kernel {
       run.note = 'Not run, because a cell before it stopped with an error.';
     } else {
       run.state = status === 'ok' ? 'done' : 'error';
-      run.duration = performance.now() - run.started;
+      run.duration = run.started ? performance.now() - run.started : null;
       if (count != null && count !== run.cell.count) this.notebook.setOutputs(run.cell, run.cell.outputs, count);
     }
     if (!this.running) this.settleInterrupt();
@@ -239,9 +249,13 @@ export class Kernel {
     if (id) await invoke('notebook_stop', { id }).catch(() => {});
   }
 
-  /** Stops this kernel and starts a fresh one, with none of its variables. */
+  /**
+   * Stops this kernel and starts a fresh one, with none of its variables. Restarting again, or
+   * running a cell, while the old one is stopping starts only one new kernel (start() makes
+   * sure of that).
+   */
   async restart() {
     await this.shutdown('The kernel was restarted before this cell finished.');
-    this.start();
+    await this.start();
   }
 }

@@ -106,12 +106,22 @@ export class CellView {
     this.renderRun();
   }
 
+  /**
+   * Shows the cell's outputs. Outputs are replaced as a whole on each change, but most changes
+   * only add one or grow the last, so the nodes of outputs that did not change are kept.
+   */
   renderOutputs() {
     const outputs = this.cell.type === 'code' ? this.cell.outputs : [];
-    if (outputs === this.outputsShown) return;
+    const shown = this.outputsShown || [];
+    if (outputs === shown) return;
     this.outputsShown = outputs;
+    let same = 0;
+    while (same < shown.length && same < outputs.length && shown[same] === outputs[same]) same++;
+    // Outputs that dropped off the front (a cell over its output limit) start everything again.
+    if (same === 0) this.outputs.replaceChildren();
+    else while (this.outputs.children.length > same) this.outputs.lastChild.remove();
+    this.outputs.append(...outputs.slice(this.outputs.children.length).map((output) => h('div', { class: 'nb-output' }, outputNode(output))));
     this.outputs.hidden = !outputs.length;
-    this.outputs.replaceChildren(...outputs.map((output) => h('div', { class: 'nb-output' }, outputNode(output))));
   }
 
   /** The prompt, and the run's time or what became of it. */

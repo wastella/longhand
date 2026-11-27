@@ -3,6 +3,7 @@
 //   while True:       runs until interrupted input('Name? ') fails, as the helper makes it
 //   os._exit(0)       the kernel dies         plot()       shows a PNG
 //   progress()        a tqdm-like bar         spam(n)      prints n lines
+//   displays(n)       shows n plots, one message each
 //   anything else whose last line is an expression shows it as the result
 // Options: notebookProblem: { kind, title, detail, fix } makes the helper end without starting
 // the kernel (as with ipykernel missing); notebookStartError makes notebook_start fail.
@@ -42,8 +43,9 @@ async function execute(id, run, code) {
     say(id, { type: 'start', run, count });
     const out = (output) => say(id, { type: 'output', run, output });
     const done = (status) => {
-      say(id, { type: 'done', run, status, count });
+      // As the helper does: the kernel goes idle, then the run's reply arrives.
       say(id, { type: 'status', state: 'idle' });
+      say(id, { type: 'done', run, status, count });
     };
     const lines = code.split('\n');
     for (const line of lines) {
@@ -77,6 +79,10 @@ async function execute(id, run, code) {
         out({ output_type: 'display_data', data: { 'image/png': PNG, 'text/plain': '<Figure size 640x480 with 1 Axes>' }, metadata: {} });
       if (line.includes('progress()'))
         for (let i = 0; i <= 10; i++) out({ output_type: 'stream', name: 'stderr', text: `\r${i * 10}%|${'█'.repeat(i)}${' '.repeat(10 - i)}| ${i}/10` });
+      const displays = /displays\((\d+)\)/.exec(line);
+      if (displays)
+        for (let i = 0; i < Number(displays[1]); i++)
+          out({ output_type: 'display_data', data: { 'image/png': PNG, 'text/plain': `<Figure ${i + 1}>` }, metadata: {} });
       const spam = /spam\((\d+)\)/.exec(line);
       if (spam) out({ output_type: 'stream', name: 'stdout', text: Array.from({ length: Number(spam[1]) }, (_, i) => `line ${i + 1}\n`).join('') });
     }
@@ -105,8 +111,10 @@ Object.assign(mock.commands, {
     if (message.op === 'interrupt') k.interrupt?.();
   },
   notebook_ack: ({ bytes }) => (kernel.acked += bytes),
-  notebook_stop: ({ id }) => {
+  // Stopping takes a moment, as the real one does (it waits for the processes to end).
+  notebook_stop: async ({ id }) => {
     kernel.stopped.push(id);
     live.delete(id);
+    await new Promise((resolve) => setTimeout(resolve, 50));
   },
 });

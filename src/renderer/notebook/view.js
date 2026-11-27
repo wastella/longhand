@@ -66,8 +66,20 @@ export class NotebookView {
     if (change.type === 'reset' || change.type === 'cells') {
       this.renderCells();
       if (change.focus && this.views.has(change.focus)) this.views.get(change.focus).focusEditor();
-    } else if (change.type === 'outputs') this.views.get(change.cell.key)?.renderOutputs();
+    } else if (change.type === 'outputs') this.drawOutputsSoon(change.cell.key);
     this.notifyEditor();
+  }
+
+  /** Draws cells' new outputs once per frame, however many messages arrived in it. */
+  drawOutputsSoon(key) {
+    this.outputsDue ??= new Set();
+    this.outputsDue.add(key);
+    if (this.outputsFrame) return;
+    this.outputsFrame = requestAnimationFrame(() => {
+      this.outputsFrame = 0;
+      for (const due of this.outputsDue) this.views.get(due)?.renderOutputs();
+      this.outputsDue.clear();
+    });
   }
 
   kernelChanged() {
@@ -217,6 +229,7 @@ export class NotebookView {
 
   close() {
     clearInterval(this.ticker);
+    cancelAnimationFrame(this.outputsFrame);
     this.kernel.shutdown();
     this.views.forEach((view) => view.destroy());
   }

@@ -367,6 +367,91 @@ uiTest(
 );
 
 uiTest(
+  'restarting twice, or running a cell while restarting, starts one kernel',
+  async (page) => {
+    await openNotebook(page);
+    await press(page, 'Run All');
+    await waitForText(page, 1, 'hello');
+    await page.evaluate(() => (window.__MOCK__.confirm = true));
+    // Two Restarts in a row, then Shift+Enter in a cell while the old kernel is still stopping.
+    await page.evaluate(() => {
+      const button = [...document.querySelectorAll('.nb-toolbar button')].find((b) => b.textContent.trim() === 'Restart');
+      button.click();
+      button.click();
+    });
+    await sleep(20);
+    await editCell(page, 1);
+    await page.keyboard.down('Shift');
+    await page.keyboard.press('Enter');
+    await page.keyboard.up('Shift');
+    await waitForText(page, 1, 'hello');
+    await sleep(200);
+    const { started, stopped } = await page.evaluate(() => window.__kernel);
+    assert.equal(started.length, 2, `one kernel after the first: ${started}`);
+    assert.deepEqual(stopped, [started[0]], 'only the first was stopped, and nothing is left running');
+    assert.equal(await page.evaluate(() => document.querySelector('.nb-kernel-status').dataset.state), 'idle');
+  },
+  { files: { 'hw.ipynb': BASIC } },
+);
+
+uiTest(
+  'thousands of outputs keep the window responsive and keep the last ones',
+  async (page) => {
+    await openNotebook(page);
+    const started = Date.now();
+    await press(page, 'Run All');
+    await page.waitForFunction(() => document.querySelector('.nb-cell .nb-prompt').textContent === '[1]', { timeout: 10_000 });
+    await waitForText(page, 0, 'left out the first');
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < 5000, `took ${elapsed} ms`);
+    assert.equal(await count(page, '.nb-cell .nb-output'), 200);
+    assert.match(await outputsOf(page, 0), /left out the first 2,802 outputs of this cell; it keeps the last 199/);
+    // The page still answers at once.
+    const lag = await page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const t = performance.now();
+          setTimeout(() => resolve(performance.now() - t), 0);
+        }),
+    );
+    assert.ok(lag < 200, `the page waited ${lag} ms`);
+  },
+  { files: { 'hw.ipynb': notebook([['code', 'displays(3000)']]) } },
+);
+
+uiTest(
+  'a huge saved output folds: one enormous line, and HTML too large to draw',
+  async (page) => {
+    await openNotebook(page);
+    assert.match(await outputsOf(page, 0), /^x{20000}.*more characters · Show all.*x{20000}$/s);
+    assert.ok((await outputsOf(page, 0)).length < 50_000);
+    assert.match(await outputsOf(page, 0 + 1), /HTML output too large to show here \(3\.0 MB\)\.big table/);
+  },
+  {
+    files: {
+      'hw.ipynb': notebook([
+        ['code', "print('x' * 3_000_000)", { count: 1, outputs: [{ output_type: 'stream', name: 'stdout', text: 'x'.repeat(3_000_000) }] }],
+        [
+          'code',
+          'df',
+          {
+            count: 2,
+            outputs: [
+              {
+                output_type: 'execute_result',
+                execution_count: 2,
+                metadata: {},
+                data: { 'text/html': '<td>1</td>'.repeat(300_000), 'text/plain': 'big table' },
+              },
+            ],
+          },
+        ],
+      ]),
+    },
+  },
+);
+
+uiTest(
   'a cell that asks for input fails with one readable line',
   async (page) => {
     await openNotebook(page);
