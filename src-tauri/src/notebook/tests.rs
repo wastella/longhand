@@ -20,8 +20,12 @@ fn the_script_runs_the_folders_python_with_quoted_paths() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// Held by tests that use the installed helper, since one of them removes it.
+static HELPER_FILE: Mutex<()> = Mutex::new(());
+
 #[test]
 fn the_helper_is_written_once_and_rewritten_if_removed() {
+    let _file = HELPER_FILE.lock().unwrap_or_else(|e| e.into_inner());
     let path = install_helper().unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), HELPER);
     std::fs::remove_file(&path).unwrap();
@@ -41,11 +45,13 @@ struct Helper {
     child: Child,
     stdin: ChildStdin,
     lines: Receiver<Value>,
+    first: Option<Value>,
 }
 
 impl Helper {
     /// Runs the helper as the app does (its own process group, the notebook's folder), with `python` and its `args`.
     fn start(python: &str, args: &[&str], cwd: &Path) -> Helper {
+        let file = HELPER_FILE.lock().unwrap_or_else(|e| e.into_inner());
         let helper = install_helper().unwrap();
         let mut child = Command::new(python)
             .args(args)
@@ -65,7 +71,10 @@ impl Helper {
                 let _ = send.send(serde_json::from_str(&line).unwrap());
             }
         });
-        Helper { child, stdin, lines }
+        // Python has read the helper once it speaks or ends; until then it must stay in place.
+        let first = lines.recv_timeout(Duration::from_secs(60)).ok();
+        drop(file);
+        Helper { child, stdin, lines, first }
     }
 
     fn say(&mut self, message: Value) {
@@ -73,9 +82,16 @@ impl Helper {
     }
 
     /// Messages until one of `kind` (for `run`, when given) arrives; panics after 60 seconds.
-    fn until(&self, kind: &str, run: Option<&str>) -> Vec<Value> {
+    fn until(&mut self, kind: &str, run: Option<&str>) -> Vec<Value> {
         let start = Instant::now();
         let mut seen = Vec::new();
+        if let Some(first) = self.first.take() {
+            let done = first["type"] == kind && run.is_none_or(|r| first["run"] == r);
+            seen.push(first);
+            if done {
+                return seen;
+            }
+        }
         while start.elapsed() < Duration::from_secs(60) {
             let Ok(message) = self.lines.recv_timeout(Duration::from_secs(1)) else { continue };
             let done = message["type"] == kind && run.is_none_or(|r| message["run"] == r);

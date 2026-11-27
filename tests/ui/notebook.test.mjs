@@ -182,6 +182,7 @@ uiTest(
     assert.equal(await page.evaluate(() => window.__kernel.started.length), 1, 'one kernel for the notebook');
     // Outputs are unsaved changes, like edits.
     assert.equal(await count(page, '#tabs .tab.dirty'), 1);
+    assert.equal(await text(page, '#status-saved'), 'Unsaved');
   },
   { files: { 'hw.ipynb': BASIC } },
 );

@@ -93,6 +93,8 @@ export function refreshDirty(doc) {
   if (dirty === doc.dirty) return;
   doc.dirty = dirty;
   renderChrome();
+  // A text doc's status follows its cursor events; a custom doc has none, so say it here.
+  if (doc.kind === 'custom' && doc.path === session.active) emit('editor:cursor', null);
 }
 
 /**

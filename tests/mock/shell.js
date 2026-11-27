@@ -46,6 +46,7 @@ const shortcuts = [
   ['run-tests-file', 'Run', 'Run Tests in Current File', 'CmdOrCtrl+T'],
   ['run-tests', 'Run', 'Run All Tests', 'CmdOrCtrl+Shift+T'],
   ['rerun-failed-tests', 'Run', 'Rerun Failed Tests', 'CmdOrCtrl+Shift+Y'],
+  ['notebook-run-cell', 'Run', 'Run Cell', 'Shift+Enter'],
   ['lookup', 'Tutor', 'Look Up…', 'CmdOrCtrl+Shift+K'],
   ['ask-selection', 'Tutor', 'Explain Selection', 'CmdOrCtrl+E'],
   ['review-file', 'Tutor', 'Review Current File', 'CmdOrCtrl+Shift+R'],

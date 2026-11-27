@@ -204,8 +204,9 @@ same second as a save on file systems that keep whole seconds. All three command
 system work on a blocking thread, so a hung network mount stalls only that call.
 
 - `doc_read(rel)` returns `{ kind: 'text', text, mtime, size, format }` with the text exactly
-  as on disk, or `{ kind, mtime, size }` with `kind` one of `binary`, `tooLarge` (over 3 MB;
-  only the first 8 KB is read to tell binary from text) or `notText` (not UTF-8), or
+  as on disk, or `{ kind, mtime, size }` with `kind` one of `binary`, `tooLarge` (over 3 MB, or
+  20 MB for a `.ipynb`, with the `limit` that applied; only the first 8 KB is read to tell binary
+  from text) or `notText` (not UTF-8), or
   `{ kind: 'missing' }`. The editor shows a notice in place of the code for anything but text.
   `format` is `{ lineEnding: 'lf' | 'crlf' | 'cr', bom }`, the ending most lines use.
 - `doc_write(rel, text, format, expected)` writes beside the file under an unpredictable name
@@ -275,6 +276,87 @@ kind?, head?, actions? }`: 1-based inclusive lines and a DOM node the caller own
 
 The interface tests and previews reach these through `window.__editor`, which exists only
 under the mock backend.
+
+### Files another area draws
+
+`registerCustomEditor(extension, open)` (from `editor/index.js`) gives a kind of file its own
+view in place of the CodeMirror view; notebooks use it. The editor still owns the tab, the
+reading and writing, the dirty mark, changed-on-disk checks, the banners and the leave guard.
+`open({ path, text, format, changed })` is called with the file as read and returns either
+`{ notice }` (the file cannot be shown this way; the tab shows the notice with an Open as Text
+button, which reopens it in CodeMirror, in the same place) or an object with `dom`,
+`snapshot()` (`{ text, mark }`: the file's text now and a mark for `markSaved(mark)` once that
+text is on disk), `dirty()`, `version()` (changes whenever the content does, so a save that
+raced an edit stays dirty), `load(text)` (the disk's version, after a reload; returns
+`{ notice }` if it is no longer readable), `show()`, `hide()`, `rename(path)`, `close()`,
+`running()` (closing asks first while true) and `place()` (where the student is, in words, for
+the tutor's context). It calls `changed()` after every change. Custom docs are not announced
+through `editor:opened` and the rest, so language servers do not see them.
+
+`createCellState(text, { language, keys, onUpdate })` and `refreshCellTheme(view)` give a small
+editor the main editor's look and editing keys, without what belongs to a whole file (find,
+go to line, notes).
+
+## Notebooks
+
+`.ipynb` files open as cells (`renderer/notebook/`). The file format is nbformat 4, and saving
+writes exactly what Jupyter would: `notebook/json.js` parses JSON keeping each number's text
+and writes it as Python's `json.dumps(sort_keys=True, indent=1, ensure_ascii=False)` does;
+`notebook/format.js` splits and joins multi-line strings as nbformat does and drops what it
+drops (`metadata.trusted`, `orig_nbformat`, `signature`). A notebook nbformat wrote comes back
+byte for byte, and everything Longhand does not understand (metadata, attachments, ids,
+outputs of unknown types) is kept as it was. A file that is not JSON, not nbformat 4, or over
+20 MB opens as a notice with Open as Text.
+
+`notebook/model.js` holds the cells. Each cell's text lives in its own CodeMirror state (with
+its own undo history); adding and deleting cells go on the notebook's undo stack, which keeps
+the cell objects, so undoing a deletion brings back the text, outputs and typing history. Keys
+inside a cell are the editor's, plus Shift+Enter (run, then the next cell) and Cmd+Enter or
+Ctrl+Enter (run in place). Cmd+Z outside a cell's editor undoes adding and deleting cells.
+There is no Jupyter command mode.
+
+Outputs are drawn by `notebook/output-view.js`. Nothing in a notebook may run script, load
+from the network or navigate: HTML and Markdown go through DOMPurify (`notebook/safe-html.js`)
+with scripts, styles, SVG, forms and frames removed, images kept only as raster `data:` URLs,
+and links that open in the browser (http and https only) or do nothing; SVG output is shown as
+an `<img>`, where it cannot run script; JavaScript and widget outputs get a placeholder. The
+CSP (`img-src 'self' data:`) is the second line. Stream text follows `\r` and `\b` as a
+terminal does, long text shows its first 100 and last 200 lines with Show all, and stored
+stream text is capped at 500 KB.
+
+### Kernels
+
+`notebook.rs` runs one Python kernel per open notebook, started only when the student runs a
+cell (opening a notebook from anywhere must not run its code) and stopped when its tab closes,
+when another folder opens, and on quit. At most 3 run at once. The kernel is ipykernel in the
+folder's own Python: from the login shell, `uv run python` when the folder has a
+`pyproject.toml` or `uv.lock`, `python3` otherwise, running a small helper
+(`notebook/kernel.py`, written to a temporary folder) with the notebook's folder as the working
+directory. The helper uses jupyter_client to start the kernel and relays its messages as
+line-delimited JSON over stdio (the protocol is at the top of `kernel.py`), so the app needs
+no ZeroMQ. jupyter_client comes with ipykernel, so the one thing a folder needs is ipykernel;
+without it the helper says so and the notebook shows the command (`uv add --dev ipykernel` or
+`python3 -m pip install ipykernel`) with Put in Terminal. Nothing is cached, so the next run
+after installing finds it.
+
+- `notebook_start(id, path)` starts the helper for notebook `id` (an id the interface makes).
+  Fails with a sentence when 3 kernels are running.
+- `notebook_send(id, message)`: `{ op: 'execute', run, code }` or `{ op: 'interrupt' }`.
+- `notebook_ack(id, bytes)`: the interface has handled that many bytes; reading pauses while
+  too much is unacknowledged, as for terminals.
+- `notebook_stop(id)` stops the helper's process group and the kernel's (jupyter_client starts
+  it in a session of its own), so whatever the kernel started goes too.
+- Events: `notebook:message` `{ id, message, bytes }` for each helper line, and `notebook:exit`
+  `{ id, code, signal, problem, kernel }` when the helper ends, with `problem`
+  (`{ kind, title, detail, fix }`) when it never got a kernel running and `kernel`
+  (`{ code, signal }`) when the kernel died.
+
+The helper caps a single output's stream text at 1 MB and rich data at 5 MB, runs cells with
+`stop_on_error` (cells queued behind an error are not run, as in Jupyter) and without stdin:
+code that calls `input()` fails with one line saying notebooks in Longhand cannot ask for
+input. `notebook/kernel.js` keeps the queue, the running cell, durations and the kernel's
+state; Interrupt sends SIGINT through jupyter_client and offers a restart if Python has not
+stopped after 5 seconds.
 
 ## Language servers
 
@@ -584,7 +666,9 @@ committed by accident; the History and Record views say where it is and how to d
 ## Testing
 
 - `cargo test` covers path safety, settings, the log and pytest results (including a real
-  pytest run when `python3` has pytest); each test sits next to the code it covers.
+  pytest run when `python3` has pytest), and the notebook helper against a real ipykernel when
+  one loads (`$LONGHAND_TEST_KERNEL_PYTHON`, or `python3`); each test sits next to the code it
+  covers.
 - `npm run test:ui` runs `tests/ui/<area>.test.mjs` with `node --test`, against the built
   interface in headless Chrome. `tests/mock/` implements the same commands and events as the
   Rust backend, one file per area, over a shared fixture folder (`fixture.js`).
