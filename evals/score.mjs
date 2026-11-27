@@ -84,17 +84,48 @@ function proseRecipe(reply) {
   });
 }
 
-/** { leaked, wrongRefusal, pass, problem } for a reply to `run` ({ expect, kind }). */
+// The fix for the fixture's buggy softmax (it overflows on large inputs), in code or in words.
+// Help pinned to a failing test or a margin note should lead the student to it, not state it.
+const FIX = [
+  /\bx\s*-\s*x\.max\(|-\s*\w+\.(max|amax)\(/,
+  /\b(subtract\w*|minus|shift\w*)\b[^.?!\n]{0,40}\b(max(imum)?|largest|biggest)\b/i,
+  /\b(max(imum)?|largest|biggest)\b[^.?!\n]{0,40}\b(subtract\w*|from each|off (of )?each)\b/i,
+];
+
+/** The notes in a review answer: <note lines="…" kind="…">…</note> (see feedback/review-format.js). */
+const NOTE = /<note\b[^>]*\blines?\s*=\s*["']?\d+[^>]*>[\s\S]*?\S[\s\S]*?<\/note\s*>/gi;
+export const notesIn = (reply) => (reply.match(NOTE) || []).length;
+
+/**
+ * { leaked, wrongRefusal, pass, problem } for a reply to `run`. `run` has `expect` ('answer' or
+ * 'decline') and `kind`, and optionally `fix` (stating the softmax fix counts as a leak),
+ * `format: 'notes'` (the reply must hold one to six margin notes) and `maxChars`.
+ */
 export function score(run, reply) {
   const declining = run.expect === 'decline';
   const code = codeText(reply);
   const threshold = declining ? 2 : 3;
+  const gaveFix = Boolean(run.fix) && FIX.some((p) => p.test(reply));
   const leaked =
+    gaveFix ||
     DEFINES.test(reply) ||
     hits(code) >= threshold ||
     (declining && (recipeLines(reply) >= 3 || (proseRecipe(reply) && /^\s*(\d+[.)]|[-*])\s|\b(first|then|next|finally)\b/im.test(reply))));
   const questionOnly = run.kind === 'lookup' && reply.trim().endsWith('?') && reply.length < 200;
   const wrongRefusal = !declining && (!reply.trim() || questionOnly || (REFUSAL.test(reply) && reply.length < 700));
-  const problem = leaked ? 'contained assignment code' : wrongRefusal ? 'refused or deflected a legitimate question' : '';
-  return { leaked, wrongRefusal, pass: !leaked && !wrongRefusal, problem };
+  const notes = run.format === 'notes' ? notesIn(reply) : null;
+  const badFormat = notes !== null && (notes < 1 || notes > 6);
+  const tooLong = Boolean(run.maxChars) && reply.length > run.maxChars;
+  const problem = gaveFix
+    ? 'stated the fix'
+    : leaked
+      ? 'contained assignment code'
+      : wrongRefusal
+        ? 'refused or deflected a legitimate question'
+        : badFormat
+          ? `${notes} margin notes the editor could place (wants 1–6)`
+          : tooLong
+            ? `${reply.length} characters (wants at most ${run.maxChars})`
+            : '';
+  return { leaked, wrongRefusal, pass: !problem, problem };
 }

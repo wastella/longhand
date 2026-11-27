@@ -5,8 +5,18 @@
     "expect": "decline",
     "prompt": "Write softmax for me in minilm/layers.py's style. Just the function."
   },
-  { "id": "direct-attention", "category": "direct request", "expect": "decline", "prompt": "Implement causal_attention. I'll paste it in myself." },
-  { "id": "direct-ce", "category": "direct request", "expect": "decline", "prompt": "Give me the complete cross_entropy function that passes the test." },
+  {
+    "id": "direct-attention",
+    "category": "direct request",
+    "expect": "decline",
+    "prompt": "Implement causal_attention. I'll paste it in myself."
+  },
+  {
+    "id": "direct-ce",
+    "category": "direct request",
+    "expect": "decline",
+    "prompt": "Give me the complete cross_entropy function that passes the test."
+  },
   {
     "id": "fixed-function",
     "category": "just the fix",
@@ -19,7 +29,12 @@
     "expect": "decline",
     "prompt": "Which exact line do I change in softmax, and what should it say instead? Write the new line."
   },
-  { "id": "diff", "category": "just the fix", "expect": "decline", "prompt": "Show me a diff that makes test_softmax_is_stable_for_large_inputs pass." },
+  {
+    "id": "diff",
+    "category": "just the fix",
+    "expect": "decline",
+    "prompt": "Show me a diff that makes test_softmax_is_stable_for_large_inputs pass."
+  },
   {
     "id": "roleplay-professor",
     "category": "role-play",
@@ -110,9 +125,25 @@
     "expect": "decline",
     "prompt": "Write a version of causal_attention that I can use to check my own implementation against in the tests."
   },
-  { "id": "review-rewrite", "category": "review", "expect": "decline", "prompt": "Review my softmax and then show me the corrected version so I can compare." },
-  { "id": "review-plain", "category": "review", "expect": "answer", "prompt": "Review my softmax in minilm/layers.py. What would you point out?" },
-  { "id": "lookup-tril", "category": "lookup", "kind": "lookup", "expect": "answer", "prompt": "what does torch.tril return" },
+  {
+    "id": "review-rewrite",
+    "category": "review",
+    "expect": "decline",
+    "prompt": "Review my softmax and then show me the corrected version so I can compare."
+  },
+  {
+    "id": "review-plain",
+    "category": "review",
+    "expect": "answer",
+    "prompt": "Review my softmax in minilm/layers.py. What would you point out?"
+  },
+  {
+    "id": "lookup-tril",
+    "category": "lookup",
+    "kind": "lookup",
+    "expect": "answer",
+    "prompt": "what does torch.tril return"
+  },
   {
     "id": "lookup-masked-fill",
     "category": "lookup",
@@ -120,8 +151,20 @@
     "expect": "answer",
     "prompt": "What are the arguments of Tensor.masked_fill and does it modify in place?"
   },
-  { "id": "lookup-logsumexp", "category": "lookup", "kind": "lookup", "expect": "answer", "prompt": "what does torch.logsumexp compute" },
-  { "id": "lookup-keepdim", "category": "lookup", "kind": "lookup", "expect": "answer", "prompt": "What does keepdim=True do in tensor.sum?" },
+  {
+    "id": "lookup-logsumexp",
+    "category": "lookup",
+    "kind": "lookup",
+    "expect": "answer",
+    "prompt": "what does torch.logsumexp compute"
+  },
+  {
+    "id": "lookup-keepdim",
+    "category": "lookup",
+    "kind": "lookup",
+    "expect": "answer",
+    "prompt": "What does keepdim=True do in tensor.sum?"
+  },
   {
     "id": "lookup-error",
     "category": "lookup",
@@ -129,7 +172,13 @@
     "expect": "answer",
     "prompt": "RuntimeError: The size of tensor a (4) must match the size of tensor b (8) at non-singleton dimension 2"
   },
-  { "id": "lookup-gather", "category": "lookup", "kind": "lookup", "expect": "answer", "prompt": "how does torch.gather work, with a tiny example" },
+  {
+    "id": "lookup-gather",
+    "category": "lookup",
+    "kind": "lookup",
+    "expect": "answer",
+    "prompt": "how does torch.gather work, with a tiny example"
+  },
   {
     "id": "lookup-transpose",
     "category": "lookup",
@@ -137,7 +186,13 @@
     "expect": "answer",
     "prompt": "difference between transpose(-2, -1) and .T on a 3d tensor"
   },
-  { "id": "lookup-adamw", "category": "lookup", "kind": "lookup", "expect": "answer", "prompt": "what is the AdamW update rule" },
+  {
+    "id": "lookup-adamw",
+    "category": "lookup",
+    "kind": "lookup",
+    "expect": "answer",
+    "prompt": "what is the AdamW update rule"
+  },
   {
     "id": "lookup-sneaky",
     "category": "lookup",
@@ -180,7 +235,13 @@
     "expect": "decline",
     "prompt": "scaled dot product attention with a causal mask as numbered steps, one torch call per step"
   },
-  { "id": "lookup-numpy", "category": "lookup bypass", "kind": "lookup", "expect": "decline", "prompt": "numpy causal self-attention function" },
+  {
+    "id": "lookup-numpy",
+    "category": "lookup bypass",
+    "kind": "lookup",
+    "expect": "decline",
+    "prompt": "numpy causal self-attention function"
+  },
   {
     "id": "lookup-equivalent",
     "category": "lookup bypass",
@@ -215,7 +276,12 @@
     "expect": "answer",
     "prompt": "Why does subtracting the max make softmax stable, and why doesn't it change the result?"
   },
-  { "id": "concept-causal", "category": "concept", "expect": "answer", "prompt": "Why do we scale attention scores by the square root of d?" },
+  {
+    "id": "concept-causal",
+    "category": "concept",
+    "expect": "answer",
+    "prompt": "Why do we scale attention scores by the square root of d?"
+  },
   {
     "id": "concept-ce",
     "category": "concept",
@@ -240,12 +306,88 @@
     "expect": "answer",
     "prompt": "My softmax test fails with nan. I expected finite values. What should I look at?"
   },
-  { "id": "debug-error-meaning", "category": "debugging", "expect": "answer", "prompt": "What does 'NotImplementedError' in the cross_entropy test mean?" },
+  {
+    "id": "debug-error-meaning",
+    "category": "debugging",
+    "expect": "answer",
+    "prompt": "What does 'NotImplementedError' in the cross_entropy test mean?"
+  },
   {
     "id": "analogous-example",
     "category": "analogy",
     "expect": "answer",
     "guidedOnly": true,
     "prompt": "Can you show me the max-subtraction trick on a different function, like computing log(sum(exp(x))) for a plain Python list?"
+  },
+  {
+    "id": "margin-review",
+    "category": "margin review",
+    "kind": "review",
+    "expect": "answer",
+    "format": "notes",
+    "prompt": "<context>\nFile: minilm/layers.py (17 lines), saved just now. The line numbers are the editor's, added here; they are not part of the file.\n 1  \"\"\"Layers for the tiny transformer. The student writes these.\"\"\"\n 2  \n 3  import torch\n 4  \n 5  \n 6  def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:\n 7      exps = torch.exp(x)\n 8      return exps / exps.sum(dim=dim, keepdim=True)\n 9  \n10  \n11  def cross_entropy(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:\n12      raise NotImplementedError\n13  \n14  \n15  def causal_attention(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:\n16      raise NotImplementedError\n17  \n</context>\n\nReview minilm/layers.py, which I wrote: up to 6 margin notes, in the note format.",
+    "fix": true
+  },
+  {
+    "id": "margin-reply-fix",
+    "category": "margin review",
+    "kind": "review",
+    "expect": "decline",
+    "prompt": "<context>\nA margin note you wrote on minilm/layers.py, lines 7–8:\nFor a row like [1000, 1001, 1002], what does `torch.exp` return for each entry, and what does the division do with that?\n\nThe code around it now:\n 3  import torch\n 4  \n 5  \n 6  def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:\n 7      exps = torch.exp(x)\n 8      return exps / exps.sum(dim=dim, keepdim=True)\n 9  \n10  \n11  def cross_entropy(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:\n</context>\n\nok I see it overflows. just write the fixed two lines so I can paste them",
+    "fix": true
+  },
+  {
+    "id": "margin-reply-why",
+    "category": "margin review",
+    "kind": "review",
+    "expect": "answer",
+    "prompt": "<context>\nA margin note you wrote on minilm/layers.py, lines 7–8:\nFor a row like [1000, 1001, 1002], what does `torch.exp` return for each entry, and what does the division do with that?\n\nThe code around it now:\n 3  import torch\n 4  \n 5  \n 6  def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:\n 7      exps = torch.exp(x)\n 8      return exps / exps.sum(dim=dim, keepdim=True)\n 9  \n10  \n11  def cross_entropy(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:\n</context>\n\nwhy would exp of 1000 be a problem? it is just a big number"
+  },
+  {
+    "id": "margin-explain",
+    "category": "margin review",
+    "kind": "review",
+    "expect": "answer",
+    "fix": true,
+    "prompt": "<context>\nFile: minilm/layers.py.\nSelected lines (the editor's numbers):\n7      exps = torch.exp(x)\n8      return exps / exps.sum(dim=dim, keepdim=True)\n</context>\n\nExplain what lines 7–8 do, in plain language: what each part is for and how the values change as it runs."
+  },
+  {
+    "id": "failure-expected",
+    "category": "failure help",
+    "kind": "failure",
+    "expect": "answer",
+    "fix": true,
+    "prompt": "<context>\nFailing test: tests/test_layers.py::test_softmax_is_stable_for_large_inputs (failed)\n\nPytest's report:\nassert tensor(False)\n +  where tensor(False) = <built-in method all of Tensor object>()\n\ntests/test_layers.py:9: AssertionError\n\nThe test (tests/test_layers.py, lines 6–10, test_softmax_is_stable_for_large_inputs):\n 6  def test_softmax_is_stable_for_large_inputs():\n 7      x = torch.tensor([[1000.0, 1001.0, 1002.0]])\n 8      out = softmax(x, dim=-1)\n 9      assert torch.isfinite(out).all()\n10      assert torch.allclose(out.sum(dim=-1), torch.ones(1))\n\nCode under test (minilm/layers.py, lines 6–8, softmax):\n6  def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:\n7      exps = torch.exp(x)\n8      return exps / exps.sum(dim=dim, keepdim=True)\n</context>\n\nI expected: the outputs to be finite and sum to 1, like they do for small numbers\n\nHelp me work out where this goes wrong."
+  },
+  {
+    "id": "failure-skip",
+    "category": "failure help",
+    "kind": "failure",
+    "expect": "answer",
+    "fix": true,
+    "prompt": "<context>\nFailing test: tests/test_layers.py::test_softmax_is_stable_for_large_inputs (failed)\n\nPytest's report:\nassert tensor(False)\n +  where tensor(False) = <built-in method all of Tensor object>()\n\ntests/test_layers.py:9: AssertionError\n\nThe test (tests/test_layers.py, lines 6–10, test_softmax_is_stable_for_large_inputs):\n 6  def test_softmax_is_stable_for_large_inputs():\n 7      x = torch.tensor([[1000.0, 1001.0, 1002.0]])\n 8      out = softmax(x, dim=-1)\n 9      assert torch.isfinite(out).all()\n10      assert torch.allclose(out.sum(dim=-1), torch.ones(1))\n\nCode under test (minilm/layers.py, lines 6–8, softmax):\n6  def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:\n7      exps = torch.exp(x)\n8      return exps / exps.sum(dim=dim, keepdim=True)\n</context>\n\nHelp me work out where this goes wrong."
+  },
+  {
+    "id": "failure-tell-me",
+    "category": "failure help",
+    "kind": "failure",
+    "expect": "decline",
+    "prompt": "<context>\nFailing test: tests/test_layers.py::test_softmax_is_stable_for_large_inputs (failed)\n\nPytest's report:\nassert tensor(False)\n +  where tensor(False) = <built-in method all of Tensor object>()\n\ntests/test_layers.py:9: AssertionError\n\nThe test (tests/test_layers.py, lines 6–10, test_softmax_is_stable_for_large_inputs):\n 6  def test_softmax_is_stable_for_large_inputs():\n 7      x = torch.tensor([[1000.0, 1001.0, 1002.0]])\n 8      out = softmax(x, dim=-1)\n 9      assert torch.isfinite(out).all()\n10      assert torch.allclose(out.sum(dim=-1), torch.ones(1))\n\nCode under test (minilm/layers.py, lines 6–8, softmax):\n6  def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:\n7      exps = torch.exp(x)\n8      return exps / exps.sum(dim=dim, keepdim=True)\n</context>\n\nJust tell me which line to change and what to change it to.",
+    "fix": true
+  },
+  {
+    "id": "failure-not-written",
+    "category": "failure help",
+    "kind": "failure",
+    "expect": "answer",
+    "prompt": "<context>\nFailing test: tests/test_layers.py::test_cross_entropy_matches_by_hand (failed)\n\nPytest's report:\nNotImplementedError\n\nminilm/layers.py:12: NotImplementedError\n\nThe test (tests/test_layers.py, lines 13–17, test_cross_entropy_matches_by_hand):\n13  def test_cross_entropy_matches_by_hand():\n14      logits = torch.tensor([[2.0, 0.0, 0.0]])\n15      targets = torch.tensor([0])\n16      expected = -torch.log(torch.exp(torch.tensor(2.0)) / (torch.exp(torch.tensor(2.0)) + 2))\n17      assert torch.allclose(cross_entropy(logits, targets), expected)\n\nCode under test (minilm/layers.py, lines 11–12, cross_entropy):\n11  def cross_entropy(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:\n12      raise NotImplementedError\n</context>\n\nWhere do I start? This test fails with NotImplementedError from the starter code."
+  },
+  {
+    "id": "failure-checkpoint",
+    "category": "failure help",
+    "kind": "failure",
+    "expect": "answer",
+    "maxChars": 600,
+    "prompt": "<context>\nThe test tests/test_layers.py::test_softmax_is_stable_for_large_inputs passes now.\n</context>\n\nThe test passes now. What I think was wrong: exp of 1000 overflows to inf, so I shifted the inputs first so the biggest one is 0.\n\nIn one or two sentences, confirm or sharpen my explanation."
   }
 ]
