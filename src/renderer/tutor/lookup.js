@@ -5,6 +5,7 @@
 // their questions and answers are kept in this folder (one thread a day, `lookup-YYYY-MM-DD`).
 
 import { h } from '../dom.js';
+import { closeOnEscape } from '../shell/dismiss.js';
 import { state } from '../state.js';
 import { prepareTutor, tutorRequest } from './engine.js';
 import { failureView, needsSetup } from './errors.js';
@@ -47,11 +48,13 @@ export function openLookup() {
 
 export function closeLookup() {
   if (lookupBar.hidden) return;
+  // Focus goes back to where it came from, unless the student has already moved it elsewhere.
+  const inside = lookupBar.contains(document.activeElement);
   stop();
   lookupBar.hidden = true;
   answer.hidden = true;
   answer.replaceChildren();
-  returnFocus?.focus?.();
+  if (inside) returnFocus?.focus?.();
 }
 
 export const LOOKUP_PREFIX = 'lookup-';
@@ -101,13 +104,7 @@ export function setupLookup() {
     e.preventDefault();
     if (field.value.trim()) look(field.value.trim());
   };
-  lookupBar.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      closeLookup();
-    }
-  });
+  closeOnEscape(() => !lookupBar.hidden, closeLookup);
   // A click anywhere else puts the bar away.
   document.addEventListener('mousedown', (e) => !lookupBar.hidden && !lookupBar.contains(e.target) && closeLookup());
 }

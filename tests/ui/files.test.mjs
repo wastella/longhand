@@ -265,6 +265,17 @@ uiTest('the menu opens from the keyboard and is driven by arrows', async (page) 
   assert.equal(await page.evaluate(() => document.activeElement.id), 'tree');
 });
 
+uiTest('Escape closes the menu even when the focus has left it', async (page) => {
+  await page.focus('#tree');
+  await page.keyboard.down('Shift');
+  await page.keyboard.press('F10');
+  await page.keyboard.up('Shift');
+  await page.waitForSelector('.ctx-menu');
+  await page.evaluate(() => document.querySelector('.ctx-menu').blur());
+  await page.keyboard.press('Escape');
+  assert.equal(await count(page, '.ctx-menu'), 0);
+});
+
 // ---- quick open ----
 
 uiTest(
