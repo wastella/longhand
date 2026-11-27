@@ -29,11 +29,19 @@ pub struct Outcome<'a> {
     pub errors: usize,
     /// The run asked for particular tests rather than all of them.
     pub targeted: bool,
+    /// pytest did not reach its own orderly end, or stopped the run partway.
+    pub stopped_early: bool,
+    /// Why, in pytest's words, when pytest stopped the run itself.
+    pub interrupted: Option<&'a str>,
+    /// How the process ended: "signal 11 (SIGSEGV, …)", "exit code 0".
+    pub exit: String,
 }
 
 pub fn diagnose(run: &Outcome) -> Option<Problem> {
-    let said = |text: &str| run.output.contains(text);
-    if run.code == Some(127) || said("command not found: uv") || said("uv: command not found") {
+    // What the output says is only taken as the environment's word before pytest started:
+    // after that, it may be a test printing the same words.
+    let said = |text: &str| !run.started && run.output.contains(text);
+    if (!run.started && run.code == Some(127)) || said("command not found: uv") || said("uv: command not found") {
         return if run.uses_uv {
             problem(
                 "no-uv",
@@ -83,7 +91,7 @@ pub fn diagnose(run: &Outcome) -> Option<Problem> {
             return problem("conftest", "conftest.py could not be imported", &detail, None);
         }
     }
-    if run.code == Some(4) {
+    if run.code == Some(4) && run.collected.is_none() {
         let reason = run.output.lines().find_map(|l| l.strip_prefix("ERROR: ")).unwrap_or("pytest did not accept the command");
         let detail = format!("{reason}. If a test or file was renamed or deleted, run all the tests to refresh the list.");
         return problem("usage", "pytest could not start this run", &detail, None);
@@ -121,7 +129,28 @@ pub fn diagnose(run: &Outcome) -> Option<Problem> {
             None,
         );
     }
+    if run.stopped_early {
+        let why = match run.interrupted {
+            Some(message) if !message.is_empty() => format!("pytest stopped the run ({message})"),
+            _ => format!("The Python process running the tests ended before pytest finished ({})", run.exit),
+        };
+        let detail = format!(
+            "{why}. A test that was running when it stopped is shown as an error. Tests it did not reach keep their earlier results, marked out of date. A crash, os._exit() or sys.exit() in the code under test can cause this; the output may say more."
+        );
+        return problem("stopped-early", "pytest stopped before the run finished", &detail, None);
+    }
     None
+}
+
+/// For a run of particular tests whose files are all gone.
+pub fn gone() -> Problem {
+    Problem {
+        kind: "no-tests",
+        title: "Those tests no longer exist".into(),
+        detail: "Their files were renamed or deleted, so their results are gone too. Run all the tests to see the ones there are now."
+            .into(),
+        fix: None,
+    }
 }
 
 /// The last `E` line of a traceback: the exception itself.
@@ -162,7 +191,35 @@ mod tests {
     use super::*;
 
     fn outcome(output: &str, code: i32, started: bool) -> Outcome<'_> {
-        Outcome { uses_uv: true, code: Some(code), output, started, collected: None, errors: 0, targeted: false }
+        Outcome {
+            uses_uv: true,
+            code: Some(code),
+            output,
+            started,
+            collected: None,
+            errors: 0,
+            targeted: false,
+            stopped_early: false,
+            interrupted: None,
+            exit: format!("exit code {code}"),
+        }
+    }
+
+    #[test]
+    fn a_tests_own_output_is_not_the_environment() {
+        let printed = "zsh:1: command not found: uv\nNo module named pytest\nImportError while loading conftest";
+        assert_eq!(kind(&Outcome { collected: Some(2), ..outcome(printed, 1, true) }), None);
+        assert_eq!(kind(&Outcome { collected: Some(2), ..outcome("", 127, true) }), None, "a test may exit with 127");
+    }
+
+    #[test]
+    fn runs_that_stop_partway() {
+        let crashed = Outcome { collected: Some(3), stopped_early: true, exit: "signal 11 (SIGSEGV)".into(), ..outcome("", 139, true) };
+        let found = diagnose(&crashed).unwrap();
+        assert_eq!(found.kind, "stopped-early");
+        assert!(found.detail.contains("signal 11"), "{}", found.detail);
+        let exited = Outcome { interrupted: Some("Exit: bye"), ..crashed };
+        assert!(diagnose(&exited).unwrap().detail.starts_with("pytest stopped the run (Exit: bye)"));
     }
 
     fn kind(run: &Outcome) -> Option<&'static str> {

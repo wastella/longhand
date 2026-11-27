@@ -31,7 +31,8 @@ function tally(tests) {
     c.xfailed && `${c.xfailed} xfailed`,
     c.xpassed && `${c.xpassed} xpassed`,
   ].filter(Boolean);
-  return parts.flatMap((part, i) => (i ? [' · ', part] : [part]));
+  // Each count stays whole when the tally wraps.
+  return parts.map((part) => h('span', { class: 'tests-tally-part' }, part)).flatMap((part, i) => (i ? [' · ', part] : [part]));
 }
 
 /** The top line: progress while running, the tally after. */
@@ -46,6 +47,11 @@ export function summary({ run, results, tests, errors, onShowOutput, onRunStale,
     lines.push(h('div', { class: 'tests-summary-now dim', title: run.current || '' }, now));
     if (run.total)
       lines.push(h('div', { class: 'tests-progress' }, h('div', { class: 'tests-progress-bar', style: `width: ${Math.min(100, (100 * done) / run.total)}%` })));
+    // Some runs never say how many tests there are (pytest-xdist, for one): progress without an end.
+    else if (run.started && run.total == null)
+      lines.push(
+        h('div', { class: 'tests-progress indeterminate', role: 'progressbar', 'aria-label': 'Running tests' }, h('div', { class: 'tests-progress-bar' })),
+      );
   } else {
     const shown = tally([...tests, ...errors]);
     const took = results.summary.match(/ in ([\d.]+)s$/);
@@ -58,6 +64,7 @@ export function summary({ run, results, tests, errors, onShowOutput, onRunStale,
           'span',
           { class: 'tests-tally', title: results.summary },
           results.cancelled && h('span', { class: 'dim' }, 'Stopped · '),
+          !results.cancelled && results.problem?.kind === 'stopped-early' && h('span', { class: 'dim' }, 'Incomplete · '),
           shown.length ? shown : 'No results',
           time && h('span', { class: 'dim' }, ` in ${time}`),
         ),
@@ -77,6 +84,17 @@ export function summary({ run, results, tests, errors, onShowOutput, onRunStale,
     const failedImports = errors.filter((e) => e.phase === 'collect').length;
     if (failedImports && !tests.length)
       lines.push(h('div', { class: 'tests-summary-note' }, `${plural(failedImports, 'test file')} could not be imported, so no tests ran.`));
+    if (results.unreached.size) {
+      const n = results.unreached.size;
+      lines.push(
+        h(
+          'div',
+          { class: 'tests-summary-stale' },
+          h('span', {}, `${plural(n, 'result')} ${n === 1 ? 'is' : 'are'} from an earlier run: this one stopped before ${n === 1 ? 'it' : 'them'}.`),
+          !results.stale.size && h('button', { type: 'button', class: 'ghost', id: 'tests-run-stale', onclick: onRunStale }, 'Run again'),
+        ),
+      );
+    }
     if (results.stale.size) {
       const file = results.staleFile?.split('/').pop();
       lines.push(
@@ -175,6 +193,18 @@ function groupRow(item, open, depth, on, targets) {
   );
 }
 
+/** A test's name; in a class, the class gives way first when space is short. */
+function testName(test) {
+  const { classes, func, params } = parseId(test.id);
+  if (!classes.length || test.phase === 'collect') return h('span', { class: 'name' }, shortName(test));
+  return h(
+    'span',
+    { class: 'name tests-name-split' },
+    h('span', { class: 'tests-name-class' }, `${classes.join(' › ')} › `),
+    h('span', { class: 'tests-name-func' }, func + params),
+  );
+}
+
 function testRow(test, depth, { staleIds, on, label }) {
   const running = test.status === 'RUNNING';
   const took = duration(test.duration);
@@ -191,7 +221,7 @@ function testRow(test, depth, { staleIds, on, label }) {
       onclick: () => !running && on.select(test),
     },
     h('span', { class: 'dot' }),
-    h('span', { class: 'name' }, label || shortName(test)),
+    label ? h('span', { class: 'name' }, label) : testName(test),
     running ? h('span', { class: 'tests-time dim' }, 'running') : took && h('span', { class: `tests-time${slow(test) ? ' slow' : ''}` }, took),
   );
   // "Ask tutor" stays the first button on a failing row; other areas and the README screenshot rely on it.

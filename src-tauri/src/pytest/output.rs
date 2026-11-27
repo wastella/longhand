@@ -44,6 +44,7 @@ fn incomplete_tail(bytes: &[u8]) -> usize {
 }
 
 /// The last `limit` bytes of a long text, so a run that prints without end cannot fill memory.
+#[derive(Clone)]
 pub struct Tail {
     text: String,
     limit: usize,
@@ -76,16 +77,73 @@ impl Tail {
     }
 }
 
+/// Output on its way to the interface while a run goes, and the end of it kept for afterwards.
+/// The reader thread adds to it; the run's loop sends what is new a few times a second, so a
+/// test printing without end cannot flood the interface.
+pub struct Captured {
+    tail: Tail,
+    fresh: String,
+    skipped: usize,
+    batch: usize,
+}
+
+impl Captured {
+    pub fn new(keep: usize, batch: usize) -> Self {
+        Captured { tail: Tail::new(keep), fresh: String::new(), skipped: 0, batch }
+    }
+
+    pub fn push(&mut self, text: &str) {
+        self.tail.push(text);
+        self.fresh.push_str(text);
+        if self.fresh.len() > self.batch * 2 {
+            let mut cut = self.fresh.len() - self.batch;
+            while !self.fresh.is_char_boundary(cut) {
+                cut += 1;
+            }
+            self.fresh.drain(..cut);
+            self.skipped += cut;
+        }
+    }
+
+    /// What arrived since the last call, at most about one batch of it.
+    pub fn take_fresh(&mut self) -> String {
+        let text = std::mem::take(&mut self.fresh);
+        match std::mem::take(&mut self.skipped) {
+            0 => text,
+            skipped => format!("\n… {skipped} characters of output not shown here; Output has the end of it after the run …\n{text}"),
+        }
+    }
+
+    pub fn output(&self) -> String {
+        self.tail.clone().into_string()
+    }
+}
+
+/// The most read from the record file at once, and the longest record kept. The reporter caps
+/// what it writes well below this; the limits keep a broken one from filling memory.
+const READ_LIMIT: u64 = 8 << 20;
+const LINE_LIMIT: usize = 32 << 20;
+
 /// Reads complete lines from a file another process is still writing.
 pub struct LineReader {
     path: PathBuf,
     file: Option<File>,
     partial: Vec<u8>,
+    /// The current line grew past the limit; it is dropped up to its end.
+    skipping: bool,
+    /// The last read stopped at the limit, so there may be more to read straight away.
+    pub more: bool,
+    read_limit: u64,
+    line_limit: usize,
 }
 
 impl LineReader {
     pub fn new(path: PathBuf) -> Self {
-        LineReader { path, file: None, partial: vec![] }
+        Self::with_limits(path, READ_LIMIT, LINE_LIMIT)
+    }
+
+    fn with_limits(path: PathBuf, read_limit: u64, line_limit: usize) -> Self {
+        LineReader { path, file: None, partial: vec![], skipping: false, more: false, read_limit, line_limit }
     }
 
     /// The lines finished since the last call. The file may not exist yet.
@@ -94,10 +152,37 @@ impl LineReader {
             self.file = File::open(&self.path).ok();
         }
         let Some(file) = &mut self.file else { return vec![] };
-        let _ = file.read_to_end(&mut self.partial);
-        let Some(end) = self.partial.iter().rposition(|&b| b == b'\n') else { return vec![] };
-        let complete: Vec<u8> = self.partial.drain(..=end).collect();
-        String::from_utf8_lossy(&complete).lines().map(str::to_string).collect()
+        let mut chunk = vec![];
+        let _ = Read::take(&mut *file, self.read_limit).read_to_end(&mut chunk);
+        self.more = chunk.len() as u64 == self.read_limit;
+        let mut lines = vec![];
+        let mut rest = &chunk[..];
+        while let Some(end) = rest.iter().position(|&b| b == b'\n') {
+            if !self.skipping {
+                self.partial.extend_from_slice(&rest[..end]);
+                lines.push(String::from_utf8_lossy(&self.partial).into_owned());
+            }
+            self.partial.clear();
+            self.skipping = false;
+            rest = &rest[end + 1..];
+        }
+        if !self.skipping {
+            self.partial.extend_from_slice(rest);
+            if self.partial.len() > self.line_limit {
+                self.partial = vec![];
+                self.skipping = true;
+            }
+        }
+        lines
+    }
+
+    /// Everything left to read now.
+    pub fn read_all(&mut self) -> Vec<String> {
+        let mut lines = self.read_lines();
+        while self.more {
+            lines.extend(self.read_lines());
+        }
+        lines
     }
 }
 
@@ -159,5 +244,30 @@ mod tests {
         writeln!(file, "o").unwrap();
         assert_eq!(reader.read_lines(), ["two"]);
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn reads_in_bounded_pieces_and_drops_overlong_lines() {
+        use std::io::Write;
+        let path = std::env::temp_dir().join(format!("longhand-bounded-{}.jsonl", std::process::id()));
+        let mut file = File::create(&path).unwrap();
+        writeln!(file, "short\n{}\nafter", "x".repeat(100)).unwrap();
+        let mut reader = LineReader::with_limits(path.clone(), 16, 40);
+        assert_eq!(reader.read_lines(), ["short"]);
+        assert!(reader.more);
+        assert_eq!(reader.read_all(), ["after"], "the 100-byte line is dropped, the next is kept");
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn captured_output_is_sent_in_bounded_batches() {
+        let mut captured = Captured::new(1000, 10);
+        captured.push("hello ");
+        assert_eq!(captured.take_fresh(), "hello ");
+        assert_eq!(captured.take_fresh(), "");
+        captured.push(&"y".repeat(50));
+        let sent = captured.take_fresh();
+        assert!(sent.contains("40 characters of output not shown") && sent.ends_with(&"y".repeat(10)), "{sent}");
+        assert_eq!(captured.output(), format!("hello {}", "y".repeat(50)));
     }
 }

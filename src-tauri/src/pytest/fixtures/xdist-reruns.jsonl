@@ -1,0 +1,42 @@
+{"event": "start"}
+{"event": "collected", "count": 7, "ids": ["tests/test_flaky.py::test_flaky_then_passes", "tests/test_flaky.py::test_always_fails", "tests/test_flaky.py::test_subtests", "tests/test_flaky.py::test_many[0]", "tests/test_flaky.py::test_many[1]", "tests/test_flaky.py::test_many[2]", "tests/test_flaky.py::test_many[3]"]}
+{"event": "begin", "nodeid": "tests/test_flaky.py::test_subtests"}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_subtests", "when": "setup", "outcome": "passed", "duration": 0.0001294999965466559, "path": "tests/test_flaky.py", "lineno": 19}
+{"event": "begin", "nodeid": "tests/test_flaky.py::test_flaky_then_passes"}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_subtests", "when": "call", "outcome": "passed", "duration": 0.00029612501384690404, "path": "tests/test_flaky.py", "lineno": 19, "subtest": "i='0'"}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_subtests", "when": "call", "outcome": "failed", "duration": 0.00028387497877702117, "path": "tests/test_flaky.py", "lineno": 19, "subtest": "i='1'", "longrepr": "[gw1] darwin -- Python 3.13.11 /work/course/.venv/bin/python\ntests/test_flaky.py:23: in test_subtests\n    assert i != 1\nE   assert 1 != 1", "frames": [{"path": "tests/test_flaky.py", "lineno": 23, "where": "in test_subtests", "lines": ["    assert i != 1", "E   assert 1 != 1"]}], "crash": {"path": "/work/course/tests/test_flaky.py", "lineno": 23, "message": "assert 1 != 1"}}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_flaky_then_passes", "when": "setup", "outcome": "passed", "duration": 7.241696584969759e-05, "path": "tests/test_flaky.py", "lineno": 7}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_subtests", "when": "call", "outcome": "passed", "duration": 0.00021904101595282555, "path": "tests/test_flaky.py", "lineno": 19, "subtest": "i='2'"}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_subtests", "when": "call", "outcome": "failed", "duration": 0.008427291992120445, "path": "tests/test_flaky.py", "lineno": 19, "longrepr": "[gw1] darwin -- Python 3.13.11 /work/course/.venv/bin/python\ncontains 1 failed subtest", "frames": []}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_flaky_then_passes", "when": "call", "outcome": "rerun", "duration": 0.0003035420086234808, "path": "tests/test_flaky.py", "lineno": 7}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_flaky_then_passes", "when": "teardown", "outcome": "passed", "duration": 4.650000482797623e-05, "path": "tests/test_flaky.py", "lineno": 7, "sections": []}
+{"event": "begin", "nodeid": "tests/test_flaky.py::test_flaky_then_passes"}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_subtests", "when": "teardown", "outcome": "passed", "duration": 4.412501584738493e-05, "path": "tests/test_flaky.py", "lineno": 19, "sections": []}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_flaky_then_passes", "when": "setup", "outcome": "passed", "duration": 3.20419785566628e-05, "path": "tests/test_flaky.py", "lineno": 7}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_flaky_then_passes", "when": "call", "outcome": "passed", "duration": 0.00019329204224050045, "path": "tests/test_flaky.py", "lineno": 7}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_flaky_then_passes", "when": "teardown", "outcome": "passed", "duration": 3.0791969038546085e-05, "path": "tests/test_flaky.py", "lineno": 7, "sections": []}
+{"event": "begin", "nodeid": "tests/test_flaky.py::test_many[0]"}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_many[0]", "when": "setup", "outcome": "passed", "duration": 7.90830235928297e-05, "path": "tests/test_flaky.py", "lineno": 25}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_many[0]", "when": "call", "outcome": "passed", "duration": 3.120803739875555e-05, "path": "tests/test_flaky.py", "lineno": 25}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_many[0]", "when": "teardown", "outcome": "passed", "duration": 3.141601337119937e-05, "path": "tests/test_flaky.py", "lineno": 25, "sections": []}
+{"event": "begin", "nodeid": "tests/test_flaky.py::test_always_fails"}
+{"event": "begin", "nodeid": "tests/test_flaky.py::test_many[1]"}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_many[1]", "when": "setup", "outcome": "passed", "duration": 6.125000072643161e-05, "path": "tests/test_flaky.py", "lineno": 25}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_many[1]", "when": "call", "outcome": "passed", "duration": 2.6458001229912043e-05, "path": "tests/test_flaky.py", "lineno": 25}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_many[1]", "when": "teardown", "outcome": "passed", "duration": 2.7875008527189493e-05, "path": "tests/test_flaky.py", "lineno": 25, "sections": []}
+{"event": "begin", "nodeid": "tests/test_flaky.py::test_many[3]"}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_many[3]", "when": "setup", "outcome": "passed", "duration": 7.112504681572318e-05, "path": "tests/test_flaky.py", "lineno": 25}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_many[3]", "when": "call", "outcome": "passed", "duration": 3.062497125938535e-05, "path": "tests/test_flaky.py", "lineno": 25}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_many[3]", "when": "teardown", "outcome": "passed", "duration": 3.320799442008138e-05, "path": "tests/test_flaky.py", "lineno": 25, "sections": []}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_always_fails", "when": "setup", "outcome": "passed", "duration": 3.633397864177823e-05, "path": "tests/test_flaky.py", "lineno": 14}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_always_fails", "when": "call", "outcome": "rerun", "duration": 0.00010633398778736591, "path": "tests/test_flaky.py", "lineno": 14}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_always_fails", "when": "teardown", "outcome": "passed", "duration": 3.408297197893262e-05, "path": "tests/test_flaky.py", "lineno": 14, "sections": []}
+{"event": "begin", "nodeid": "tests/test_flaky.py::test_always_fails"}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_always_fails", "when": "setup", "outcome": "passed", "duration": 2.7917034458369017e-05, "path": "tests/test_flaky.py", "lineno": 14}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_always_fails", "when": "call", "outcome": "failed", "duration": 6.212497828528285e-05, "path": "tests/test_flaky.py", "lineno": 14, "longrepr": "[gw0] darwin -- Python 3.13.11 /work/course/.venv/bin/python\ntests/test_flaky.py:17: in test_always_fails\n    assert 1 == 2\nE   assert 1 == 2", "frames": [{"path": "tests/test_flaky.py", "lineno": 17, "where": "in test_always_fails", "lines": ["    assert 1 == 2", "E   assert 1 == 2"]}], "crash": {"path": "/work/course/tests/test_flaky.py", "lineno": 17, "message": "assert 1 == 2"}}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_always_fails", "when": "teardown", "outcome": "passed", "duration": 2.7959002181887627e-05, "path": "tests/test_flaky.py", "lineno": 14, "sections": []}
+{"event": "begin", "nodeid": "tests/test_flaky.py::test_many[2]"}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_many[2]", "when": "setup", "outcome": "passed", "duration": 0.00012199999764561653, "path": "tests/test_flaky.py", "lineno": 25}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_many[2]", "when": "call", "outcome": "passed", "duration": 3.516697324812412e-05, "path": "tests/test_flaky.py", "lineno": 25}
+{"event": "report", "nodeid": "tests/test_flaky.py::test_many[2]", "when": "teardown", "outcome": "passed", "duration": 3.691698657348752e-05, "path": "tests/test_flaky.py", "lineno": 25, "sections": []}
+{"event": "finish", "exitstatus": 1}

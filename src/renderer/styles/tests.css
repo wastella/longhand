@@ -57,11 +57,17 @@
   font-size: var(--text-xs);
   flex: none;
 }
+/* The tally wraps rather than cutting off a count. */
 .tests-tally {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+}
+.tests-tally-part {
+  white-space: nowrap;
+}
+.tests-summary-line:has(.tests-tally) {
+  align-items: flex-start;
 }
 .tests-summary-line button.active {
   color: var(--color-text);
@@ -91,6 +97,29 @@
   height: 100%;
   background: var(--color-text-muted);
   border-radius: var(--radius-xs);
+}
+/* No count to measure against: a short bar that keeps moving. */
+.tests-progress.indeterminate {
+  overflow: hidden;
+}
+.tests-progress.indeterminate .tests-progress-bar {
+  width: 30%;
+  animation: tests-progress-slide 1.4s ease-in-out infinite;
+}
+@keyframes tests-progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tests-progress.indeterminate .tests-progress-bar {
+    width: 100%;
+    opacity: 0.4;
+    animation: none;
+  }
 }
 .tests-summary-stale {
   display: flex;
@@ -198,6 +227,25 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* A test in a class: the class name shrinks first, so the test's own name stays readable. */
+.tests-name-split {
+  display: flex;
+}
+.tests-name-class,
+.tests-name-func {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tests-name-class {
+  flex: 0 1 auto;
+  color: var(--color-text-secondary);
+}
+.tests-name-func {
+  flex: none;
+  max-width: 100%;
+}
 .tests-count,
 .tests-time {
   flex: none;
@@ -213,7 +261,8 @@
   padding: 1px 7px;
   flex: none;
 }
-/* Run sits out of sight until the row is pointed at or chosen. */
+/* Run sits out of sight until the row is pointed at or chosen. It keeps its room, so the
+   buttons beside it do not move under the pointer. */
 .tests-row .tests-row-run {
   visibility: hidden;
 }

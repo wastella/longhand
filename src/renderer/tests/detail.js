@@ -21,6 +21,14 @@ const PHASE = {
   setup: 'It failed while setting up, in a fixture, before the test itself ran.',
   teardown: 'The test ran, then failed while cleaning up, in a fixture.',
   collect: 'pytest could not import this file, so none of its tests ran.',
+  ended: 'The run ended before this test finished, so it has no result of its own.',
+};
+
+/** Why a result shown may no longer hold. */
+const STALE = {
+  saved: 'This result is from before your last save.',
+  unreached: 'This result is from an earlier run: the last run stopped before reaching this test.',
+  rerunning: 'This result is from the last run; this test has not run again yet.',
 };
 
 /** A `path:line` that opens the file at that line. */
@@ -138,7 +146,8 @@ function outcome(test) {
 }
 
 /**
- * The detail of one result. `stale` adds a note that it ran before the latest save; `panel` is
+ * The detail of one result. `stale` ('saved', 'unreached', 'rerunning' or '') adds a note on why
+ * it may no longer hold; `panel` is
  * a node another area attached to this failure (see failure-panels.js); `onRun` reruns it.
  */
 export function testDetail(test, { stale, panel, onRun }) {
@@ -155,7 +164,7 @@ export function testDetail(test, { stale, panel, onRun }) {
     h('button', { type: 'button', class: 'ghost', title: 'Run this test again', onclick: onRun }, test.phase === 'collect' ? 'Run file' : 'Run'),
   );
   const body = [head];
-  if (stale) body.push(h('p', { class: 'tests-stale-note' }, 'This result is from before your last save.'));
+  if (STALE[stale]) body.push(h('p', { class: 'tests-stale-note' }, STALE[stale]));
   if (failed(test)) {
     if (PHASE[test.phase]) body.push(h('p', { class: 'tests-phase' }, PHASE[test.phase]));
     if (test.message) body.push(clipped(test.message, LINES.message, { className: 'tests-message' }));
@@ -176,6 +185,9 @@ export function testDetail(test, { stale, panel, onRun }) {
   return body;
 }
 
+const COMMAND_NOTE =
+  'The same run as a command. Longhand puts its reporter (longhand_pytest) on PYTHONPATH, and passes single tests to it rather than to pytest, so a renamed test does not stop the run.';
+
 /** pytest's own output for the last run, as it would look in a terminal. */
 export function rawOutput(output, command) {
   return [
@@ -183,7 +195,7 @@ export function rawOutput(output, command) {
       'div',
       { class: 'tests-detail-head' },
       h('span', { class: 'tests-detail-name tests-detail-title' }, 'Output'),
-      command && h('code', { class: 'dim tests-command' }, `$ ${command}`),
+      command && h('code', { class: 'dim tests-command', title: COMMAND_NOTE }, `$ ${command}`),
     ),
     output ? clipped(output.replace(/\n$/, ''), LINES.output, { className: 'tests-raw', fromEnd: true }) : h('p', { class: 'empty-state' }, 'No output yet.'),
   ];

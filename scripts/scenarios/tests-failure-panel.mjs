@@ -12,10 +12,12 @@ import '../src/renderer/main.js';
 import { latestResults, registerFailurePanel } from '../src/renderer/tests/index.js';
 import { on } from '../src/renderer/state.js';
 
-const log = (window.__panels = { made: [], disposed: [], selected: [] });
+const log = (window.__panels = { made: [], disposed: [], updated: [], selected: [] });
 window.__latestResults = latestResults;
+window.__registerFailurePanel = registerFailurePanel;
+window.__on = on;
 on('tests:selected', (test) => log.selected.push(test ? test.id : null));
-registerFailurePanel(
+window.__unregisterPanel = registerFailurePanel(
   (test) => {
     log.made.push(test.id);
     const node = document.createElement('div');
@@ -25,6 +27,7 @@ registerFailurePanel(
     return node;
   },
   (test, node) => log.disposed.push([test.id, node.className]),
+  (test, node) => log.updated.push([test.id, test.status, node.className]),
 );
 `;
 

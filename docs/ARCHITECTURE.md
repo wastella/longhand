@@ -201,43 +201,81 @@ under the mock backend.
 ## The test panel
 
 `pytest.rs` runs `uv run pytest` (when the folder has `pyproject.toml` or `uv.lock`) or
-`python3 -m pytest` in a login shell, in a process group of its own so Stop ends everything the
-run started (SIGTERM, then SIGKILL after two seconds). Before starting it checks that the folder
-holds Python at all.
+`python3 -m pytest` from the student's login shell, which hands the command to `/bin/sh` so it
+reads the same whatever that shell is. Every argument is single-quoted (zsh would otherwise read
+`test_a[1-2]` as a pattern). The run has a process group of its own so Stop ends everything it
+started (SIGTERM, then SIGKILL after two seconds); quitting the app waits until the group is
+gone. Before starting it checks that the folder holds Python at all. `--rootdir=.` keeps node
+ids relative to the open folder even when a `pytest.ini` sits in a folder above it.
 
 Results do not come from scraping pytest's terminal text. A small reporter plugin
-(`pytest/plugin.py`, loaded with `-p longhand_pytest` from a temporary directory on
-`PYTHONPATH`) writes one JSON record per test phase to a file, which `pytest/report.rs` reads
-while the run goes and turns into results: status, duration, the assertion with pytest's
-explanation, the traceback's frames (each marked as the student's own code or a library), and
-captured output. pytest's own output is still relayed untouched for the raw view. When a run
-produces no results, `pytest/problem.rs` says why in plain words (uv or pytest missing, nothing
-collected, conftest.py failing to import, …). The fixtures in `pytest/fixtures/` are recorded
-from real pytest runs.
+(`pytest/plugin.py`, loaded with `-p longhand_pytest`; its folder joins `PYTHONPATH` inside the
+command, after the shell profile, so a profile cannot drop it) writes one JSON record per test
+phase to a file, which `pytest/report.rs` reads while the run goes and turns into results:
+status, duration, the assertion with pytest's explanation, the traceback's frames (each marked as
+the student's own code or a library), and captured output (capped in the plugin, start and end
+kept). pytest's own output is relayed for the raw view a few times a second, in bounded batches.
+Single tests are not passed to pytest as arguments: pytest gets their files, and the plugin keeps
+just the tests asked for, so a renamed test is simply not found rather than failing the command.
+The command shown in the Output view is the equivalent one a student could type.
 
-Backend events: `tests:output` (raw text as it arrives), `tests:progress` (a list of
-`{ type: 'started' | 'collected' | 'running' | 'result' | 'collect-error', … }`) and
-`tests:done` (`{ command, targets, code, cancelled, problem, summary, total, duration, tests,
-errors, output }`). `tests_run({ targets })` takes node ids or paths (all tests when empty) and
-returns `{ command }`, or `{ problem }` when it will not start.
+Rules that keep a result from being wrong:
+
+- One result per node id. A failure is never undone by a later report (a passing subtest, the
+  test's own call after a failing subtest); a teardown error after a skip or pass is an error;
+  pytest-rerunfailures' failed attempts do not count, only the last; failures pytest counts
+  without reporting at the time (unittest's `subTest` in some versions) are applied late.
+- A run that ends without pytest's orderly finish (a crash, `os._exit`, a signal, `pytest.exit`,
+  Ctrl+C) gives the test that was running an error saying so, and the run a `stopped-early`
+  problem. It is not `complete`, and is never shown as passing.
+- After a run that was stopped or did not complete, earlier results for tests it did not reach
+  are kept, marked out of date (`unreached`). An earlier result is dropped only when a complete
+  run collected everything and did not collect that test (or, for an import error, when
+  collection finished without it).
+- With pytest-xdist the count comes from the workers; a run that never says how many tests
+  there are shows progress without an end.
+
+When a run goes wrong, `pytest/problem.rs` says why in plain words (uv or pytest missing,
+nothing collected, conftest.py failing to import, pytest stopping early, …). It reads pytest's
+output for this only before pytest started, so a test printing the same words is not taken for
+the environment. The fixtures in `pytest/fixtures/` are recorded from real pytest runs, including
+one with pytest-xdist and pytest-rerunfailures; other tests run real pytest when `python3` has it.
+
+Every backend event carries the run's id (`run`, which the interface passes to `tests_run`), and
+a run that is cancelled, replaced or left behind by a folder switch sends nothing more; the
+interface ends a cancelled run itself. Events: `tests:output` (`{ run, text }`),
+`tests:progress` (`{ run, updates }`, a list of
+`{ type: 'started' | 'collected' | 'running' | 'result' | 'collect-error', … }`; a `result` for a
+test that has one replaces it) and `tests:done` (`{ run, command, targets, code, signal,
+cancelled, complete, problem, summary, total, collected, duration, tests, errors, output }`).
+`tests_run({ targets, run })` takes node ids or paths (all tests when empty) and returns
+`{ run, command }`, or `{ run, problem }` when it will not start. Targets starting with `-` or
+`@` are refused.
 
 In the interface, `runner.js` keeps the current run and the latest results, merged across runs
-so running one file keeps the others' results; `model.js` reads node ids and groups results;
-`list.js` and `detail.js` draw the two sides. Saving a file (`editor:saved`) marks results that
-ran before it as possibly out of date.
+so running one file keeps the others' results; `model.js` reads node ids, merges and groups
+results; `list.js` and `detail.js` draw the two sides. Saving a file (`editor:saved`) marks
+results that ran before it as possibly out of date.
 
 What `tests/index.js` offers other areas:
 
-- `latestResults()` returns `{ running, tests, errors, problem, summary, cancelled, stale,
-counts }`. A test's `id` is its pytest node id (`tests/test_m.py::TestA::test_b[1]`), which
-  stays the same from run to run.
-- `tests:selected` is emitted with the result shown in the panel, or null.
-- `registerFailurePanel(render, dispose)` attaches something beneath a failing test's detail.
-  `render(test)` returns a node (or null) and is called the first time that failing test is
-  shown; the panel keeps that node for as long as the test keeps failing, across reruns, so a
-  conversation pinned to a failure survives the next run. `dispose(test, node)` is called when
-  the test passes, disappears from the results, or another folder is opened. It returns a
-  function that unregisters. Only one panel can be registered.
+- `latestResults()` returns `{ running, tests, errors, problem, summary, cancelled, complete,
+stale, unreached, counts }`. A test's `id` is its pytest node id
+  (`tests/test_m.py::TestA::test_b[1]`), which stays the same from run to run. `stale` lists
+  results from before a save, `unreached` results kept from an earlier run because the last one
+  stopped before them.
+- `tests:selected` is emitted with the result shown in the panel, or null; again when that
+  test gets a new result; and with null when another folder is opened.
+- `registerFailurePanel(render, dispose, update)` attaches something beneath a failing test's
+  detail. `render(test)` returns a node (or null) and is called the first time that failing test
+  is shown; the panel keeps that node for as long as the test keeps failing, across reruns, so a
+  conversation pinned to a failure survives the next run. `update(test, node)` is called when it
+  fails again differently (a new status, message or traceback). `dispose(test, node)` is called
+  when the test no longer fails, when a complete run shows it no longer exists, or when another
+  folder is opened; never for a test a stopped or crashed run did not reach. Whatever the three
+  throw is caught and logged, so the panel cannot break the test pane or stop `tests:finished`.
+  It returns a function that unregisters; calling it twice, or after another panel took over,
+  does nothing. Only one panel can be registered at a time.
 
 ## Per-folder data
 

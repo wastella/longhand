@@ -33,19 +33,51 @@ export function inScope(id, targets) {
   );
 }
 
-/** The results after a run of `targets` reported `fresh`: earlier results outside the run stay. */
-export function merge(previous, fresh, targets) {
+/**
+ * The results after a run of `targets` reported `fresh` (one result per id; a later one wins).
+ * Earlier results outside the run stay. An earlier result inside the run that has no new one
+ * is dropped only when it is `gone`; otherwise the run did not reach it (it was stopped, or
+ * crashed) and it stays, listed in `unreached`. Returns { tests, unreached: [ids] }.
+ */
+export function mergeRun(previous, fresh, targets, gone = () => false) {
   const byId = new Map(fresh.map((test) => [test.id, test]));
+  const unreached = [];
+  const seen = new Set();
   // Each test keeps its place, so a rerun does not shuffle the list; new ones join their file.
-  const merged = previous.flatMap((test) => (byId.has(test.id) ? [byId.get(test.id)] : inScope(test.id, targets) ? [] : [test]));
+  const merged = [];
+  for (const test of previous) {
+    if (seen.has(test.id)) continue;
+    seen.add(test.id);
+    if (byId.has(test.id)) merged.push(byId.get(test.id));
+    else if (!inScope(test.id, targets)) merged.push(test);
+    else if (!gone(test)) (merged.push(test), unreached.push(test.id));
+  }
   const placed = new Set(merged.map((test) => test.id));
-  for (const test of fresh) {
+  for (const test of byId.values()) {
     if (placed.has(test.id)) continue;
+    placed.add(test.id);
     const file = parseId(test.id).file;
     const last = merged.findLastIndex((other) => parseId(other.id).file === file);
     merged.splice(last < 0 ? merged.length : last + 1, 0, test);
   }
-  return merged;
+  return { tests: merged, unreached };
+}
+
+/** `mergeRun` for a view that does not need to know what was left unreached. */
+export const merge = (previous, fresh, targets, gone) => mergeRun(previous, fresh, targets, gone).tests;
+
+/**
+ * Which earlier results a finished run shows to be gone. A collection error is gone once
+ * collection finished without it (the file imports now). A test is gone only after a complete
+ * run that collected everything and did not collect it, unless its file failed to import.
+ */
+export function goneAfter(done) {
+  const collected = Array.isArray(done.collected) ? new Set(done.collected) : null;
+  const broken = new Set((done.errors || []).map((error) => parseId(error.id).file));
+  return {
+    test: (test) => Boolean(done.complete && collected && !collected.has(test.id) && !broken.has(parseId(test.id).file)),
+    error: () => Boolean(collected),
+  };
 }
 
 /** How many tests have each outcome. */

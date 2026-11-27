@@ -1,24 +1,43 @@
 // Panels another area attaches beneath a failing test's detail. Each failing test keeps its
 // panel for as long as it keeps failing, across reruns, so whatever the panel holds (a
 // conversation about that failure, say) is still there after the next run.
+//
+// The panel's code belongs to another area: whatever it throws is caught and logged here, so
+// it can never break the test pane or stop a run's end from being announced.
 
 import { failed } from './model.js';
 
 let renderer = null;
-/** Node id → { node, dispose }. */
+/** Node id → { node, test }. */
 const panels = new Map();
 
+function guarded(what, fn, ...args) {
+  try {
+    return fn(...args);
+  } catch (error) {
+    console.error(`The failure panel's ${what} failed:`, error);
+    return undefined;
+  }
+}
+
 /**
- * Registers `render(test)`, which returns a node to show beneath the failing test's detail, or
- * null for none. It is called once per failing test, when the test is first shown; the node is
- * then reused while the test keeps failing. `dispose(test, node)` is called when the test
- * passes, disappears from the results, or the folder changes. Returns a function that removes
- * the renderer (disposing its panels).
+ * Registers a failure panel:
+ *   render(test)          returns a node to show beneath the failing test's detail, or null.
+ *                         Called once per failing test, when it is first shown; the node is then
+ *                         kept while the test keeps failing.
+ *   dispose(test, node)   the test passed (or no longer fails), no longer exists after a
+ *                         complete run, or the folder changed. Not called for a test that a
+ *                         stopped or crashed run did not reach: that one keeps its panel.
+ *   update(test, node)    the test failed again, differently (a new message or traceback).
+ * Returns a function that removes the panel and disposes its nodes; calling it again, or after
+ * another panel was registered, does nothing.
  */
-export function registerFailurePanel(render, dispose = () => {}) {
+export function registerFailurePanel(render, dispose = () => {}, update = () => {}) {
   if (renderer) throw new Error('A failure panel is already registered');
-  renderer = { render, dispose };
+  const mine = { render, dispose, update };
+  renderer = mine;
   return () => {
+    if (renderer !== mine) return;
     disposeAll();
     renderer = null;
   };
@@ -28,19 +47,31 @@ export function registerFailurePanel(render, dispose = () => {}) {
 export function panelFor(test) {
   if (!renderer || !failed(test)) return null;
   if (!panels.has(test.id)) {
-    const node = renderer.render(test) || null;
-    panels.set(test.id, { node, test, dispose: renderer.dispose });
+    const node = guarded('render', renderer.render, test);
+    panels.set(test.id, { node: node instanceof Node ? node : null, test });
   }
   return panels.get(test.id).node;
 }
 
-/** Drops the panels of tests that no longer fail, now that `tests` are the latest results. */
+const failure = (test) => [test.status, test.phase, test.message, test.detail].join('\n');
+
+/**
+ * Brings the panels up to date with the latest results, `tests` (which keep, marked out of
+ * date, the results a stopped run did not reach). A panel goes when its test no longer fails,
+ * or is no longer in the results at all, which happens only once a complete run showed it gone.
+ */
 export function prunePanels(tests) {
   const byId = new Map(tests.map((test) => [test.id, test]));
   for (const [id, panel] of panels) {
     const now = byId.get(id);
-    if (now && failed(now)) panel.test = now;
-    else release(id, now || panel.test);
+    if (!now || !failed(now)) {
+      release(id, now || panel.test);
+      continue;
+    }
+    if (now === panel.test) continue;
+    const changed = failure(now) !== failure(panel.test);
+    panel.test = now;
+    if (changed && panel.node && renderer) guarded('update', renderer.update, now, panel.node);
   }
 }
 
@@ -49,8 +80,8 @@ export function disposeAll() {
 }
 
 function release(id, test) {
-  const { node, dispose } = panels.get(id);
+  const { node } = panels.get(id);
   panels.delete(id);
   node?.remove();
-  if (node) dispose(test, node);
+  if (node && renderer) guarded('dispose', renderer.dispose, test, node);
 }

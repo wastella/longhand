@@ -30,7 +30,7 @@ const stopButton = button('cancel-tests', 'Stop', 'Stop the run (Esc)', () => ru
 const actions = h('span', { id: 'tests-actions', onkeydown: stopOnEscape }, stopButton, rerunButton, fileButton, allButton);
 
 /** What the detail side shows: a test (by node id) or the raw output. */
-const view = { selectedId: null, output: false, focusKey: null, shown: null };
+const view = { selectedId: null, output: false, focusKey: null, shown: null, announced: null };
 let clockTimer = null;
 let frame = 0;
 
@@ -64,7 +64,8 @@ function rerunFailed() {
 
 /** Runs again what may be out of date: its files, or everything if that is every file. */
 function runStale() {
-  const files = new Set([...runner.results.stale].map((id) => parseId(id).file));
+  const { results } = runner;
+  const files = new Set([...results.stale, ...results.unreached].map((id) => parseId(id).file));
   const all = new Set([...runner.results.tests, ...runner.results.errors].map((test) => parseId(test.id).file));
   return runTests(files.size >= all.size ? [] : [...files]);
 }
@@ -78,11 +79,18 @@ function stopOnEscape(event) {
 
 // ---- rendering ----
 
+/** Tells other areas which result is shown, when that changes (or the result itself does). */
+function announce(test) {
+  if (view.announced === test) return;
+  view.announced = test;
+  emit('tests:selected', test);
+}
+
 function select(test, { focus = false } = {}) {
   view.output = false;
   view.selectedId = test?.id ?? null;
   view.focusKey = test?.id ?? view.focusKey;
-  emit('tests:selected', test);
+  announce(test || null);
   renderList(focus);
   renderDetail();
 }
@@ -91,18 +99,27 @@ function showOutput() {
   view.output = !view.output || !view.selectedId;
   if (view.output) {
     view.selectedId = null;
-    emit('tests:selected', null);
+    announce(null);
   }
   renderList();
   renderDetail();
 }
 
-/** The results with a placeholder row for the test running now. */
-function rowsToShow() {
+/** The results with a row for the test running now, in place of its earlier result if any. */
+function rowsToShow(waiting) {
   const tests = shownTests();
   const current = runner.run.current;
-  if (!runner.run.active || !current || tests.some((t) => t.id === current)) return tests;
-  return [...tests, { id: current, status: 'RUNNING', duration: 0, frames: [], sections: [] }];
+  if (!runner.run.active || !current) return tests;
+  const row = { id: current, status: 'RUNNING', duration: 0, frames: [], sections: [] };
+  const i = tests.findIndex((t) => t.id === current);
+  if (i < 0) return [...tests, row];
+  return waiting.has(current) ? tests.with(i, row) : tests;
+}
+
+/** Results that may no longer hold: from before a save, not reached, or about to be rerun. */
+function staleIds() {
+  const waiting = runner.awaiting();
+  return { waiting, has: (id) => runner.isStale(id) || waiting.has(id) };
 }
 
 function renderHead() {
@@ -123,9 +140,10 @@ function renderHead() {
 function renderList(focus = false) {
   renderHead();
   const hadFocus = rows.contains(document.activeElement);
+  const stale = staleIds();
   const fresh = tree({
-    tests: [...shownErrors(), ...rowsToShow()],
-    staleIds: runner.results.stale,
+    tests: [...shownErrors(), ...rowsToShow(stale.waiting)],
+    staleIds: stale,
     on: { select: (test) => select(test, { focus: true }), run: runTests, rerender: (key) => ((view.focusKey = key), renderList(true)) },
   });
   // Rows with the same content are kept rather than replaced, so a click that lands while
@@ -168,10 +186,11 @@ function renderDetail() {
     if (!view.selectedId) ((view.shown = null), detail.replaceChildren());
     return;
   }
-  const stale = runner.results.stale.has(test.id);
-  if (view.shown === test && detail.dataset.stale === String(stale)) return;
+  announce(test);
+  const stale = results.unreached.has(test.id) ? 'unreached' : results.stale.has(test.id) ? 'saved' : runner.awaiting().has(test.id) ? 'rerunning' : '';
+  if (view.shown === test && detail.dataset.stale === stale) return;
   view.shown = test;
-  detail.dataset.stale = String(stale);
+  detail.dataset.stale = stale;
   const panel = panelFor(test);
   detail.replaceChildren(...testDetail(test, { stale, panel, onRun: () => runTests([test.id]) }));
   detail.scrollTop = 0;
@@ -182,13 +201,16 @@ function renderBadge() {
   badge.className = '';
   if (run.active) {
     const done = run.tests.length + run.errors.length;
-    badge.textContent = run.total ? `${done}/${run.total}` : '…';
+    badge.textContent = run.total ? `${done}/${run.total}` : run.started ? `${done}` : '…';
     return;
   }
   const all = [...results.tests, ...results.errors];
   const bad = all.filter(failed).length;
-  badge.textContent = !all.length ? '' : bad ? `${bad} failing` : 'passing';
-  badge.className = !all.length ? '' : `${bad ? 'fail' : 'pass'}${results.stale.size ? ' stale' : ''}`;
+  const doubtful = results.stale.size || results.unreached.size;
+  // A run that stopped or crashed partway never reads as passing.
+  const incomplete = !results.complete;
+  badge.textContent = !all.length ? '' : bad ? `${bad} failing` : incomplete ? 'incomplete' : 'passing';
+  badge.className = !all.length ? '' : `${bad ? 'fail' : incomplete ? 'incomplete' : 'pass'}${doubtful || incomplete ? ' stale' : ''}`;
 }
 
 function renderButtons() {
@@ -214,20 +236,25 @@ function render(what) {
 
 function finished(done) {
   const { results } = runner;
-  if (results.ran) prunePanels([...results.tests, ...results.errors]);
-  const selected = view.selectedId && findResult(view.selectedId);
-  if (!selected && !view.output) {
-    // Collection errors come first: until a file imports, none of its tests can run.
-    const [first] = failures();
-    first && !results.problem ? select(first) : renderDetail();
+  try {
+    if (results.ran) prunePanels([...results.tests, ...results.errors]);
+    const selected = view.selectedId && findResult(view.selectedId);
+    if (!selected && !view.output) {
+      // Collection errors come first: until a file imports, none of its tests can run.
+      const [first] = failures();
+      first && !results.problem ? select(first) : renderDetail();
+    }
+  } finally {
+    emit('tests:finished', { tests: [], errors: [], ...done });
   }
-  emit('tests:finished', { tests: [], errors: [], ...done });
 }
 
 /**
  * The latest results, merged across runs:
- * { running, tests, errors, problem, summary, cancelled, stale: [ids] }. Tests and errors are
- * the backend's result objects (see src-tauri/src/pytest/report.rs); `id` is pytest's node id.
+ * { running, tests, errors, problem, summary, cancelled, complete, stale: [ids], unreached: [ids],
+ * counts }. Tests and errors are the backend's result objects (see src-tauri/src/pytest/report.rs);
+ * `id` is pytest's node id. `stale` ran before a file was saved; `unreached` are kept from an
+ * earlier run because the last one stopped before reaching them.
  */
 export function latestResults() {
   const { run, results } = runner;
@@ -238,7 +265,9 @@ export function latestResults() {
     problem: results.problem,
     summary: results.summary,
     cancelled: results.cancelled,
+    complete: results.complete,
     stale: [...results.stale],
+    unreached: [...results.unreached],
     counts: count([...results.tests, ...results.errors]),
   };
 }
@@ -285,6 +314,7 @@ export function mount() {
   on('workspace:opened', () => {
     disposeAll();
     Object.assign(view, { selectedId: null, output: false, focusKey: null, shown: null });
+    announce(null);
     runner.reset();
   });
 }

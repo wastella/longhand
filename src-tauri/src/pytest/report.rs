@@ -74,7 +74,7 @@ pub struct Test {
     pub sections: Vec<Section>,
 }
 
-/// What changed, for the live view.
+/// What changed, for the live view. A `Result` for a test that already has one replaces it.
 #[derive(Serialize, Debug)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Update {
@@ -93,15 +93,61 @@ struct Pending {
     failure: Option<(&'static str, Value)>,
     reason: String,
     sections: Vec<Section>,
+    /// This attempt failed and pytest-rerunfailures will run the test again.
+    rerun: bool,
+}
+
+/// How the process running pytest ended.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Exit {
+    pub code: Option<i32>,
+    pub signal: Option<i32>,
+}
+
+impl Exit {
+    /// The signal that ended the process. A shell reports one as 128 plus its number.
+    pub fn signal(&self) -> Option<i32> {
+        self.signal.or(self.code.filter(|c| (129..160).contains(c)).map(|c| c - 128))
+    }
+
+    /// "signal 11 (SIGSEGV, a crash in native code)", "exit code 0".
+    pub fn describe(&self) -> String {
+        match (self.signal(), self.code) {
+            (Some(n), _) => {
+                let name = match n {
+                    4 => " (SIGILL, a crash in native code)",
+                    6 => " (SIGABRT, an abort, often in native code)",
+                    8 => " (SIGFPE, a crash in native code)",
+                    9 => " (SIGKILL, often the system running out of memory)",
+                    10 => " (SIGBUS, a crash in native code)",
+                    11 => " (SIGSEGV, a crash in native code)",
+                    15 => " (SIGTERM)",
+                    _ => "",
+                };
+                format!("signal {n}{name}")
+            }
+            (None, Some(code)) => format!("exit code {code}"),
+            (None, None) => "no exit code".into(),
+        }
+    }
 }
 
 pub struct Report {
     workspace: Vec<PathBuf>,
     pending: HashMap<String, Pending>,
+    /// Tests that began and have no result yet, in the order they began.
+    begun: Vec<String>,
     pub tests: Vec<Test>,
     pub errors: Vec<Test>,
     pub started: bool,
     pub total: Option<usize>,
+    /// The node ids pytest collected (after any selection), once collection finished.
+    pub collected: Option<Vec<String>>,
+    /// pytest got as far as its own orderly end.
+    pub finished: bool,
+    pub exitstatus: Option<i64>,
+    /// Why pytest stopped the run itself (Ctrl+C, pytest.exit(), failed imports), if it did.
+    pub interrupted: Option<String>,
 }
 
 impl Report {
@@ -113,7 +159,19 @@ impl Report {
                 roots.push(real);
             }
         }
-        Report { workspace: roots, pending: HashMap::new(), tests: vec![], errors: vec![], started: false, total: None }
+        Report {
+            workspace: roots,
+            pending: HashMap::new(),
+            begun: vec![],
+            tests: vec![],
+            errors: vec![],
+            started: false,
+            total: None,
+            collected: None,
+            finished: false,
+            exitstatus: None,
+            interrupted: None,
+        }
     }
 
     /// Takes one line of the report. Lines that are not records (a torn write) are ignored.
@@ -128,67 +186,151 @@ impl Report {
             "collected" => {
                 let total = record["count"].as_u64()? as usize;
                 self.total = Some(total);
+                self.collected = record["ids"].as_array().map(|ids| ids.iter().filter_map(|id| id.as_str().map(str::to_string)).collect());
                 Some(Update::Collected { total })
             }
-            "begin" => Some(Update::Running { id: text("nodeid") }),
+            "begin" => {
+                let id = text("nodeid");
+                if !self.pending.contains_key(&id) {
+                    self.pending.insert(id.clone(), Pending::default());
+                    self.begun.push(id.clone());
+                }
+                Some(Update::Running { id })
+            }
             "collect-error" => {
                 let id = text("nodeid");
                 let path = id.split("::").next().unwrap_or_default().to_string();
                 let test = self.build(id, path, None, Status::Error, 0.0, Some(("collect", record)), String::new(), vec![]);
-                self.errors.push(test.clone());
+                match self.errors.iter_mut().find(|e| e.id == test.id) {
+                    Some(old) => *old = test.clone(),
+                    None => self.errors.push(test.clone()),
+                }
                 Some(Update::CollectError { test })
             }
-            "report" => self.phase(record),
+            "report" | "late" => self.phase(record),
+            "interrupted" => {
+                self.interrupted = Some(text("message"));
+                None
+            }
+            "finish" => {
+                self.finished = true;
+                self.exitstatus = record["exitstatus"].as_i64();
+                None
+            }
             _ => None,
+        }
+    }
+
+    /// pytest stopped before running anything because test files failed to import, which is
+    /// how an ordinary run with import errors ends.
+    pub fn stopped_for_collection_errors(&self) -> bool {
+        !self.errors.is_empty() && self.interrupted.as_deref().is_some_and(|m| m.contains("during collection"))
+    }
+
+    /// pytest stopped the run partway, on its own or because the process ended.
+    pub fn stopped_early(&self) -> bool {
+        let interrupted = self.interrupted.is_some() || self.exitstatus == Some(2);
+        !self.finished || !self.pending.is_empty() || (interrupted && !self.stopped_for_collection_errors())
+    }
+
+    /// Ends the run. A test that began and never finished gets an error saying so: the process
+    /// running it ended (a crash, os._exit, being killed) or pytest stopped.
+    pub fn end(&mut self, exit: Exit) -> Vec<Update> {
+        let how = match &self.interrupted {
+            Some(message) if !message.is_empty() => format!("pytest stopped the run while this test was running ({message})"),
+            _ => format!("The test process ended while this test was running ({})", exit.describe()),
+        };
+        let mut updates = vec![];
+        for id in std::mem::take(&mut self.begun) {
+            let Some(pending) = self.pending.remove(&id) else { continue };
+            let path = id.split("::").next().unwrap_or_default().to_string();
+            let mut test = self.build(id, path, None, Status::Error, pending.duration, None, String::new(), pending.sections);
+            test.message = format!("{how}, so it has no result.");
+            test.phase = Some("ended");
+            self.record(test.clone());
+            updates.push(Update::Result { test });
+        }
+        updates
+    }
+
+    /// Keeps one result per node id: a later one replaces the earlier.
+    fn record(&mut self, test: Test) {
+        match self.tests.iter_mut().find(|t| t.id == test.id) {
+            Some(old) => *old = test,
+            None => self.tests.push(test),
         }
     }
 
     fn phase(&mut self, record: Value) -> Option<Update> {
         let id = record["nodeid"].as_str()?.to_string();
-        let when = record["when"].as_str().unwrap_or_default();
-        let outcome = record["outcome"].as_str().unwrap_or_default();
+        let when = record["when"].as_str().unwrap_or_default().to_string();
+        let when = when.as_str();
+        let outcome = record["outcome"].as_str().unwrap_or_default().to_string();
+        let outcome = outcome.as_str();
+        if !self.pending.contains_key(&id) {
+            if outcome == "failed" && self.tests.iter().any(|t| t.id == id) {
+                // A failure reported after the test's result (unittest's subTest, in some versions).
+                return self.late_failure(&id, when, record);
+            }
+            // A report without a "begin" before it.
+            self.pending.insert(id.clone(), Pending::default());
+            self.begun.push(id.clone());
+        }
         let xfail = record.get("wasxfail").is_some();
-        let pending = self.pending.entry(id.clone()).or_default();
+        let pending = self.pending.get_mut(&id)?;
         pending.duration += record["duration"].as_f64().unwrap_or(0.0);
-        pending.sections = sections(&record);
+        if record.get("sections").is_some() {
+            pending.sections = sections(&record);
+        }
         let reason = record["reason"].as_str().or_else(|| record["wasxfail"].as_str()).unwrap_or_default();
         if !reason.is_empty() {
             pending.reason = reason.trim_start_matches("Skipped: ").to_string();
         }
-        let status = match (when, outcome) {
-            (_, "failed") if pending.status.is_none() || pending.status == Some(Status::Passed) => {
-                let phase = match when {
-                    "call" => "call",
-                    "setup" => "setup",
-                    _ => "teardown",
-                };
-                pending.failure = Some((phase, record.clone()));
-                Some(if when == "call" { Status::Failed } else { Status::Error })
+        // A failure is never undone by a later report: a passing subtest, the test's own call
+        // after a failing subtest, or a skip. A teardown failure after a pass or skip is an error.
+        let failing = matches!(pending.status, Some(Status::Failed | Status::Error));
+        match (when, outcome) {
+            (_, "rerun") => pending.rerun = true,
+            (_, "failed") if !failing => {
+                pending.failure = Some((phase_name(when), record.clone()));
+                pending.status = Some(if when == "call" { Status::Failed } else { Status::Error });
             }
-            ("setup" | "call", "skipped") => Some(if xfail { Status::Xfail } else { Status::Skipped }),
-            ("call", "passed") => Some(if xfail { Status::Xpass } else { Status::Passed }),
-            _ => None,
-        };
-        if let Some(status) = status {
-            pending.status = Some(status);
+            ("setup" | "call", "skipped") if !failing => pending.status = Some(if xfail { Status::Xfail } else { Status::Skipped }),
+            ("call", "passed") if pending.status.is_none() => pending.status = Some(if xfail { Status::Xpass } else { Status::Passed }),
+            _ => {}
         }
         if when != "teardown" {
             return None;
         }
+        if pending.rerun {
+            // pytest-rerunfailures runs the test again; only the last attempt counts.
+            *pending = Pending::default();
+            return None;
+        }
         let pending = self.pending.remove(&id)?;
+        self.begun.retain(|b| b != &id);
         let path = record["path"].as_str().unwrap_or_default().to_string();
         let line = record["lineno"].as_u64().map(|n| n as u32 + 1);
-        let test = self.build(
-            id,
-            path,
-            line,
-            pending.status.unwrap_or(Status::Passed),
-            pending.duration,
-            pending.failure,
-            pending.reason,
-            pending.sections,
-        );
-        self.tests.push(test.clone());
+        let status = pending.status.unwrap_or(Status::Passed);
+        let test = self.build(id, path, line, status, pending.duration, pending.failure, pending.reason, pending.sections);
+        self.record(test.clone());
+        Some(Update::Result { test })
+    }
+
+    fn late_failure(&mut self, id: &str, when: &str, record: Value) -> Option<Update> {
+        let index = self.tests.iter().position(|t| t.id == id)?;
+        let old = &self.tests[index];
+        if matches!(old.status, Status::Failed | Status::Error) {
+            return None;
+        }
+        let status = if when == "call" { Status::Failed } else { Status::Error };
+        let (path, line, duration) = (old.path.clone(), old.line, old.duration);
+        let mut kept = sections(&record);
+        if kept.is_empty() {
+            kept = old.sections.clone();
+        }
+        let test = self.build(id.to_string(), path, line, status, duration, Some((phase_name(when), record)), String::new(), kept);
+        self.tests[index] = test.clone();
         Some(Update::Result { test })
     }
 
@@ -231,6 +373,9 @@ impl Report {
         }
         let crash = record["crash"]["message"].as_str().unwrap_or_default();
         test.message = cap(&explanation(&frames).unwrap_or_else(|| crash.to_string()));
+        if let Some(subtest) = record["subtest"].as_str().filter(|s| !s.is_empty()) {
+            test.message = format!("Subtest ({subtest}) failed:\n{}", test.message);
+        }
         test.at = frames.iter().rev().find(|f| f.own).cloned().map(|f| Frame { lines: vec![], ..f });
         test.frames = frames;
         test
@@ -254,6 +399,14 @@ impl Report {
             }
         }
         (None, false)
+    }
+}
+
+fn phase_name(when: &str) -> &'static str {
+    match when {
+        "call" => "call",
+        "setup" => "setup",
+        _ => "teardown",
     }
 }
 
@@ -368,6 +521,7 @@ mod tests {
     const RESULTS: &str = include_str!("fixtures/results.jsonl");
     const COLLECT_ERRORS: &str = include_str!("fixtures/collect-errors.jsonl");
     const NO_TESTS: &str = include_str!("fixtures/no-tests.jsonl");
+    const XDIST_RERUNS: &str = include_str!("fixtures/xdist-reruns.jsonl");
 
     fn run(fixture: &str) -> (Report, Vec<Update>) {
         let mut report = Report::new(Path::new("/work/course"));
@@ -511,6 +665,141 @@ mod tests {
     fn an_empty_run() {
         let (report, _) = run(NO_TESTS);
         assert_eq!((report.started, report.total, report.tests.len()), (true, Some(0), 0));
+        assert_eq!(report.collected, Some(vec![]));
+        assert!(!report.stopped_early());
+    }
+
+    #[test]
+    fn complete_runs_and_collection_errors_are_not_stopped_early() {
+        let (report, _) = run(RESULTS);
+        assert!(report.finished && !report.stopped_early());
+        assert_eq!(report.collected.as_ref().map(Vec::len), Some(23));
+        // pytest ends a run whose files fail to import as "interrupted"; that is no crash.
+        let (report, _) = run(COLLECT_ERRORS);
+        assert!(report.stopped_for_collection_errors() && !report.stopped_early());
+        assert_eq!(report.collected, Some(vec!["tests/test_ok.py::test_fine".to_string()]));
+    }
+
+    #[test]
+    fn xdist_and_reruns() {
+        let (report, updates) = run(XDIST_RERUNS);
+        assert_eq!(report.total, Some(7), "pytest-xdist's workers say how many");
+        assert!(matches!(updates[1], Update::Collected { total: 7 }));
+        let got: Vec<String> = report.tests.iter().map(|t| format!("{:?} {}", t.status, t.id)).collect();
+        assert_eq!(
+            got,
+            [
+                "Failed tests/test_flaky.py::test_subtests",
+                "Passed tests/test_flaky.py::test_flaky_then_passes",
+                "Passed tests/test_flaky.py::test_many[0]",
+                "Passed tests/test_flaky.py::test_many[1]",
+                "Passed tests/test_flaky.py::test_many[3]",
+                "Failed tests/test_flaky.py::test_always_fails",
+                "Passed tests/test_flaky.py::test_many[2]",
+            ],
+            "one result per test, the last attempt's"
+        );
+        let subtests = &report.tests[0];
+        assert!(subtests.message.starts_with("Subtest (i='1') failed:\nassert 1 != 1"), "{}", subtests.message);
+        assert!(!report.stopped_early());
+    }
+
+    fn line(record: Value) -> String {
+        record.to_string()
+    }
+
+    fn phase(id: &str, when: &str, outcome: &str) -> String {
+        line(serde_json::json!({ "event": "report", "nodeid": id, "when": when, "outcome": outcome, "path": "t.py", "lineno": 0 }))
+    }
+
+    fn failing(id: &str, when: &str, event: &str) -> String {
+        line(serde_json::json!({
+            "event": event, "nodeid": id, "when": when, "outcome": "failed", "path": "t.py", "lineno": 0,
+            "longrepr": "t.py:3: in t\nE   assert 1 == 1", "frames": [{ "path": "t.py", "lineno": 3, "where": "in t", "lines": ["E   assert 1 == 1"] }],
+        }))
+    }
+
+    fn feed(lines: &[String]) -> Report {
+        let mut report = Report::new(Path::new("/w"));
+        for line in lines {
+            report.apply(line);
+        }
+        report
+    }
+
+    #[test]
+    fn a_failure_is_never_undone_by_a_later_report() {
+        let begin = line(serde_json::json!({ "event": "begin", "nodeid": "t.py::t" }));
+        // Subtests: passed, failed, passed, then the test's own passing call.
+        let report = feed(&[
+            begin.clone(),
+            phase("t.py::t", "setup", "passed"),
+            phase("t.py::t", "call", "passed"),
+            failing("t.py::t", "call", "report"),
+            phase("t.py::t", "call", "passed"),
+            phase("t.py::t", "call", "passed"),
+            phase("t.py::t", "teardown", "passed"),
+        ]);
+        assert_eq!(report.tests[0].status, Status::Failed);
+        assert_eq!(report.tests[0].message, "assert 1 == 1");
+
+        // A failure pytest only reports after the test's result.
+        let mut report = feed(&[
+            begin.clone(),
+            phase("t.py::t", "setup", "passed"),
+            phase("t.py::t", "call", "passed"),
+            phase("t.py::t", "teardown", "passed"),
+        ]);
+        assert_eq!(report.tests[0].status, Status::Passed);
+        let update = report.apply(&failing("t.py::t", "call", "late"));
+        assert!(matches!(update, Some(Update::Result { ref test }) if test.status == Status::Failed));
+        assert_eq!((report.tests.len(), report.tests[0].status), (1, Status::Failed));
+
+        // A teardown error after a skip.
+        let report = feed(&[
+            begin,
+            phase("t.py::t", "setup", "passed"),
+            phase("t.py::t", "call", "skipped"),
+            failing("t.py::t", "teardown", "report"),
+        ]);
+        assert_eq!((report.tests[0].status, report.tests[0].phase), (Status::Error, Some("teardown")));
+    }
+
+    #[test]
+    fn a_test_still_running_when_the_process_ends_is_an_error() {
+        let mut report = feed(&[
+            line(serde_json::json!({ "event": "start" })),
+            line(serde_json::json!({ "event": "collected", "count": 3, "ids": ["t.py::a", "t.py::b", "t.py::c"] })),
+            line(serde_json::json!({ "event": "begin", "nodeid": "t.py::a" })),
+            phase("t.py::a", "setup", "passed"),
+            phase("t.py::a", "call", "passed"),
+            phase("t.py::a", "teardown", "passed"),
+            line(serde_json::json!({ "event": "begin", "nodeid": "t.py::b" })),
+            phase("t.py::b", "setup", "passed"),
+        ]);
+        assert!(report.stopped_early(), "no finish record");
+        let updates = report.end(Exit { code: None, signal: Some(11) });
+        assert_eq!(updates.len(), 1);
+        let crashed = &report.tests[1];
+        assert_eq!((crashed.id.as_str(), crashed.status, crashed.phase), ("t.py::b", Status::Error, Some("ended")));
+        assert!(crashed.message.contains("signal 11 (SIGSEGV"), "{}", crashed.message);
+        assert_eq!(report.tests.len(), 2, "t.py::c never began, so it has no result");
+
+        let mut interrupted = feed(&[
+            line(serde_json::json!({ "event": "begin", "nodeid": "t.py::a" })),
+            line(serde_json::json!({ "event": "interrupted", "message": "Exit: bye" })),
+            line(serde_json::json!({ "event": "finish", "exitstatus": 2 })),
+        ]);
+        assert!(interrupted.stopped_early());
+        interrupted.end(Exit { code: Some(2), signal: None });
+        assert!(interrupted.tests[0].message.contains("Exit: bye"));
+    }
+
+    #[test]
+    fn exits_in_words() {
+        assert_eq!(Exit { code: Some(0), signal: None }.describe(), "exit code 0");
+        assert!(Exit { code: Some(139), signal: None }.describe().starts_with("signal 11"), "as a shell reports it");
+        assert!(Exit { code: None, signal: Some(9) }.describe().contains("memory"));
     }
 
     #[test]

@@ -1,13 +1,18 @@
-// pytest runs, shaped like src-tauri/src/pytest.rs: tests_run returns { command } (or
-// { problem }), then tests:output and tests:progress arrive while it runs and tests:done ends it.
+// pytest runs, shaped like src-tauri/src/pytest.rs: tests_run returns { run, command } (or
+// { run, problem }), then tests:output and tests:progress arrive while it runs and tests:done
+// ends it, each carrying the run's id. A cancelled run says nothing more.
 //
 // Options (window.__MOCK__, read at the start of each run so a test can change them between runs):
 //   testsSuite      'fixture' (default: test_mean passes, test_variance fails) or 'course' (a
 //                   larger suite in the style of a course assignment)
 //   testsProblem    'no-uv', 'no-pytest', 'no-tests', 'not-python' or 'collect-error'
 //   testsHangAfter  stop after this many results and keep running until cancelled
+//   testsCrashAfter end the run after this many results as if the process crashed while
+//                   running the next test (which gets an error result)
+//   testsNoTotal    never say how many tests there are, as with pytest-xdist
 //   testsDelay      milliseconds between results (default 15)
 //   testOutcomes    { [id]: 'PASSED' | 'FAILED' | … } overrides a test's status
+//   testsGone       ids that no longer exist: a run leaves them out of what it collected
 
 const mock = window.__mock;
 const options = mock.options;
@@ -181,13 +186,16 @@ function finish(run, extra = {}) {
   const passed = run.tests.filter((t) => t.status === 'PASSED').length;
   const summary = [failedCount && `${failedCount} failed`, passed && `${passed} passed`].filter(Boolean).join(', ') || 'no tests ran';
   mock.emit('tests:done', {
+    run: run.id,
     command: run.command,
     targets: run.targets,
     code: failedCount || run.errors.length ? 1 : 0,
     cancelled: false,
+    complete: true,
     problem: null,
     summary: `${summary} in 0.03s`,
     total: run.total,
+    collected: run.collected,
     duration: 0.03,
     tests: run.tests,
     errors: run.errors,
@@ -196,54 +204,89 @@ function finish(run, extra = {}) {
   });
 }
 
-function start(targets) {
+function start(id, targets) {
   const problem = problems[options.testsProblem];
-  const run = { command: `uv run pytest --tb=short --color=no${targets.map((t) => ` ${t}`).join('')}`, targets, tests: [], errors: [], output: '' };
+  const run = {
+    id,
+    command: `uv run pytest -p longhand_pytest --rootdir=. --tb=short --color=no${targets.map((t) => ` '${t}'`).join('')}`,
+    targets,
+    tests: [],
+    errors: [],
+    output: '',
+  };
   current = run;
-  const say = (text) => ((run.output += text), mock.emit('tests:output', text));
+  const progress = (updates) => mock.emit('tests:progress', { run: id, updates });
+  const say = (text) => ((run.output += text), mock.emit('tests:output', { run: id, text }));
   say(`============================= test session starts ==============================\n`);
   if (problem) {
     run.output = problem.output;
-    run.timer = setTimeout(() => finish(run, { problem: problem.problem, code: 2, summary: 'no tests ran in 0.00s' }), 30);
+    run.timer = setTimeout(
+      () =>
+        finish(run, {
+          problem: problem.problem,
+          code: 2,
+          summary: 'no tests ran in 0.00s',
+          complete: problem.problem.kind === 'no-tests',
+          collected: problem.problem.kind === 'no-tests' ? [] : null,
+        }),
+      30,
+    );
     return;
   }
   if (options.testsProblem === 'collect-error') {
     run.errors = [collectError()];
     run.total = 0;
-    mock.emit('tests:progress', [{ type: 'started' }, { type: 'collect-error', test: run.errors[0] }, { type: 'collected', total: 0 }]);
+    run.collected = [];
+    progress([{ type: 'started' }, { type: 'collect-error', test: run.errors[0] }, { type: 'collected', total: 0 }]);
     run.timer = setTimeout(() => finish(run, { code: 2, summary: '1 error in 0.08s' }), 30);
     return;
   }
   const overrides = options.testOutcomes || {};
-  const all = suites[options.testsSuite || 'fixture']().filter((t) => matches(t.id, targets));
+  const gone = new Set(options.testsGone || []);
+  const all = suites[options.testsSuite || 'fixture']().filter((t) => matches(t.id, targets) && !gone.has(t.id));
   const queue = all.map((t) =>
     overrides[t.id] ? { ...t, status: overrides[t.id], ...(overrides[t.id] === 'PASSED' && { message: '', frames: [], detail: '', at: undefined }) } : t,
   );
-  run.total = queue.length;
-  mock.emit('tests:progress', [{ type: 'started' }, { type: 'collected', total: queue.length }]);
+  run.total = options.testsNoTotal ? null : queue.length;
+  run.collected = queue.map((t) => t.id);
+  progress([{ type: 'started' }, ...(options.testsNoTotal ? [] : [{ type: 'collected', total: queue.length }])]);
   say(`collected ${queue.length} items\n\n`);
   const step = () => {
     if (current !== run) return;
     const next = queue.shift();
     if (!next) return finish(run);
-    mock.emit('tests:progress', [{ type: 'running', id: next.id }]);
+    progress([{ type: 'running', id: next.id }]);
     if (options.testsHangAfter != null && run.tests.length >= options.testsHangAfter) return;
+    if (options.testsCrashAfter != null && run.tests.length >= options.testsCrashAfter) {
+      const message = 'The test process ended while this test was running (signal 11 (SIGSEGV, a crash in native code)), so it has no result.';
+      run.tests.push({ ...next, status: 'ERROR', phase: 'ended', message, detail: '', frames: [], at: undefined, sections: [] });
+      const detail =
+        'The Python process running the tests ended before pytest finished (signal 11 (SIGSEGV, a crash in native code)). A test that was running when it stopped is shown as an error.';
+      return finish(run, {
+        complete: false,
+        code: 139,
+        signal: 11,
+        problem: { kind: 'stopped-early', title: 'pytest stopped before the run finished', detail },
+      });
+    }
     run.tests.push(next);
     say(`${next.id} ${next.status}\n`);
-    mock.emit('tests:progress', [{ type: 'result', test: next }]);
+    progress([{ type: 'result', test: next }]);
     run.timer = setTimeout(step, options.testsDelay ?? 15);
   };
   run.timer = setTimeout(step, options.testsDelay ?? 15);
 }
 
 Object.assign(mock.commands, {
-  tests_run: ({ targets }) => {
+  tests_run: ({ targets, run }) => {
     window.__testRuns = [...(window.__testRuns || []), targets || []];
+    window.__testRunToken = () => run;
     // Like the backend, a run that a new one replaces ends without a word.
     if (current) clearTimeout(current.timer);
     current = null;
     if (options.testsProblem === 'not-python') {
       return {
+        run,
         problem: {
           kind: 'not-python',
           title: 'This folder has no Python code',
@@ -252,8 +295,12 @@ Object.assign(mock.commands, {
         },
       };
     }
-    start(targets || []);
-    return { command: current.command };
+    start(run, targets || []);
+    return { run, command: current.command };
   },
-  tests_cancel: () => current && finish(current, { cancelled: true }),
+  // Like the backend, a cancelled run says nothing more; the interface ends it.
+  tests_cancel: () => {
+    if (current) clearTimeout(current.timer);
+    current = null;
+  },
 });
