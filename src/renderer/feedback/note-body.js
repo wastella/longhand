@@ -9,6 +9,9 @@ function backToCode(node) {
   node.closest('.cm-editor')?.querySelector('.cm-content')?.focus();
 }
 
+/** The status dot for each kind of note; the words say the rest. */
+const DOTS = { good: 'success', bug: 'danger', fragile: 'warning' };
+
 /**
  * A note's body. `label` names what it is ("Question", "Explanation"); `remark` (Markdown, may
  * be empty) is what the tutor wrote when the note was made; `thread` is a thread view; `actions`
@@ -20,7 +23,13 @@ export function noteBody({ kind, label, remark, thread, actions }) {
   const node = h(
     'div',
     { class: `fb-note ${kind}` },
-    h('div', { class: 'fb-note-meta' }, h('span', { class: 'fb-note-kind' }, label), spacer(), actions),
+    h(
+      'div',
+      { class: 'fb-note-meta' },
+      h('span', { class: 'fb-note-kind' }, kind in DOTS ? h('span', { class: `status-dot ${DOTS[kind]}` }) : null, label),
+      spacer(),
+      actions,
+    ),
     text,
     thread.node,
   );
@@ -33,4 +42,4 @@ export function noteBody({ kind, label, remark, thread, actions }) {
 }
 
 /** A small text button for a note's actions. */
-export const noteAction = (label, title, onclick) => h('button', { type: 'button', class: 'ghost fb-action', title, onclick }, label);
+export const noteAction = (label, tip, onclick) => h('button', { type: 'button', class: 'button small ghost fb-action', 'data-tip': tip, onclick }, label);

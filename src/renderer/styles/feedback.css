@@ -20,29 +20,6 @@
   align-items: center;
   gap: var(--space-3);
 }
-/* A small dot says what kind of note it is; the words say the rest. */
-.fb-note-kind::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-round);
-  background: var(--color-text-muted);
-}
-.fb-note.good .fb-note-kind::before {
-  background: var(--color-success);
-}
-.fb-note.bug .fb-note-kind::before {
-  background: var(--color-danger);
-}
-.fb-note.fragile .fb-note-kind::before {
-  background: var(--color-warning);
-}
-.fb-note.explanation .fb-note-kind::before {
-  display: none;
-}
-.fb-action {
-  font-size: var(--text-xs);
-}
 .fb-note .msg,
 .fb-failure .msg,
 .fb-checkpoint .msg {
@@ -61,9 +38,6 @@
 .fb-running {
   display: flex;
   justify-content: flex-end;
-}
-.fb-running button {
-  font-size: var(--text-xs);
 }
 
 /* The reply line, and what the tutor will see, shown while the student is writing. */
@@ -101,21 +75,9 @@
   gap: var(--space-3);
   min-height: 24px;
 }
-.fb-summary-title {
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
-  color: var(--color-text-muted);
-}
 .fb-summary-count {
   font-size: var(--text-xs);
   color: var(--color-text-muted);
-}
-.fb-summary-head button {
-  font-size: var(--text-xs);
-}
-.fb-step {
-  min-width: 22px;
 }
 .fb-list {
   max-height: 168px;
@@ -190,11 +152,7 @@
   font: var(--text-md) / var(--leading-reading) var(--font-ui);
   user-select: text;
 }
-.fb-failure {
-  margin-top: var(--space-6);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border);
-}
+/* .fb-failure sits in the tests area's slot, which draws the line above it. */
 .fb-checkpoint {
   margin-top: var(--space-6);
   padding: var(--space-4) var(--space-6) var(--space-5);
@@ -208,12 +166,6 @@
   gap: var(--space-4);
   min-height: 22px;
   margin-bottom: var(--space-3);
-}
-.fb-label {
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
-  color: var(--color-text-muted);
 }
 .fb-changed {
   font-size: var(--text-xs);
@@ -231,15 +183,11 @@
   flex: 1;
   min-width: 0;
 }
-.fb-start .dim {
-  font-size: var(--text-sm);
-}
-.fb-skip {
-  flex: none;
-  font-size: var(--text-xs);
-}
+.fb-skip,
 .fb-where {
   flex: none;
+}
+.fb-start .dim {
   font-size: var(--text-sm);
 }
 

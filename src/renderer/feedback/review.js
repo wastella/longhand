@@ -5,8 +5,8 @@
 
 import { activeFile, save } from '../editor/index.js';
 import { on, state } from '../state.js';
-import { showStatus } from '../shell/index.js';
-import { tutorRequest } from '../tutor/index.js';
+import { formatKeys, isPanelShown, notify, showPanel, showStatus } from '../shell/index.js';
+import { failureText, tutorRequest } from '../tutor/index.js';
 import { addReviewNote, clearOpenNotes, newId } from './notes.js';
 import { parseReview, reviewPrompt, tooLong } from './review-format.js';
 import { readLines } from './source.js';
@@ -31,11 +31,12 @@ export async function reviewFile() {
   if (!file) return showStatus('Open the file you want reviewed');
   if (review?.status === 'running') return showStatus(`Already reviewing ${fileName(review.path)}`);
   const { path } = file;
-  if (!(await save(path)) && activeFile()?.dirty) return showStatus(`${fileName(path)} could not be saved, so it was not reviewed`);
+  if (!(await save(path)) && activeFile()?.dirty)
+    return notify({ kind: 'error', message: `${fileName(path)} could not be saved, so it was not reviewed. The editor says why.` });
   const lines = await readLines(path);
-  if (!lines) return showStatus(`${fileName(path)} could not be read for a review`);
+  if (!lines) return notify({ kind: 'error', message: `${fileName(path)} could not be read for a review.` });
   const why = tooLong(lines);
-  if (why) return showStatus(`${fileName(path)} is too long to review: ${why}. Select the part you want and use Explain.`, 8000);
+  if (why) return notify({ message: `${fileName(path)} is too long to review: ${why}. Select the part you want and use Explain.` });
   run(path, lines);
 }
 
@@ -73,7 +74,15 @@ function run(path, lines) {
     if (result.status === 'error') Object.assign(mine, { status: 'error', error: result.error });
     else if (result.status === 'cancelled') mine.status = mine.placed ? 'done' : 'stopped';
     else mine.status = mine.placed ? 'done' : 'empty';
-    if (mine.status === 'done' && mine.placed) showStatus(`${plural(mine.placed)} on ${fileName(path)}. ⌥⌘] goes through them.`, 6000);
+    if (mine.status === 'done' && mine.placed)
+      showStatus(`${plural(mine.placed)} on ${fileName(path)}. ${formatKeys('CmdOrCtrl+Alt+]')} goes through them.`, 6000);
+    // The Notes list says what went wrong; when it is out of sight, so does a notification.
+    if (mine.status === 'error' && !isPanelShown('tutor'))
+      notify({
+        kind: 'error',
+        message: `The review of ${fileName(path)} failed: ${failureText(result.error)}`,
+        action: { label: 'Show', run: () => showPanel('tutor') },
+      });
     changed();
   });
 }

@@ -58,7 +58,7 @@ export function threadView({ thread, kind, placeholder, label, sees, reply, onAn
 
   function send(request) {
     const body = h('div', { class: 'answer-body' }, h('span', { class: 'thinking' }, 'Thinking…'));
-    const stopButton = h('button', { type: 'button', class: 'ghost fb-stop', onclick: () => stop() }, 'Stop');
+    const stopButton = h('button', { type: 'button', class: 'button small ghost fb-stop', onclick: () => stop() }, 'Stop');
     const activity = h('div', { class: 'activity', hidden: true });
     const box = h('div', { class: 'msg tutor streaming' }, body, activity, h('div', { class: 'fb-running' }, stopButton));
     messages.append(box);

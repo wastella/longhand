@@ -79,7 +79,7 @@ function opening(panel) {
         'button',
         {
           type: 'button',
-          class: 'fb-where',
+          class: 'button small fb-where',
           onclick: () => begin(panel, 'Where do I start? This test fails with NotImplementedError from the starter code.', 'Where do I start?'),
         },
         'Where do I start?',
@@ -104,8 +104,8 @@ function opening(panel) {
     'button',
     {
       type: 'button',
-      class: 'ghost fb-skip',
-      title: 'Ask the tutor without saying what you expected',
+      class: 'button small ghost fb-skip',
+      'data-tip': 'Ask the tutor without saying what you expected',
       onclick: () => begin(panel, LOOK, 'Where should I look?'),
     },
     'Skip and ask',
@@ -126,12 +126,12 @@ function render(test) {
     onAnswer: (result) => (panel.answered ||= result.status === 'done'),
   });
   panel.view.node.hidden = true;
-  panel.marker = h('span', { class: 'fb-changed', hidden: true, title: 'Your next message sends the new output' }, 'The failure changed since you asked');
+  panel.marker = h('span', { class: 'fb-changed', hidden: true, 'data-tip': 'Your next message sends the new output' }, 'The failure changed since you asked');
   panel.start = opening(panel);
   const node = h(
     'div',
     { class: 'fb-failure' },
-    h('div', { class: 'fb-failure-head' }, h('span', { class: 'fb-label' }, 'Tutor'), spacer(), panel.marker),
+    h('div', { class: 'fb-failure-head' }, h('h3', { class: 'section-label' }, 'Tutor'), spacer(), panel.marker),
     panel.start,
     panel.view.node,
   );
@@ -164,9 +164,13 @@ function checkpoint(panel, test) {
     'aria-label': 'In a sentence, what was wrong?',
     autocomplete: 'off',
   });
-  const close = h('button', { type: 'button', class: 'ghost fb-action', onclick: () => (card.hidden = true) }, 'Close');
+  const close = h('button', { type: 'button', class: 'button small ghost fb-action', onclick: () => (card.hidden = true) }, 'Close');
   close.hidden = true;
-  const skip = h('button', { type: 'button', class: 'ghost fb-skip', title: 'Skip this', onclick: () => (card.hidden = true) }, 'Skip');
+  const skip = h(
+    'button',
+    { type: 'button', class: 'button small ghost fb-skip', 'data-tip': 'Skip this; it will not ask again', onclick: () => (card.hidden = true) },
+    'Skip',
+  );
   const ask = h('div', { class: 'fb-start' }, input, skip);
   input.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.isComposing || !input.value.trim()) return;

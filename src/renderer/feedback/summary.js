@@ -5,7 +5,7 @@
 import { h, spacer } from '../dom.js';
 import { on } from '../state.js';
 import { activeFile } from '../editor/index.js';
-import { runCommand } from '../shell/index.js';
+import { icon, runCommand } from '../shell/index.js';
 import { failureView } from '../tutor/index.js';
 import { dismiss, jumpTo, notesOnFile, reopen, watchNotes } from './notes.js';
 import { NOTE_KINDS } from './review-format.js';
@@ -39,6 +39,21 @@ function row(record, { onclick, title, action }) {
   );
 }
 
+/** A button that runs a note command, with its shortcut in the tooltip. */
+const step = (command, label, name) =>
+  h(
+    'button',
+    {
+      type: 'button',
+      class: 'button small ghost icon-button',
+      'aria-label': label,
+      'data-tip': label,
+      'data-tip-command': command,
+      onclick: () => runCommand(command),
+    },
+    icon(name, 'small'),
+  );
+
 function group(name, title, rows) {
   if (!rows.length) return null;
   const details = h('details', { class: `fb-group ${name}`, open: unfolded.has(name) }, h('summary', {}, title), rows);
@@ -48,7 +63,7 @@ function group(name, title, rows) {
 
 function status(path) {
   if (review?.path !== path) return null;
-  const close = h('button', { type: 'button', class: 'ghost fb-action', onclick: clearReview }, 'OK');
+  const close = h('button', { type: 'button', class: 'button small ghost fb-action', onclick: clearReview }, 'OK');
   if (review.status === 'running') {
     const doing = review.reading ? `Reading ${review.reading}…` : 'Reading your code…';
     const soFar = review.placed ? ` ${review.placed} so far.` : '';
@@ -57,7 +72,7 @@ function status(path) {
       { class: 'fb-status running', role: 'status' },
       h('span', {}, doing + soFar),
       spacer(),
-      h('button', { type: 'button', class: 'ghost fb-action', onclick: stopReview }, 'Stop'),
+      h('button', { type: 'button', class: 'button small ghost fb-action', onclick: stopReview }, 'Stop'),
     );
   }
   if (review.status === 'error') return h('div', { class: 'fb-status' }, failureView(review.error, retryReview));
@@ -67,7 +82,7 @@ function status(path) {
       { class: 'fb-status', role: 'status' },
       h('span', {}, 'The review came back without notes the editor could place.'),
       spacer(),
-      h('button', { type: 'button', class: 'ghost fb-action', onclick: retryReview }, 'Retry'),
+      h('button', { type: 'button', class: 'button small ghost fb-action', onclick: retryReview }, 'Retry'),
       close,
     );
   if (review.status === 'stopped') return h('div', { class: 'fb-status', role: 'status' }, h('span', {}, 'Review stopped.'), spacer(), close);
@@ -86,29 +101,20 @@ function render() {
     h(
       'div',
       { class: 'fb-summary-head' },
-      h('span', { class: 'fb-summary-title' }, 'Notes'),
+      h('h2', { class: 'section-label' }, 'Notes'),
       count && h('span', { class: 'fb-summary-count' }, count),
       spacer(),
-      open.length > 1 &&
-        h(
-          'button',
-          { type: 'button', class: 'ghost fb-step', title: 'Previous note (⌥⌘[)', 'aria-label': 'Previous note', onclick: () => runCommand('previous-note') },
-          '‹',
-        ),
-      open.length > 1 &&
-        h(
-          'button',
-          { type: 'button', class: 'ghost fb-step', title: 'Next note (⌥⌘])', 'aria-label': 'Next note', onclick: () => runCommand('next-note') },
-          '›',
-        ),
+      open.length > 1 && step('previous-note', 'Previous note', 'chevron-left'),
+      open.length > 1 && step('next-note', 'Next note', 'chevron-right'),
       !running &&
         h(
           'button',
           {
             type: 'button',
-            class: 'ghost',
+            class: 'button small ghost',
             id: 'fb-review-again',
-            title: 'Review the file again: new notes replace the open ones (⇧⌘R)',
+            'data-tip': 'New notes replace the open ones',
+            'data-tip-command': 'review-file',
             onclick: () => runCommand('review-file'),
           },
           open.length || resolved.length || outdated.length ? 'Review again' : 'Review',
@@ -136,7 +142,7 @@ function render() {
           onclick: null,
           action: h(
             'button',
-            { type: 'button', class: 'ghost fb-action', 'aria-label': `Dismiss the note on line ${lines(r)}`, onclick: () => dismiss(r.id) },
+            { type: 'button', class: 'button small ghost fb-action', 'aria-label': `Dismiss the note on line ${lines(r)}`, onclick: () => dismiss(r.id) },
             'Dismiss',
           ),
         }),

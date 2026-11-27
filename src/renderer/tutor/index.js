@@ -19,7 +19,7 @@ import { isConnected, setupBox, showSetup } from './setup.js';
 export { tutorRequest, prepareTutor, listThreads, loadThread, usageRecord } from './engine.js';
 export { ask } from './conversation.js';
 export { renderAnswer } from './markdown.js';
-export { failureView } from './errors.js';
+export { failureText, failureView } from './errors.js';
 
 /** A place at the top of the panel, under the policy, for the Notes list on the open file (feedback/). */
 export const panelStrip = h('div', { id: 'tutor-strip' });
