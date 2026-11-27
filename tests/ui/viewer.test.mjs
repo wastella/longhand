@@ -17,6 +17,8 @@ async function reopenFolder(page, path = '/demo/running-stats') {
   await sleep(100);
 }
 
+const watcherSays = (page, paths) => page.evaluate((changed) => window.__emit('files:changed', { root: window.__mock.workspace.path, paths: changed }), paths);
+
 const pdfText = (host) => (page) => page.$$eval(`${host} .pdf-page .textLayer`, (layers) => layers.map((layer) => layer.textContent));
 
 // ---- PDFs and pictures in tabs ----
@@ -71,8 +73,14 @@ uiTest(
 );
 
 uiTest(
-  'pictures open in a tab, fitted, and an SVG is drawn as a picture whose script never runs',
+  'pictures open in a tab, fitted, and an SVG is drawn as a picture that runs nothing and loads nothing',
   async (page) => {
+    const requests = [];
+    await page.setRequestInterception(true);
+    page.on('request', (request) => {
+      if (!/^(file|data):/.test(request.url())) requests.push(request.url());
+      request.continue();
+    });
     await openInTree(page, 'figures/plot.png');
     await page.waitForSelector('#file-view .image-frame img');
     assert.equal(await text(page, '#file-view .image-caption'), '48 × 32');
@@ -83,15 +91,15 @@ uiTest(
     await page.click('#tree .node[data-path="figures/diagram.svg"]');
     await page.waitForFunction(() => document.querySelector('#file-view .image-caption')?.textContent === '40 × 20');
     assert.match(await page.$eval('#file-view img', (n) => n.src), /^data:image\/svg\+xml;base64,/);
-    await sleep(200);
-    assert.equal(await page.evaluate(() => window.__svgRan), undefined);
+    await sleep(300);
+    assert.deepEqual(requests, [], 'its script did not run and its picture was not fetched');
     assert.equal(await count(page, '#tabs .tab'), 2);
   },
   {
     views: { 'figures/plot.png': { png: true } },
     files: {
       'figures/diagram.svg':
-        '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><script>parent.__svgRan = true; window.__svgRan = true</script><rect width="40" height="20" fill="teal"/><image href="https://example.com/x.png"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><script>fetch("https://example.com/svg-script-ran")</script><rect width="40" height="20" fill="teal"/><image href="https://example.com/x.png"/></svg>',
     },
   },
 );
@@ -151,27 +159,6 @@ uiTest(
 
 // ---- Markdown ----
 
-uiTest('a Markdown file opens as text, and Preview shows it rendered with its unsaved edits', async (page) => {
-  await openInTree(page, 'README.md');
-  await page.waitForSelector('.cm-content');
-  assert.equal(await isHidden(page, '#tab-tools'), false);
-  await page.click('.cm-line:last-child');
-  await page.keyboard.type('\n## Added just now\n');
-  await page.click('#markdown-preview');
-  await page.waitForSelector('#file-view .md-doc h1');
-  assert.equal(await text(page, '#file-view .md-doc h1'), 'Running statistics');
-  assert.equal(await text(page, '#file-view .md-doc h2'), 'Added just now');
-  assert.equal(await isHidden(page, '.cm-editor'), true);
-  assert.equal(await page.$eval('#markdown-preview', (n) => n.getAttribute('aria-pressed')), 'true');
-  await page.click('#markdown-preview');
-  assert.equal(await isHidden(page, '.cm-editor'), false);
-  assert.equal(await isHidden(page, '#file-view'), true);
-  assert.equal(await count(page, '#tabs .tab.dirty'), 1, 'the edits are still there, unsaved');
-
-  await page.click('#tree .node[data-path="pyproject.toml"]');
-  await page.waitForFunction(() => document.querySelector('#tab-tools').hidden);
-});
-
 const HOSTILE = `# Notes
 
 <script>window.__pwned = 'script'</script>
@@ -180,41 +167,74 @@ const HOSTILE = `# Notes
 <iframe src="https://example.com"></iframe>
 <form action="https://example.com"><input name="q"><button>Send</button></form>
 <div id="input" name="tutor">Shadow of the question box</div>
+<div class="sheet-backdrop"><div class="sheet">A fake sheet over the whole window</div></div>
 <a href="https://example.com/x" target="_blank" style="position:fixed;inset:0">Overlay</a>
 <svg><script>window.__pwned = 'svg'</script></svg>
 <math><mi xlink:href="javascript:window.__pwned='math'">x</mi></math>
 <style>body { display: none }</style>
+<table background="https://example.com/table.png"><tr><td background="https://example.com/cell.png">cell</td></tr></table>
+<img src="figures/plot.png" usemap="#m"><map name="m"><area shape="default" href="https://example.com/area"></map>
 
 [Click me](javascript:window.__pwned='link')
 [Data](data:text/html,<script>alert(1)</script>)
 [Elsewhere](../../outside.txt)
+[Bad escape](%E0%A4%A)
+[Bad anchor](#50%)
+![Bad picture](%E0%A4%A.png)
+
+- [x] done
+- [ ] to do
 `;
 
 uiTest(
-  'hostile Markdown runs no script, loads nothing remote, cannot navigate and cannot shadow the app',
+  'hostile Markdown runs no script, loads nothing remote, cannot navigate and cannot dress up as the app',
   async (page) => {
-    await menu(page, 'toggle-handout');
+    const requests = [];
+    await page.setRequestInterception(true);
+    page.on('request', (request) => {
+      if (!/^(file|data):/.test(request.url())) requests.push(request.url());
+      request.continue();
+    });
+    let navigations = 0;
+    page.on('framenavigated', (frame) => frame === page.mainFrame() && navigations++);
+    await page.waitForSelector('.notice');
+    await page.click('.notice button.button.small');
     await page.waitForSelector('#handout .md-doc h1');
     await sleep(300);
     assert.equal(await page.evaluate(() => window.__pwned), undefined, 'no script ran');
     const doc = '#handout .md-doc';
-    assert.equal(await count(page, `${doc} script, ${doc} iframe, ${doc} form, ${doc} input, ${doc} button, ${doc} style, ${doc} svg`), 0);
+    const tags = ['script', 'iframe', 'form', 'input', 'button', 'style', 'svg', 'map', 'area'];
+    assert.equal(await count(page, tags.map((tag) => `${doc} ${tag}`).join(', ')), 0);
     assert.equal(await count(page, '#input'), 1, 'only the real question box has that id');
-    assert.equal(await page.$$eval(`${doc} [id], ${doc} [name], ${doc} [style], ${doc} [href], ${doc} [target]`, (n) => n.length), 0);
-    assert.deepEqual(await page.$$eval(`${doc} img`, (n) => n.map((img) => img.getAttribute('src'))), [], 'no picture points anywhere');
+    const attributes = ['id', 'name', 'style', 'href', 'target', 'background', 'usemap'];
+    assert.equal(await count(page, attributes.map((name) => `${doc} [${name}]`).join(', ')), 0);
+    assert.equal(await count(page, `${doc} [src]:not(img[src^="data:image/png"])`), 0, 'only the folder picture loads');
+    assert.equal(await count(page, `${doc} [class]:not(.md-image-missing, .md-image-missing *, a.inert)`), 0, 'no classes from the document');
+
+    // The fake sheet is only text inside the document's box, not over the editor or the tutor.
+    assert.equal(await count(page, '.sheet-backdrop'), 0);
+    const covering = await page.evaluate(() => {
+      const editor = document.querySelector('#editor').getBoundingClientRect();
+      return document.elementFromPoint(editor.x + editor.width / 2, editor.y + editor.height / 2)?.closest('#handout') !== null;
+    });
+    assert.equal(covering, false);
+    assert.equal(await page.$eval(doc, (n) => getComputedStyle(n).contain), 'layout paint');
+
     assert.match(await text(page, doc), /Tracker \(image from the web, not loaded\)/);
+    assert.match(await text(page, doc), /Bad picture \(image not found in this folder\)/, 'a malformed escape blanks nothing');
+    assert.match(await text(page, doc), /☑ done\s*☐ to do/, 'task boxes are shown as glyphs');
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).display), 'flex', 'no stylesheet from the document');
 
     const inert = await page.$$eval(`${doc} a.inert`, (links) => links.map((a) => a.textContent));
-    assert.deepEqual(inert, ['Click me', 'Data', 'Elsewhere']);
-    await page.click(`${doc} a.inert`);
+    assert.deepEqual(inert, ['Click me', 'Data', 'Elsewhere', 'Bad escape', 'Bad anchor']);
+    for (const link of await page.$$(`${doc} a`)) await link.click();
+    await sleep(200);
     assert.equal(await page.evaluate(() => window.__pwned), undefined);
-    const url = page.url();
-    await page.click(`${doc} a:not(.inert)`);
-    assert.equal(page.url(), url, 'the window did not navigate');
-    assert.deepEqual(await page.evaluate(() => window.__external), ['https://example.com/x'], 'web links open in the browser');
+    assert.equal(navigations, 0, 'the window did not navigate');
+    assert.deepEqual(await page.evaluate(() => window.__external), ['https://example.com/x'], 'web links open in the browser, not the window');
+    assert.deepEqual(requests, [], 'nothing left the page');
   },
-  { files: { 'handout.md': HOSTILE } },
+  { files: { 'handout.md': HOSTILE }, views: { 'figures/plot.png': { png: true } } },
 );
 
 const LINKED = `# Assignment
@@ -276,7 +296,8 @@ uiTest(
     assert.equal(await count(page, '.notice'), 0);
     assert.equal(await page.$eval('#toggle-handout-panel', (n) => n.getAttribute('aria-pressed')), 'true');
 
-    await page.click('#handout .pane-head [aria-label="Hide the handout"]');
+    assert.equal(await count(page, '#handout .pane-head button'), 0, 'the title bar and the View menu show and hide it');
+    await page.click('#toggle-handout-panel');
     assert.equal(await isHidden(page, '#handout'), true);
     await reopenFolder(page);
     assert.equal(await count(page, '.notice'), 0, 'not offered again');
@@ -299,6 +320,7 @@ uiTest('the pane falls back to the README, and says how to choose a handout when
 uiTest(
   'any PDF or Markdown file can be chosen as the handout, and the choice, width and page are kept per folder',
   async (page) => {
+    await page.setViewport({ width: 1920, height: 1080 });
     await page.click('#tree .node[data-path="docs"]');
     await page.click('#tree .node[data-path="docs/spec.pdf"]', { button: 'right' });
     await page.$$eval('.ctx-item', (items) => items.find((n) => n.textContent === 'Open as Handout').click());
@@ -323,28 +345,13 @@ uiTest(
 );
 
 uiTest(
-  'a PDF tab can be moved beside the code with Open as Handout',
-  async (page) => {
-    await openInTree(page, 'docs/spec.pdf');
-    await page.waitForSelector('#file-view .pdf-page canvas');
-    await page.click('#open-as-handout');
-    await page.waitForSelector('#handout .pdf-page canvas');
-    assert.equal(await text(page, '#handout .handout-name'), 'spec.pdf');
-  },
-  { views: { 'docs/spec.pdf': PDF } },
-);
-
-uiTest(
   'a handout that was deleted says so in the pane',
   async (page) => {
     await page.waitForSelector('.notice');
     await page.click('.notice button.button.small');
     await page.waitForSelector('#handout .pdf-page canvas');
-    await page.evaluate(() => {
-      delete window.__files['handout.pdf'];
-      window.__mock.options.views['handout.pdf'] = { error: { code: 'missing', message: 'gone' } };
-    });
-    await reopenFolder(page);
+    await page.evaluate(() => window.__changeOnDisk('handout.pdf', null));
+    await watcherSays(page, ['handout.pdf']);
     await page.waitForSelector('#handout .viewer-problem');
     assert.match(await text(page, '#handout .viewer-problem'), /handout\.pdf is no longer in this folder/);
     assert.equal(await count(page, '#handout .viewer-problem button'), 0, 'nothing to reveal');
@@ -352,12 +359,74 @@ uiTest(
   { views: { 'handout.pdf': PDF } },
 );
 
-uiTest('beside the handout at laptop width, the tutor folds so the code keeps its room, and comes back when asked', async (page) => {
-  await page.setViewport({ width: 1280, height: 800 });
+uiTest(
+  'a handout follows its file: a new version is shown, and a rename keeps it chosen',
+  async (page) => {
+    await page.click('#tree .node[data-path="docs"]');
+    await page.click('#tree .node[data-path="docs/spec.pdf"]', { button: 'right' });
+    await page.$$eval('.ctx-item', (items) => items.find((n) => n.textContent === 'Open as Handout').click());
+    await page.waitForFunction(() => document.querySelector('#handout .textLayer')?.textContent === 'Version one');
+    await page.evaluate(() => {
+      window.__mock.options.views['docs/spec.pdf'] = { pdf: ['Version two'] };
+      window.__changeOnDisk('docs/spec.pdf', 'v2');
+    });
+    await watcherSays(page, ['docs/spec.pdf']);
+    await page.waitForFunction(() => document.querySelector('#handout .textLayer')?.textContent === 'Version two');
+
+    await page.click('#tree .node[data-path="docs/spec.pdf"]', { button: 'right' });
+    await page.$$eval('.ctx-item', (items) => items.find((n) => n.querySelector('.ctx-label').textContent === 'Rename…').click());
+    await page.$eval('#tree .new-name', (n) => (n.value = 'hw1.pdf'));
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector('#handout .handout-name')?.textContent === 'hw1.pdf');
+    await sleep(300);
+    await reopenFolder(page);
+    await page.waitForFunction(() => document.querySelector('#handout .handout-name')?.textContent === 'hw1.pdf');
+    await page.waitForSelector('#handout .pdf-page canvas');
+  },
+  { views: { 'docs/spec.pdf': { pdf: ['Version one'] } } },
+);
+
+uiTest(
+  'a PDF tab follows its file on disk, and becomes text when renamed to a text file',
+  async (page) => {
+    await openInTree(page, 'docs/notes.pdf');
+    await page.waitForFunction(() => document.querySelector('#file-view .textLayer')?.textContent === 'First draft');
+    await page.evaluate(() => {
+      window.__mock.options.views['docs/notes.pdf'] = { pdf: ['Second draft'] };
+      window.__changeOnDisk('docs/notes.pdf', 'Second draft as text');
+    });
+    await watcherSays(page, ['docs/notes.pdf']);
+    await page.waitForFunction(() => document.querySelector('#file-view .textLayer')?.textContent === 'Second draft');
+
+    await page.click('#tree .node[data-path="docs/notes.pdf"]', { button: 'right' });
+    await page.$$eval('.ctx-item', (items) => items.find((n) => n.querySelector('.ctx-label').textContent === 'Rename…').click());
+    await page.$eval('#tree .new-name', (n) => (n.value = 'notes.txt'));
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector('.cm-content')?.textContent === 'Second draft as text');
+    assert.equal(await isHidden(page, '#file-view'), true);
+    assert.equal(await text(page, '#tabs .tab.active span'), 'notes.txt');
+
+    await openInTree(page, 'figures/plot.png');
+    await page.waitForSelector('#file-view .image-frame img');
+    await page.evaluate(() => window.__changeOnDisk('figures/plot.png', null));
+    await watcherSays(page, ['figures/plot.png']);
+    await page.waitForFunction(() => /plot\.png was deleted/.test(document.querySelector('.notice')?.textContent));
+    assert.equal(await count(page, '#tabs .tab'), 1, 'its tab was closed, like a text file left unchanged');
+  },
+  { views: { 'docs/notes.pdf': { pdf: ['First draft'] }, 'figures/plot.png': { png: true } } },
+);
+
+uiTest('beside the handout at 1440 pixels the tutor stays, and at 1280 it folds so the code keeps its room', async (page) => {
   await openInTree(page, 'stats/running.py');
   await menu(page, 'toggle-handout');
   await page.waitForSelector('#handout .md-doc');
-  assert.equal(await isHidden(page, '#tutor'), true);
+  assert.deepEqual([await isHidden(page, '#files'), await isHidden(page, '#handout'), await isHidden(page, '#tutor')], [false, false, false]);
+  assert.ok((await page.$eval('#editor', (n) => n.offsetWidth)) >= 480);
+  assert.ok((await page.$eval('#handout', (n) => n.offsetWidth)) >= 300);
+
+  await page.setViewport({ width: 1280, height: 800 });
+  await page.waitForFunction(() => document.querySelector('#tutor').hidden);
+  assert.equal(await isHidden(page, '#handout'), false);
   assert.ok((await page.$eval('#editor', (n) => n.offsetWidth)) >= 480);
   await menu(page, 'toggle-tutor');
   assert.deepEqual([await isHidden(page, '#tutor'), await isHidden(page, '#handout')], [false, true], 'the panel asked for last stays');

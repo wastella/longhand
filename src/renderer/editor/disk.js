@@ -186,7 +186,16 @@ export async function checkDisk(paths) {
     for (const [i, doc] of docs.entries()) {
       const onDisk = stats[i];
       // Skip a file renamed, closed, saved or reloading while its version was looked up.
-      if (doc.path !== asked[i].path || !isOpen(doc) || doc.saving || doc.reloading || doc.saves !== asked[i].saves || onDisk.error) continue;
+      if (
+        doc.path !== asked[i].path ||
+        session.docs.get(doc.path) !== doc ||
+        doc.kind === 'notice' ||
+        doc.saving ||
+        doc.reloading ||
+        doc.saves !== asked[i].saves ||
+        onDisk.error
+      )
+        continue;
       if (onDisk.missing) {
         if (!doc.missing) await fileGone(doc);
       } else if (doc.kind === 'view') {

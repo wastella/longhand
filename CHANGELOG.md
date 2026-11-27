@@ -34,6 +34,6 @@ Nothing has been released yet. This is what the first release will contain.
 - Handout pane beside the code (⇧⌘H) for an assignment's PDF or Markdown handout: the likely
   handout is offered when a folder opens, any PDF or Markdown file can be chosen with Open as
   Handout, and the choice, width and page are remembered per folder
-- PDFs and pictures open read-only in a tab, Markdown files have a rendered Preview, and files
-  Longhand cannot show say so calmly with Reveal in Finder
+- PDFs and pictures open read-only in a tab, and files Longhand cannot show say so calmly with
+  Reveal in Finder
 - Clone Repository… on the welcome screen and in the File menu, using your own git

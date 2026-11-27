@@ -114,6 +114,12 @@ uiTest('tutor answers cannot inject markup or navigate the window', async (page)
   await askTutor(page, 'please be hostile');
   assert.equal(await count(page, ATTACK), 0);
   assert.equal(await page.evaluate(() => window.__pwned), undefined);
+  // Nor dress up as the app: no classes of ours, no ids, no URL attributes, no image maps.
+  assert.equal(await count(page, '.msg.tutor .answer-body [class]:not(code, .math, .math-display, .katex *, .katex, [class^="code-"])'), 0);
+  assert.equal(await count(page, '.msg.tutor .sheet-backdrop, .msg.tutor [id], .msg.tutor [background], .msg.tutor area, .msg.tutor map'), 0);
+  assert.equal(await count(page, '#input'), 1);
+  assert.match(await text(page, '.msg.tutor .answer-body'), /A fake sheet over the app/);
+  assert.equal(await page.$eval('.msg.tutor .answer-body', (n) => getComputedStyle(n).contain), 'layout paint');
 });
 
 uiTest('math renders, while prices and code stay as written', async (page) => {

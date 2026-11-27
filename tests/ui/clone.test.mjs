@@ -104,3 +104,21 @@ uiTest(
   },
   { ...welcome, clone: { slow: true, progress: [['Receiving objects', 40]] } },
 );
+
+uiTest(
+  'another sheet taking the place of a running clone does not cancel it; it says when it is done',
+  async (page) => {
+    await startClone(page);
+    await page.click('#clone-start');
+    await page.waitForFunction(() => document.querySelector('#clone-url').disabled);
+    await page.evaluate(() => window.__emit('menu', 'settings'));
+    await page.waitForFunction(() => !document.querySelector('#clone-url'));
+    assert.deepEqual(await page.evaluate(() => window.__cancelled), []);
+    await page.evaluate(() => window.__finishClone());
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('.notice')].some((n) => n.textContent.includes('Cloned into /Users/student/assignment1-basics')),
+    );
+    assert.equal(await text(page, '#ws-name'), 'Longhand', 'the folder is offered, not opened over what the student is doing');
+  },
+  { ...welcome, clone: { slow: true } },
+);

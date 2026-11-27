@@ -133,9 +133,9 @@ export async function openCloneSheet() {
       if (!(await openFolder(path))) offerToOpen(path);
     } catch (problem) {
       running = null;
+      if (open) setBusy(false);
       if (problem?.code === 'cancelled') return;
       if (!open) return notify({ kind: 'error', message: problem?.message || String(problem) });
-      setBusy(false);
       const on = { 'invalid-url': url, 'not-found': url, 'invalid-name': name, exists: name }[problem?.code];
       showError(problem?.message || String(problem), on);
     } finally {

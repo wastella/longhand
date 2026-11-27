@@ -6,8 +6,9 @@
 //     { png: true }                    a small red picture
 //     { bytes: 'text' }                 exactly these bytes
 //     { error: { code, message?, size? } }  what view_read refuses with
-// A text file in the fixture (an SVG, say) is read as its own bytes. window.__viewReads counts
-// reads per path, and window.__external the links opened in the browser.
+// A text file in the fixture (an SVG, say) is read as its own bytes. A file deleted from the
+// fixture (window.__changeOnDisk(path, null)) is missing, and a rename takes its spec along.
+// window.__viewReads counts reads per path, and window.__external the links opened in the browser.
 
 const mock = window.__mock;
 const files = mock.files;
@@ -53,11 +54,21 @@ mock.commands.view_read = ({ rel }) => {
   window.__viewReads[rel] = (window.__viewReads[rel] || 0) + 1;
   const spec = views[rel];
   if (spec?.error) throw spec.error;
+  if (!(rel in files)) throw { code: 'missing', message: `${rel} no longer exists` };
   if (spec?.pdf) return makePdf(spec.pdf, spec.size);
   if (spec?.png) return fromBase64(PNG);
   if (spec?.bytes != null) return new TextEncoder().encode(spec.bytes);
-  if (rel in files) return new TextEncoder().encode(files[rel]);
-  throw { code: 'missing', message: `${rel} no longer exists` };
+  return new TextEncoder().encode(files[rel]);
+};
+
+const rename = mock.commands.fs_rename;
+mock.commands.fs_rename = (args) => {
+  for (const path of Object.keys(views))
+    if (path === args.from || path.startsWith(args.from + '/')) {
+      views[args.to + path.slice(args.from.length)] = views[path];
+      delete views[path];
+    }
+  return rename(args);
 };
 
 // Links the viewer opens in the browser; window.__external lists them.

@@ -35,7 +35,10 @@ const answers = {
   ].join('\n'),
   code: 'Run this:\n\n```bash\nuv run pytest\n```\n\nAn analogous example:\n\n```python\ndef push(self, x):\n    self.total += x\n    self.count += 1\n```',
   hostile:
-    'Hi <script>window.__pwned = 1</script><img src=x onerror="window.__pwned = 1"> [link](https://example.com) [bad](javascript:window.__pwned=1) <iframe src="https://example.com"></iframe>',
+    'Hi <script>window.__pwned = 1</script><img src=x onerror="window.__pwned = 1"> [link](https://example.com) [bad](javascript:window.__pwned=1) <iframe src="https://example.com"></iframe>' +
+    '<div class="sheet-backdrop"><div class="sheet" id="input">A fake sheet over the app</div></div>' +
+    '<table background="https://example.com/t.png"><tr><td background="https://example.com/d.png">cell</td></tr></table>' +
+    '<map name="m"><area href="https://example.com" shape="default"></map>',
   math: [
     'Softmax turns scores into probabilities: $\\mathrm{softmax}(x)_i = \\frac{e^{x_i}}{\\sum_j e^{x_j}}$, and it costs $5 to $10 of nothing.',
     '',
