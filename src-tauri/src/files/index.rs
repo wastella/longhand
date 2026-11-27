@@ -27,15 +27,17 @@ pub struct FileIndex {
 
 impl FileIndex {
     /// The files under `root`, walking the folder only if something changed since the last walk.
-    pub fn listing(&self, root: &Path) -> Arc<Listing> {
+    /// None if `is_current` says `root` stopped being the open folder during the walk, so a
+    /// switch of folder never waits for the old folder's walk to finish.
+    pub fn listing(&self, root: &Path, is_current: impl Fn() -> bool) -> Option<Arc<Listing>> {
         let _walking = self.building.lock().unwrap();
         if let Some(listing) = self.fresh(root) {
-            return listing;
+            return Some(listing);
         }
         let version = self.changes.load(Ordering::SeqCst);
-        let listing = Arc::new(list_files(root, MAX_INDEXED));
+        let listing = Arc::new(list_files(root, MAX_INDEXED, is_current)?);
         *self.cached.lock().unwrap() = Some(Cached { root: root.to_path_buf(), version, listing: listing.clone() });
-        listing
+        Some(listing)
     }
 
     fn fresh(&self, root: &Path) -> Option<Arc<Listing>> {
@@ -61,15 +63,17 @@ mod tests {
         let root = temp_dir("index");
         fs::write(root.join("a.py"), "").unwrap();
         let index = FileIndex::default();
-        assert_eq!(index.listing(&root).files, ["a.py"]);
+        let files = |root: &Path| index.listing(root, || true).unwrap().files.clone();
+        assert_eq!(files(&root), ["a.py"]);
 
         fs::write(root.join("b.py"), "").unwrap();
-        assert_eq!(index.listing(&root).files, ["a.py"], "cached until something says it changed");
+        assert_eq!(files(&root), ["a.py"], "cached until something says it changed");
         index.invalidate();
-        assert_eq!(index.listing(&root).files, ["a.py", "b.py"]);
+        assert_eq!(files(&root), ["a.py", "b.py"]);
 
         let other = temp_dir("index-other");
-        assert!(index.listing(&other).files.is_empty(), "a different folder is walked afresh");
+        assert!(index.listing(&other, || false).is_none(), "a walk of a folder no longer open gives up");
+        assert!(files(&other).is_empty(), "a different folder is walked afresh");
         fs::remove_dir_all(root).unwrap();
         fs::remove_dir_all(other).unwrap();
     }

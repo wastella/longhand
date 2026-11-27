@@ -4,8 +4,9 @@ import { invoke } from '../backend.js';
 
 /** folder path ('' for the root) -> [{ path, name, dir, ignored }] */
 const listings = new Map();
+/** folder path -> { token, promise } for the request in flight */
 const loading = new Map();
-let generation = 0;
+let tokens = 0;
 
 const parentOf = (path) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '');
 
@@ -15,30 +16,36 @@ export const cachedListing = (dir) => listings.get(dir);
 /** Loads the listing of `dir`. A folder that vanished or cannot be read lists as empty. */
 export function loadListing(dir) {
   if (listings.has(dir)) return Promise.resolve(listings.get(dir));
-  if (!loading.has(dir)) {
-    const started = generation;
-    const done = (entries) => {
+  if (loading.has(dir)) return loading.get(dir).promise;
+  const token = ++tokens;
+  const done = (entries) => {
+    // Only the latest request for a folder may fill it; a change since then made older ones stale.
+    if (loading.get(dir)?.token === token) {
       loading.delete(dir);
-      // A change that arrived while this was loading may have made it stale.
-      if (started === generation) listings.set(dir, entries);
-      return entries;
-    };
-    loading.set(
-      dir,
-      invoke('fs_list', { rel: dir }).then(done, () => done([])),
-    );
-  }
-  return loading.get(dir);
+      listings.set(dir, entries);
+    }
+    return entries;
+  };
+  const promise = invoke('fs_list', { rel: dir }).then(done, () => done([]));
+  loading.set(dir, { token, promise });
+  return promise;
+}
+
+function forget(dir) {
+  listings.delete(dir);
+  loading.delete(dir);
 }
 
 /** Forgets the listings that changes at `paths` affect; '' forgets everything. */
 export function forgetListings(paths) {
-  generation++;
-  loading.clear();
+  if (paths.includes('')) {
+    listings.clear();
+    loading.clear();
+    return;
+  }
   for (const path of paths) {
-    if (path === '') return listings.clear();
-    listings.delete(parentOf(path));
-    for (const dir of listings.keys()) if (dir === path || dir.startsWith(path + '/')) listings.delete(dir);
+    forget(parentOf(path));
+    for (const dir of [...listings.keys(), ...loading.keys()]) if (dir === path || dir.startsWith(path + '/')) forget(dir);
   }
 }
 

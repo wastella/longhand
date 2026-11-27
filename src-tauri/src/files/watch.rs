@@ -53,21 +53,28 @@ struct Batch {
 
 impl Batch {
     fn add(&mut self, root: &Path, event: notify::Result<Event>) {
-        let Ok(event) = event else { return self.everything = true };
-        if event.need_rescan() {
-            self.everything = true;
+        if self.everything {
+            return;
         }
-        for path in &event.paths {
-            match classify(root, path) {
-                Change::Unseen => {}
-                Change::Path(p) => {
-                    self.paths.insert(p);
+        match event {
+            Ok(event) if !event.need_rescan() => {
+                for path in &event.paths {
+                    match classify(root, path) {
+                        Change::Unseen => {}
+                        Change::Path(p) => {
+                            self.paths.insert(p);
+                        }
+                        Change::Everything => self.everything = true,
+                    }
                 }
-                Change::Everything => self.everything = true,
             }
+            _ => self.everything = true,
         }
         if self.paths.len() > MAX_PATHS {
             self.everything = true;
+        }
+        if self.everything {
+            self.paths.clear();
         }
     }
 
@@ -83,39 +90,39 @@ impl Batch {
     }
 }
 
-fn gather(root: &Path, events: Receiver<notify::Result<Event>>, on_change: impl Fn(Vec<String>)) {
+/// Gathers events into batches until the watcher is dropped. A batch is delivered only while
+/// `is_current` says `root` is still the open folder, and a batch cut short by the watcher
+/// being dropped is thrown away, so changes in one folder never reach another.
+fn gather(root: &Path, events: Receiver<notify::Result<Event>>, is_current: impl Fn() -> bool, on_change: impl Fn(Vec<String>)) {
     while let Ok(first) = events.recv() {
         let mut batch = Batch::default();
         batch.add(root, first);
         let deadline = Instant::now() + MAX_WAIT;
-        let mut open = true;
         while let Some(left) = deadline.checked_duration_since(Instant::now()) {
             match events.recv_timeout(QUIET.min(left)) {
                 Ok(event) => batch.add(root, event),
                 Err(RecvTimeoutError::Timeout) => break,
-                Err(RecvTimeoutError::Disconnected) => {
-                    open = false;
-                    break;
-                }
+                Err(RecvTimeoutError::Disconnected) => return,
             }
         }
-        if let Some(paths) = batch.finish() {
+        if let Some(paths) = batch.finish().filter(|_| is_current()) {
             on_change(paths);
-        }
-        if !open {
-            return;
         }
     }
 }
 
 /// Watches `root` until the returned watcher is dropped, calling `on_change` with each batch of
-/// changed paths (relative to `root`).
-pub fn watch(root: PathBuf, on_change: impl Fn(Vec<String>) + Send + 'static) -> notify::Result<RecommendedWatcher> {
+/// changed paths (relative to `root`) for as long as `is_current` says `root` is the open folder.
+pub fn watch(
+    root: PathBuf,
+    is_current: impl Fn() -> bool + Send + 'static,
+    on_change: impl Fn(Vec<String>) + Send + 'static,
+) -> notify::Result<RecommendedWatcher> {
     let (sender, events) = channel();
     let mut watcher = notify::recommended_watcher(sender)?;
     watcher.watch(&root, RecursiveMode::Recursive)?;
     // The thread ends when the watcher, which owns the sending side, is dropped.
-    thread::spawn(move || gather(&root, events, on_change));
+    thread::spawn(move || gather(&root, events, is_current, on_change));
     Ok(watcher)
 }
 
@@ -149,13 +156,28 @@ mod tests {
             send.send(event(&[&format!("/course/checkpoints/step_{i}.pt")])).unwrap();
         }
         send.send(event(&["/course/.git/index"])).unwrap();
-        drop(send);
         let (got, batches) = mpsc::channel();
-        gather(Path::new("/course"), events, move |paths| got.send(paths).unwrap());
-        let all: Vec<Vec<String>> = batches.iter().collect();
-        assert_eq!(all.len(), 1);
-        assert_eq!(all[0].len(), 20);
-        assert_eq!(all[0][0], "checkpoints/step_0.pt");
+        let gathering = thread::spawn(move || gather(Path::new("/course"), events, || true, move |paths| got.send(paths).unwrap()));
+        let batch = batches.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(batch.len(), 20);
+        assert_eq!(batch[0], "checkpoints/step_0.pt");
+        drop(send);
+        gathering.join().unwrap();
+        assert!(batches.try_recv().is_err(), "one batch only");
+    }
+
+    #[test]
+    fn nothing_is_delivered_for_a_folder_that_is_no_longer_open() {
+        let (send, events) = mpsc::channel();
+        send.send(event(&["/a/model.py"])).unwrap();
+        let (got, batches) = mpsc::channel();
+        let gathering = thread::spawn(move || gather(Path::new("/a"), events, || false, move |paths| got.send(paths).unwrap()));
+        thread::sleep(QUIET * 3);
+        // A half-gathered batch is dropped with the watcher, not delivered late.
+        send.send(event(&["/a/other.py"])).unwrap();
+        drop(send);
+        gathering.join().unwrap();
+        assert!(batches.try_recv().is_err());
     }
 
     #[test]
@@ -164,6 +186,7 @@ mod tests {
         for i in 0..=MAX_PATHS {
             batch.add(Path::new("/c"), event(&[&format!("/c/{i}")]));
         }
+        assert_eq!(batch.paths.len(), 0, "paths stop being collected");
         assert_eq!(batch.finish(), Some(vec![String::new()]));
 
         let mut batch = Batch::default();
@@ -175,9 +198,13 @@ mod tests {
     fn notices_files_written_on_disk() {
         let root = temp_dir("watch").canonicalize().unwrap();
         let (got, batches) = mpsc::channel();
-        let watcher = watch(root.clone(), move |paths| {
-            let _ = got.send(paths);
-        })
+        let watcher = watch(
+            root.clone(),
+            || true,
+            move |paths| {
+                let _ = got.send(paths);
+            },
+        )
         .unwrap();
         // FSEvents can take a moment to start delivering.
         thread::sleep(Duration::from_millis(300));

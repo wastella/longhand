@@ -7,7 +7,8 @@ const menuItems = (page) => page.$$eval('.ctx-item .ctx-label', (n) => n.map((x)
 const clickMenuItem = (page, label) =>
   page.$$eval('.ctx-item', (items, label) => items.find((i) => i.querySelector('.ctx-label').textContent === label).click(), label);
 const revealLabel = (page) => page.evaluate(() => (navigator.platform.startsWith('Mac') ? 'Reveal in Finder' : 'Show in File Manager'));
-const changeOnDisk = (page, paths) => page.evaluate((paths) => window.__emit('files:changed', paths), paths);
+const changeOnDisk = (page, paths, root = '/demo/running-stats') =>
+  page.evaluate((root, paths) => window.__emit('files:changed', { root, paths }), root, paths);
 
 // ---- find in files ----
 
@@ -25,13 +26,28 @@ uiTest('finds text across files, grouped by file, and jumps to the line', async 
   assert.equal(await text(page, '#status-pos'), 'Ln 8, Col 1');
 });
 
-uiTest('arrow keys move through hits and Enter opens one', async (page) => {
+const activeResult = (page) => page.$eval('#search-results .active', (n) => n.textContent);
+
+uiTest('arrow keys move through files and hits, and Enter opens one', async (page) => {
   await page.evaluate(() => window.__emit('menu', 'find-in-files'));
   await page.type('#search-input', 'push');
   await page.waitForSelector('#search-results .hit');
   await page.keyboard.press('ArrowDown');
+  assert.equal(await activeResult(page), '10def push(self, x: float) -> None:');
   await page.keyboard.press('ArrowDown');
-  assert.equal(await page.$eval('.hit.active', (n) => n.id), 'hit-1');
+  assert.equal(await activeResult(page), 'test_running.pytests2', 'the next file’s header');
+  assert.equal(await page.$eval('#search-results .active', (n) => n.getAttribute('aria-selected')), 'true');
+
+  // Left folds a file's hits away and right brings them back.
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await page.$eval('.hit-file.active', (n) => n.getAttribute('aria-expanded')), 'false');
+  assert.equal(await page.$$eval('.hit-group.collapsed .hit', (n) => n.every((x) => !x.offsetParent)), true);
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await activeResult(page), '7s.push(x)');
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await activeResult(page), 'test_running.pytests2', 'left from a hit goes to its file');
+  await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await page.waitForSelector('.cm-content');
   assert.equal(await text(page, '#status-file'), 'tests/test_running.py');
@@ -57,6 +73,20 @@ uiTest('match case and whole word narrow the search', async (page) => {
   await page.waitForFunction(() => document.querySelector('#search-summary').textContent.startsWith('4 results'));
 });
 
+uiTest(
+  'the match stays in view on a long line',
+  async (page) => {
+    await page.click('#toggle-search');
+    await page.type('#search-input', 'target_word');
+    await page.waitForSelector('#search-results .hit');
+    const shown = await text(page, '.hit-text');
+    assert.ok(shown.startsWith('…'), shown);
+    const visible = await page.$eval('.hit-match', (mark) => mark.getBoundingClientRect().right <= mark.closest('.hit-text').getBoundingClientRect().right);
+    assert.ok(visible, 'the match is not cut off by the ellipsis');
+  },
+  { files: { 'long.py': 'result = some_really_long_function_name_here(argument_one, argument_two, target_word)\n' } },
+);
+
 uiTest('a search with no matches says so', async (page) => {
   await page.click('#toggle-search');
   await page.type('#search-input', 'nothing like this');
@@ -75,6 +105,7 @@ uiTest('the file tree menu creates, renames, copies paths, reveals and trashes',
   await page.keyboard.press('Enter');
   await page.waitForSelector('#tree .node[data-path="notes.md"]');
   assert.equal(await text(page, '#status-file'), 'notes.md');
+  assert.equal(await count(page, '#tabs .tab.dirty'), 0, 'the Enter that named the file did not type into it');
 
   await page.click('#tree .node[data-path="notes.md"]', { button: 'right' });
   await clickMenuItem(page, 'Rename…');
@@ -295,6 +326,15 @@ uiTest('changes on disk show in the tree and in quick open', async (page) => {
   await page.evaluate(() => window.__emit('menu', 'quick-open'));
   await page.keyboard.type('checkpoint');
   await page.waitForFunction(() => document.querySelector('#quick-open .palette-row')?.dataset.path === 'checkpoint.pt');
+});
+
+uiTest('changes from a folder that is no longer open are ignored', async (page) => {
+  await page.evaluate(() => (window.__files['late.py'] = ''));
+  await changeOnDisk(page, ['late.py'], '/demo/previous-folder');
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(await count(page, '#tree .node[data-path="late.py"]'), 0);
+  await changeOnDisk(page, ['late.py']);
+  await page.waitForSelector('#tree .node[data-path="late.py"]');
 });
 
 uiTest('the tree reveals the file shown in the editor', async (page) => {

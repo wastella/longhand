@@ -101,8 +101,11 @@ export async function askForName({ dir, depth, initial = '', select = [0, 0], re
     input.oninput = () => show(input.value ? check() : '');
     input.onkeydown = (e) => {
       e.stopPropagation();
+      if (e.key !== 'Enter' && e.key !== 'Escape') return;
+      // Otherwise the Enter would carry on into the file this opens, as a stray new line.
+      e.preventDefault();
       if (e.key === 'Enter') submit();
-      else if (e.key === 'Escape') finish(null);
+      else finish(null);
     };
     input.onblur = () => {
       // Switching to another app keeps the field; clicking elsewhere in Longhand settles it.

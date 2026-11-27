@@ -28,42 +28,49 @@ const palette = h('div', { id: 'quick-open', class: 'palette', role: 'dialog', '
 let files = null;
 let known = new Set();
 let truncated = false;
-let stale = true;
 let loadError = null;
 let loading = null;
-let generation = 0;
+/** Bumped by every change on disk and every new folder. */
+let changes = 0;
+/** The value of `changes` when the shown list was requested. */
+let listedAt = -1;
+let folder = 0;
 
 let results = [];
 let current = 0;
 let returnFocus = null;
 
 /** Files changed on disk: list them again the next time the palette opens. */
-export const markFilesStale = () => (stale = true);
+export const markFilesStale = () => changes++;
+const isStale = () => listedAt !== changes;
 
 /** A different folder was opened. */
 export function forgetFiles() {
-  generation++;
+  folder++;
+  changes++;
   files = null;
   known = new Set();
-  stale = true;
   loading = null;
 }
 
 function load() {
-  const mine = generation;
-  loading ||= invoke('fs_files')
+  if (loading) return loading;
+  const mine = folder;
+  const askedAt = changes;
+  loading = invoke('fs_files')
     .then(
       (listing) => {
-        if (mine !== generation) return;
+        if (mine !== folder || listing.cancelled) return;
         files = listing.files.map(candidate);
         known = new Set(listing.files);
         truncated = listing.truncated;
-        stale = false;
+        // A change that arrived while this was on its way leaves the list stale.
+        listedAt = askedAt;
         loadError = null;
       },
-      (e) => mine === generation && (loadError = String(e)),
+      (e) => mine === folder && (loadError = String(e)),
     )
-    .finally(() => mine === generation && (loading = null));
+    .finally(() => mine === folder && (loading = null));
   return loading;
 }
 
@@ -191,7 +198,7 @@ export function openQuickOpen() {
   input.value = '';
   render();
   input.focus();
-  if (stale || !files) load().then(() => !palette.hidden && render());
+  if (isStale() || !files) load().then(() => !palette.hidden && render());
 }
 
 export function mountQuickOpen() {

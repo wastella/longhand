@@ -12,6 +12,7 @@ import { renderTree } from './tree.js';
 /** Saves from the editor come back from the watcher; they are not changes made outside it. */
 const OWN_SAVE_WINDOW_MS = 2000;
 const ownSaves = new Map();
+let watching = false;
 
 function madeOutside(path) {
   const savedAt = ownSaves.get(path);
@@ -24,8 +25,9 @@ function refresh(paths) {
   return renderTree();
 }
 
-function changed(paths) {
-  if (!state.workspace) return;
+/** A batch from the backend: { root, paths }. Batches for a folder no longer open are dropped. */
+function changed({ root, paths }) {
+  if (!state.workspace || root !== state.workspace.path) return;
   const outside = paths.filter(madeOutside);
   if (outside.length) emit('files:changed', outside);
   return refresh(paths);
@@ -34,8 +36,10 @@ function changed(paths) {
 /** Starts watching the folder that was just opened. */
 export async function watchFolder() {
   ownSaves.clear();
+  watching = false;
   try {
     await invoke('fs_watch');
+    watching = true;
   } catch (e) {
     showStatus(String(e), 10000);
   }
@@ -44,6 +48,6 @@ export async function watchFolder() {
 export function setupWatch() {
   listen('files:changed', changed);
   on('editor:saved', (path) => ownSaves.set(path, Date.now()));
-  // A safety net for changes the watcher could not see (network drives, a failed watch).
-  window.addEventListener('focus', () => state.workspace && refresh(['']));
+  // Without a watcher (a network drive, say), coming back to the window is the cue to look again.
+  window.addEventListener('focus', () => state.workspace && !watching && refresh(['']));
 }

@@ -54,14 +54,19 @@ fn mtime_ms(p: &Path) -> f64 {
         .unwrap_or(0.0)
 }
 
+/// The entries of a folder for the tree: [{ path, name, dir, ignored }].
 #[tauri::command]
-pub fn fs_list(state: State<AppState>, rel: String) -> R<Vec<Value>> {
-    let entries = walk::list_dir(&in_workspace(&state, &rel)?).map_err(err)?;
-    let prefix = if rel.is_empty() || rel == "." { String::new() } else { format!("{}/", rel.trim_end_matches('/')) };
-    Ok(entries
-        .into_iter()
-        .map(|e| json!({ "path": format!("{prefix}{}", e.name), "name": e.name, "dir": e.dir, "ignored": e.ignored }))
-        .collect())
+pub async fn fs_list(app: AppHandle, rel: String) -> R<Vec<Value>> {
+    off_main(move || {
+        let state = app.state::<AppState>();
+        let entries = walk::list_dir(&workspace(&state)?, &in_workspace(&state, &rel)?).map_err(err)?;
+        let prefix = if rel.is_empty() || rel == "." { String::new() } else { format!("{}/", rel.trim_end_matches('/')) };
+        Ok(entries
+            .into_iter()
+            .map(|e| json!({ "path": format!("{prefix}{}", e.name), "name": e.name, "dir": e.dir, "ignored": e.ignored }))
+            .collect())
+    })
+    .await?
 }
 
 #[tauri::command]
@@ -114,9 +119,7 @@ pub fn fs_rename(state: State<AppState>, from: String, to: String) -> R<()> {
 fn rename(state: &AppState, from: &str, to: &str) -> R<()> {
     let src = in_workspace(state, from)?;
     let dst = in_workspace(state, to)?;
-    // On a case-insensitive disk, `model.py` -> `Model.py` finds the file itself at the new name.
-    let same_entry = src.canonicalize().ok().is_some_and(|s| dst.canonicalize().ok() == Some(s));
-    if dst.exists() && !same_entry {
+    if fs::symlink_metadata(&dst).is_ok() && !only_case_differs(&src, &dst) {
         return Err("Something with that name already exists".into());
     }
     if dst.starts_with(&src) && dst != src {
@@ -126,6 +129,25 @@ fn rename(state: &AppState, from: &str, to: &str) -> R<()> {
         fs::create_dir_all(parent).map_err(err)?;
     }
     fs::rename(src, dst).map_err(err)
+}
+
+/// Whether `a` and `b` are one entry whose name differs only in case, as `model.py` and
+/// `Model.py` are on a case-insensitive disk. Links are not followed: renaming a link onto its
+/// target must be refused, not replace the target.
+fn only_case_differs(a: &Path, b: &Path) -> bool {
+    if a.to_string_lossy().to_lowercase() != b.to_string_lossy().to_lowercase() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        match (fs::symlink_metadata(a), fs::symlink_metadata(b)) {
+            (Ok(x), Ok(y)) => x.dev() == y.dev() && x.ino() == y.ino(),
+            _ => false,
+        }
+    }
+    #[cfg(not(unix))]
+    true
 }
 
 /// Deleting from the file tree moves the item to the system Trash, so it can be recovered.
@@ -147,6 +169,13 @@ pub struct FilesState {
     /// Bumped by every search, so a running search can see that a newer one replaced it.
     searches: AtomicU64,
     watcher: Mutex<Option<RecommendedWatcher>>,
+    /// Held while the tree's memory file is read or rewritten.
+    memory: Mutex<()>,
+}
+
+/// Whether `root` is still the open folder.
+fn is_open(app: &AppHandle, root: &Path) -> bool {
+    workspace(&app.state::<AppState>()).is_ok_and(|ws| ws == root)
 }
 
 /// Runs slow file work on a blocking thread, off the main thread and the async workers.
@@ -158,9 +187,9 @@ async fn off_main<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) 
 #[tauri::command]
 pub async fn fs_files(app: AppHandle) -> R<Value> {
     let ws = workspace(&app.state::<AppState>())?;
-    off_main(move || {
-        let listing = app.state::<FilesState>().index.listing(&ws);
-        json!({ "files": listing.files, "truncated": listing.truncated })
+    off_main(move || match app.state::<FilesState>().index.listing(&ws, || is_open(&app, &ws)) {
+        Some(listing) => json!({ "files": listing.files, "truncated": listing.truncated }),
+        None => json!({ "cancelled": true }),
     })
     .await
 }
@@ -177,8 +206,9 @@ pub async fn fs_search(app: AppHandle, query: String, case_sensitive: Option<boo
     let matcher = search::Matcher::new(&query, case_sensitive.unwrap_or(false), whole_word.unwrap_or(false));
     off_main(move || {
         let files = app.state::<FilesState>();
-        let listing = files.index.listing(&ws);
-        match search::search(&ws, &listing.files, &matcher, || files.searches.load(Ordering::SeqCst) != generation) {
+        let replaced = || files.searches.load(Ordering::SeqCst) != generation || !is_open(&app, &ws);
+        let Some(listing) = files.index.listing(&ws, || !replaced()) else { return json!({ "cancelled": true }) };
+        match search::search(&ws, &listing.files, &matcher, replaced) {
             Some(found) => json!(found),
             None => json!({ "cancelled": true }),
         }
@@ -187,23 +217,36 @@ pub async fn fs_search(app: AppHandle, query: String, case_sensitive: Option<boo
 }
 
 /// Starts watching the open folder, replacing any earlier watch. Changes arrive as
-/// `files:changed` events carrying relative paths, or `[""]` when anything may have changed.
+/// `files:changed` events, { root, paths }, with paths relative to root or `[""]` when anything
+/// may have changed. Batches stop as soon as root is no longer the open folder.
 #[tauri::command]
-pub fn fs_watch(app: AppHandle, state: State<AppState>, files: State<FilesState>) -> R<()> {
-    let ws = workspace(&state)?;
-    let mut current = files.watcher.lock().unwrap();
-    *current = None;
-    files.index.invalidate();
-    let handle = app.clone();
-    let watcher = watch::watch(ws.clone(), move |paths| {
-        handle.state::<FilesState>().index.invalidate();
-        let _ = handle.emit("files:changed", paths);
+pub async fn fs_watch(app: AppHandle) -> R<()> {
+    off_main(move || {
+        let ws = workspace(&app.state::<AppState>())?;
+        let files = app.state::<FilesState>();
+        let mut current = files.watcher.lock().unwrap();
+        *current = None;
+        files.index.invalidate();
+        let (check, emitter, root, watched) = (app.clone(), app.clone(), ws.clone(), ws.clone());
+        let watcher = watch::watch(
+            ws.clone(),
+            move || is_open(&check, &watched),
+            move |paths| {
+                emitter.state::<FilesState>().index.invalidate();
+                let _ = emitter.emit("files:changed", json!({ "root": root, "paths": paths }));
+            },
+        )
+        .map_err(|e| {
+            format!("Cannot watch this folder for changes ({e}). Changes made outside Longhand appear when you switch back to it.")
+        })?;
+        *current = Some(watcher);
+        drop(current);
+        // List the files now, so the first quick open is instant.
+        let warm = app.clone();
+        std::thread::spawn(move || warm.state::<FilesState>().index.listing(&ws, || is_open(&warm, &ws)));
+        Ok(())
     })
-    .map_err(|e| format!("Cannot watch this folder for changes ({e}). Changes made outside Longhand appear when you switch back to it."))?;
-    *current = Some(watcher);
-    // List the files now, so the first quick open is instant.
-    std::thread::spawn(move || app.state::<FilesState>().index.listing(&ws));
-    Ok(())
+    .await?
 }
 
 /// Shows a file or folder in Finder (or the system file manager).
@@ -227,15 +270,26 @@ fn memory_store(app: &AppHandle) -> R<PathBuf> {
 
 /// What the file tree remembered about the open folder, or null.
 #[tauri::command]
-pub fn files_memory_load(app: AppHandle, state: State<AppState>) -> R<Value> {
-    Ok(memory::load(&memory_store(&app)?, &workspace(&state)?.to_string_lossy()))
+pub async fn files_memory_load(app: AppHandle) -> R<Value> {
+    off_main(move || {
+        let folder = workspace(&app.state::<AppState>())?;
+        let files = app.state::<FilesState>();
+        let _held = files.memory.lock().unwrap();
+        Ok(memory::load(&memory_store(&app)?, &folder.to_string_lossy()))
+    })
+    .await?
 }
 
 /// Remembers `memory` for `folder`. The interface names the folder, so a save scheduled just
 /// before another folder opens still lands on the folder it belongs to.
 #[tauri::command]
-pub fn files_memory_save(app: AppHandle, folder: String, memory: Value) -> R<()> {
-    memory::save(&memory_store(&app)?, &folder, memory, chrono::Utc::now().timestamp_millis())
+pub async fn files_memory_save(app: AppHandle, folder: String, memory: Value) -> R<()> {
+    off_main(move || {
+        let files = app.state::<FilesState>();
+        let _held = files.memory.lock().unwrap();
+        memory::save(&memory_store(&app)?, &folder, memory, chrono::Utc::now().timestamp_millis())
+    })
+    .await?
 }
 
 #[cfg(test)]
@@ -294,6 +348,21 @@ mod tests {
         assert!(fs::read_dir(&ws).unwrap().flatten().any(|e| e.file_name() == "Model.py"));
         rename(&state, "Model.py", "pkg/sub/model.py").unwrap();
         assert!(ws.join("pkg/sub/model.py").is_file());
+        fs::remove_dir_all(ws).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn renaming_a_link_onto_its_target_keeps_the_target() {
+        let ws = temp_dir("rename-link");
+        fs::write(ws.join("target.py"), "the student's work").unwrap();
+        std::os::unix::fs::symlink(ws.join("target.py"), ws.join("link.py")).unwrap();
+        let state = state_for(&ws);
+
+        assert!(rename(&state, "link.py", "target.py").is_err());
+        assert!(rename(&state, "target.py", "link.py").is_err());
+        assert_eq!(fs::read_to_string(ws.join("target.py")).unwrap(), "the student's work");
+        assert!(fs::symlink_metadata(ws.join("target.py")).unwrap().is_file());
         fs::remove_dir_all(ws).unwrap();
     }
 

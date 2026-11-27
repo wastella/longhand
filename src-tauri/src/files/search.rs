@@ -136,7 +136,8 @@ pub fn search(root: &Path, files: &[String], matcher: &Matcher, cancelled: impl 
         if bytes.iter().take(8000).any(|b| *b == 0) {
             continue;
         }
-        let Ok(text) = String::from_utf8(bytes) else { continue };
+        // A file in another encoding (Latin-1 notes, say) is still searched, with odd bytes replaced.
+        let text = String::from_utf8_lossy(&bytes);
         if !matcher.may_match(&text) {
             continue;
         }
@@ -216,11 +217,12 @@ mod tests {
         let root = temp_dir("search");
         fs::write(root.join("a.py"), "x = 1\nprint(x)\n").unwrap();
         fs::write(root.join("b.bin"), b"x\0x").unwrap();
+        fs::write(root.join("d.txt"), b"caf\xe9 x").unwrap();
         fs::write(root.join("c.txt"), "x".repeat(MAX_SEARCH_BYTES as usize + 1)).unwrap();
-        let files: Vec<String> = ["a.py", "b.bin", "c.txt", "gone.py"].map(String::from).to_vec();
+        let files: Vec<String> = ["a.py", "b.bin", "c.txt", "d.txt", "gone.py"].map(String::from).to_vec();
         let found = search(&root, &files, &Matcher::new("x", true, true), || false).unwrap();
-        assert_eq!(found.hits.iter().map(|h| (h.path.as_str(), h.line)).collect::<Vec<_>>(), [("a.py", 1), ("a.py", 2)]);
-        assert_eq!((found.files, found.skipped, found.truncated), (1, 1, false));
+        assert_eq!(found.hits.iter().map(|h| (h.path.as_str(), h.line)).collect::<Vec<_>>(), [("a.py", 1), ("a.py", 2), ("d.txt", 1)]);
+        assert_eq!((found.files, found.skipped, found.truncated), (2, 1, false));
         assert!(search(&root, &files, &Matcher::new("x", true, true), || true).is_none());
         fs::remove_dir_all(root).unwrap();
     }

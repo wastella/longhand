@@ -67,7 +67,7 @@
 .new-name {
   display: block;
   width: 100%;
-  font: var(--text-sm) var(--font-mono);
+  font: inherit;
   border-color: var(--color-accent);
   border-radius: var(--radius-sm);
   padding: 3px var(--space-3);

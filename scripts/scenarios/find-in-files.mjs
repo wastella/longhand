@@ -5,6 +5,8 @@ export default async function (page) {
   await page.click('#search-case');
   await page.type('#search-input', 'RunningStats');
   await page.waitForSelector('#search-results .hit');
+  // The first hit, the next file's header, then its first hit.
+  await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
 }

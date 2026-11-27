@@ -89,17 +89,20 @@ exempt) behind a button that records the reveal (`tutor/hidden-code.js`).
 
 `files/walk.rs` decides what the app sees. `.git`, `.longhand` and `.DS_Store` are never shown.
 Environments, caches and build output (`.venv`, `__pycache__`, `node_modules`, …) and anything
-the folder's `.gitignore` excludes (applied even before `git init`) are shown quietly in the
-tree and left out of quick open and find in files. Other dotfiles, such as `.gitignore`, are
-shown normally.
+the folder's own `.gitignore` and `.ignore` files exclude (applied even before `git init`) are
+shown quietly in the tree and left out of quick open and find in files. Ignore files above the
+open folder and the user's global excludes do not count, so a `.gitignore` in the home folder
+cannot hide coursework. Other dotfiles, such as `.gitignore`, are shown normally.
 
 Quick open and find in files share one cached list of the folder's files (`files/index.rs`,
 capped at 100,000). `fs_watch` watches the folder with `notify`; changes are gathered into
 batches (200 ms of quiet, at most one per second, `[""]` past 500 paths) and sent as the
-`files:changed` event. A batch marks the list stale rather than walking again, so a training
+`files:changed` event, `{ root, paths }`. Batches stop once their folder is no longer the open
+one, and the interface drops any whose `root` is not the open folder. A batch marks the list stale rather than walking again, so a training
 script writing checkpoints costs one walk at the next quick open. Searches run on a blocking
 thread, skip files over 1 MB and binary files, stop at 500 hits, and each new search cancels the
-one before it. The interface refreshes only the tree folders a batch touched and passes the
+one before it; a walk or search of a folder that is no longer open gives up. Every file command
+that touches the disk runs off the main thread. The interface refreshes only the tree folders a batch touched and passes the
 batch on to other areas as `files:changed`, leaving out the editor's own saves.
 
 Which folders were expanded and which files were opened recently are kept per folder in

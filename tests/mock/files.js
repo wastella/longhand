@@ -3,13 +3,16 @@
 // Options: `gitignored` lists paths the mock treats as git-ignored (quiet in the tree, left out
 // of quick open and search) and `treeMemory` is what the tree remembered about the folder.
 // window.__treeMemory holds the last memory saved, window.__revealed the paths shown in Finder.
-// A test fakes a change on disk by editing window.__files and emitting `files:changed`.
+// A test fakes a change on disk by editing window.__files and emitting `files:changed` with
+// { root: '/demo/running-stats', paths }.
 
 const mock = window.__mock;
 const files = mock.files;
 const isWithin = (path, prefix) => path === prefix || path.startsWith(prefix + '/');
 const GENERATED = ['.venv', 'venv', '__pycache__', 'node_modules', '.pytest_cache'];
 
+// Like the backend, a folder's own entry is marked, not everything inside it.
+const ignoredEntry = (path) => GENERATED.includes(path.split('/').pop()) || (mock.options.gitignored || []).includes(path);
 const ignored = (path) => path.split('/').some((part) => GENERATED.includes(part)) || (mock.options.gitignored || []).some((prefix) => isWithin(path, prefix));
 
 function list(rel) {
@@ -23,7 +26,7 @@ function list(rel) {
     seen.set(rest[0], rest.length > 1);
   }
   return [...seen]
-    .map(([name, dir]) => ({ name, dir, path: prefix + name, ignored: ignored(prefix + name) }))
+    .map(([name, dir]) => ({ name, dir, path: prefix + name, ignored: ignoredEntry(prefix + name) }))
     .sort((a, b) => b.dir - a.dir || a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
 }
 

@@ -10,12 +10,21 @@ const MAX_RECENT = 20;
 const empty = () => ({ expanded: [], recent: [] });
 let memory = empty();
 let saveTimer;
+/** The save waiting for its timer: { folder, memory }. */
+let pending = null;
+
+function flush() {
+  clearTimeout(saveTimer);
+  if (pending) invoke('files_memory_save', pending).catch(() => {});
+  pending = null;
+}
 
 const paths = (value) => (Array.isArray(value) ? value.filter((p) => typeof p === 'string') : []);
 
 /** Loads the memory of the folder that was just opened. */
 export async function loadMemory() {
-  clearTimeout(saveTimer);
+  // The previous folder's last change still belongs to it.
+  flush();
   memory = empty();
   try {
     const saved = await invoke('files_memory_load');
@@ -28,10 +37,9 @@ export async function loadMemory() {
 
 function remember(patch) {
   Object.assign(memory, patch);
-  const folder = state.workspace?.path;
-  const snapshot = { ...memory };
+  pending = { folder: state.workspace?.path, memory: { ...memory } };
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => invoke('files_memory_save', { folder, memory: snapshot }).catch(() => {}), SAVE_DELAY_MS);
+  saveTimer = setTimeout(flush, SAVE_DELAY_MS);
 }
 
 export const rememberExpanded = (expanded) => remember({ expanded: [...expanded] });
