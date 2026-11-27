@@ -249,7 +249,9 @@ mod tests {
     #[test]
     fn tools_beyond_reading_stop_the_run_at_once() {
         let init = r#"{"type":"system","subtype":"init","tools":["Read","Bash"]}"#.to_string();
-        let (out, events, elapsed) = fake_cli(&[init], &format!("sleep 5; printf '%s\\n' '{}'", text("leaked")));
+        // `exec`, so the process killed is the one holding the pipes: Linux's sh would otherwise fork
+        // `sleep`, which outlives the kill with stderr open, and the run waits for it.
+        let (out, events, elapsed) = fake_cli(&[init], "exec sleep 5");
         assert_eq!(out.failure.unwrap().code, "read-only");
         assert!(!out.started && out.text.is_empty() && events.is_empty());
         assert!(elapsed < Duration::from_secs(4), "the process was killed rather than waited for");
