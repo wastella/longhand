@@ -2,22 +2,10 @@
 
 import { emptyState, h } from '../dom.js';
 import { icon } from '../shell/icons.js';
-import { askTutorAbout } from '../tutor/index.js';
 import { clock, count, duration, failed, group, parseId, shortName, slow } from './model.js';
 
 /** Group key → open, for groups the student opened or closed themselves. */
 const opened = new Map();
-
-// Help with a failure starts from the student's own read of it.
-function askAbout(test) {
-  const output = (test.detail || test.message || '').slice(0, 6000);
-  askTutorAbout({
-    kind: 'failure',
-    label: test.id.split('::').pop(),
-    text: `Failing test: ${test.id}\n\nPytest output:\n${output}`,
-    placeholder: 'What did you expect to happen, and what have you tried so far?',
-  });
-}
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -231,7 +219,14 @@ function testRow(test, depth, { staleIds, on, label }) {
     running ? h('span', { class: 'tests-time dim' }, 'running') : took && h('span', { class: `tests-time${slow(test) ? ' slow' : ''}` }, took),
   );
   // "Ask tutor" stays the first button on a failing row; other areas and the README screenshot rely on it.
-  if (failed(test)) row.append(h('button', { type: 'button', tabindex: '-1', onclick: (e) => (e.stopPropagation(), askAbout(test)) }, 'Ask tutor'));
+  if (failed(test))
+    row.append(
+      h(
+        'button',
+        { type: 'button', tabindex: '-1', title: 'Ask the tutor about this failure, beneath it', onclick: (e) => (e.stopPropagation(), on.ask(test)) },
+        'Ask tutor',
+      ),
+    );
   if (!running) {
     row.append(
       h(

@@ -1,0 +1,265 @@
+/* The tutor's help pinned to the student's work (feedback/): notes in the margin, the Notes list
+   at the top of the tutor panel, and help beneath a failing test. Tutor messages inside them use
+   the conversation's own .msg styles, so all three read as one tutor. */
+
+/* ---- inside a note in the margin ---- */
+
+.fb-note {
+  user-select: text;
+}
+.fb-note-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 22px;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.fb-note-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+/* A small dot says what kind of note it is; the words say the rest. */
+.fb-note-kind::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-round);
+  background: var(--color-text-muted);
+}
+.fb-note.good .fb-note-kind::before {
+  background: var(--color-success);
+}
+.fb-note.bug .fb-note-kind::before {
+  background: var(--color-danger);
+}
+.fb-note.fragile .fb-note-kind::before {
+  background: var(--color-warning);
+}
+.fb-note.explanation .fb-note-kind::before {
+  display: none;
+}
+.fb-action {
+  font-size: var(--text-xs);
+}
+.fb-note .msg,
+.fb-failure .msg,
+.fb-checkpoint .msg {
+  margin: var(--space-3) 0;
+}
+.fb-note .fb-remark {
+  margin-top: var(--space-1);
+}
+.fb-note .msg.user,
+.fb-failure .msg.user,
+.fb-checkpoint .msg.user {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+}
+.fb-running {
+  display: flex;
+  justify-content: flex-end;
+}
+.fb-running button {
+  font-size: var(--text-xs);
+}
+
+/* The reply line, and what the tutor will see, shown while the student is writing. */
+.fb-reply {
+  margin-top: var(--space-4);
+}
+.fb-reply-input,
+.fb-expect {
+  width: 100%;
+  max-width: 520px;
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
+  font: var(--text-sm) / var(--leading-ui) var(--font-ui);
+}
+.fb-sees {
+  display: none;
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+.fb-reply:focus-within .fb-sees {
+  display: block;
+}
+
+/* ---- the Notes list at the top of the tutor panel ---- */
+
+#fb-summary {
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-3) var(--space-6) var(--space-4);
+  font-size: var(--text-sm);
+}
+.fb-summary-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 24px;
+}
+.fb-summary-title {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--color-text-muted);
+}
+.fb-summary-count {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+.fb-summary-head button {
+  font-size: var(--text-xs);
+}
+.fb-step {
+  min-width: 22px;
+}
+.fb-list {
+  max-height: 168px;
+  overflow: auto;
+  margin-top: var(--space-1);
+}
+.fb-row {
+  display: flex;
+  align-items: center;
+}
+.fb-row-main {
+  flex: 1;
+  min-width: 0;
+  gap: var(--space-4);
+  height: var(--row-height);
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+.fb-row-lines {
+  flex: none;
+  width: 40px;
+  font: var(--text-mono-sm) var(--font-mono);
+  color: var(--color-text-muted);
+}
+.fb-row-kind {
+  flex: none;
+  color: var(--color-text-muted);
+}
+.fb-row-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fb-group {
+  margin-top: var(--space-2);
+}
+.fb-group summary {
+  cursor: pointer;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  padding: var(--space-1) var(--space-2);
+}
+.fb-group .fb-row-main {
+  opacity: 0.6;
+}
+.fb-group.outdated .fb-row-main {
+  cursor: default;
+}
+.fb-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding: 0 var(--space-2);
+  color: var(--color-text-muted);
+}
+.fb-status .msg.error {
+  margin: 0;
+  flex: 1;
+}
+
+/* ---- beneath a failing test, and the checkpoint once it passes ---- */
+
+.fb-failure,
+.fb-checkpoint {
+  max-width: 760px;
+  font: var(--text-md) / var(--leading-reading) var(--font-ui);
+  user-select: text;
+}
+.fb-failure {
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+.fb-checkpoint {
+  margin-top: var(--space-6);
+  padding: var(--space-4) var(--space-6) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+}
+.fb-failure-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 22px;
+  margin-bottom: var(--space-3);
+}
+.fb-label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--color-text-muted);
+}
+.fb-changed {
+  font-size: var(--text-xs);
+  color: var(--color-warning);
+}
+.fb-checkpoint-title {
+  color: var(--color-text);
+}
+.fb-start {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.fb-start .fb-expect {
+  flex: 1;
+  min-width: 0;
+}
+.fb-start .dim {
+  font-size: var(--text-sm);
+}
+.fb-skip {
+  flex: none;
+  font-size: var(--text-xs);
+}
+.fb-where {
+  flex: none;
+  font-size: var(--text-sm);
+}
+
+.fb-note :focus-visible,
+.fb-failure :focus-visible,
+.fb-checkpoint :focus-visible,
+#fb-summary :focus-visible {
+  outline: 1px solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+.fb-reply-input:focus-visible,
+.fb-expect:focus-visible {
+  outline: none;
+}
+
+/* A note is as wide as the code's longest line, which can be wider than the editor; the tutor's
+   notes keep to the visible width so their text and actions never sit off screen. */
+#editor-host .cm-scroller:has(.fb-note) {
+  container-type: inline-size;
+}
+#editor-host .cm-note:has(.fb-note) {
+  max-width: min(760px, calc(100cqw - 96px));
+}

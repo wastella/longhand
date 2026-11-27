@@ -9,6 +9,7 @@ import * as files from './files/index.js';
 import * as terminal from './terminal/index.js';
 import * as tests from './tests/index.js';
 import * as tutor from './tutor/index.js';
+import * as feedback from './feedback/index.js';
 import { runSmoke } from './smoke.js';
 
 const region = (id) => document.getElementById(id);
@@ -28,6 +29,8 @@ async function main() {
   terminal.mount();
   tests.mount();
   tutor.mount(region('tutor'));
+  // After the editor, tests and tutor: it attaches to all three.
+  feedback.mount();
 
   listen('workspace:opened', openWorkspace);
   listen('menu', (id) => shell.runCommand(id));

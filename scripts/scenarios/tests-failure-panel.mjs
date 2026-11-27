@@ -1,6 +1,6 @@
-// A failing test with a panel attached through registerFailurePanel (tests/index.js), as the
-// tutor will attach its help. No area registers one yet, so this builds the interface with a
-// stand-in that does, and reloads the page on it.
+// A failing test with a panel attached through registerFailurePanel (tests/index.js). This
+// builds the interface with a stand-in panel in place of the tutor's help (feedback/), and
+// reloads the page on it, so the hook itself can be tested.
 import { build } from 'esbuild';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -16,6 +16,8 @@ const log = (window.__panels = { made: [], disposed: [], updated: [], selected: 
 window.__latestResults = latestResults;
 window.__registerFailurePanel = registerFailurePanel;
 window.__on = on;
+// The real help on failures (feedback/) steps aside for the stand-in.
+window.__feedback.unregisterFailurePanel();
 on('tests:selected', (test) => log.selected.push(test ? test.id : null));
 window.__unregisterPanel = registerFailurePanel(
   (test) => {

@@ -12,13 +12,17 @@ import { closeLadder, ladder } from './hints.js';
 import { historyView, showHistory } from './history.js';
 import { openLookup, setupLookup } from './lookup.js';
 import { loadMathStyles } from './math.js';
-import { explainSelection, quickActions, reviewFile } from './quick-actions.js';
+import { quickActions } from './quick-actions.js';
 import { recordView, showRecord } from './record.js';
 import { isConnected, setupBox, showSetup } from './setup.js';
 
 export { tutorRequest, prepareTutor, listThreads, loadThread, usageRecord } from './engine.js';
 export { ask } from './conversation.js';
 export { renderAnswer } from './markdown.js';
+export { failureView } from './errors.js';
+
+/** A place at the top of the panel, under the policy, for the Notes list on the open file (feedback/). */
+export const panelStrip = h('div', { id: 'tutor-strip' });
 
 /**
  * Opens the tutor with `attachment` ({ kind, label, text, placeholder }) attached to the next
@@ -104,6 +108,7 @@ export function mount(region) {
   region.append(
     paneHead(h('span', {}, 'Tutor'), spacer(), policy, viewButtons.history, viewButtons.record, newChat),
     policyNote,
+    panelStrip,
     chat,
     historyView,
     recordView,
@@ -119,8 +124,6 @@ export function mount(region) {
 
   // View > Go to Tutor (⌘4): the question box, or the setup steps' button while not connected.
   registerFocusTarget('tutor', () => [input, setupBox.querySelector('button')].find((node) => node?.offsetParent) || null);
-  registerCommand('ask-selection', explainSelection);
-  registerCommand('review-file', reviewFile);
   registerCommand('new-conversation', startNewConversation);
   registerCommand('lookup', openLookup);
   on('workspace:opened', showFolder);

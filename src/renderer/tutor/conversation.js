@@ -38,13 +38,12 @@ function introduction() {
   return h(
     'div',
     { class: 'empty' },
-    'The tutor can read this folder but cannot edit files or run anything.',
+    'Ask about concepts, the math, an error or an API here. The tutor can read this folder but cannot edit files or run anything.',
     h(
       'ul',
       {},
-      h('li', {}, 'Ask what a function, error or equation means and get a straight answer.'),
-      h('li', {}, 'Ask for a review of code you have written.'),
-      h('li', {}, 'When a test fails, use ', h('b', {}, 'Ask tutor'), ' on it and say what you expected.'),
+      h('li', {}, 'Reviews and explanations of your code appear as notes in the margin beside it.'),
+      h('li', {}, 'Help with a failing test appears beneath the test.'),
       h('li', {}, 'For a quick fact without leaving the editor, press ', h('kbd', {}, '⇧⌘K'), '.'),
     ),
     'It will not write your assignment.',

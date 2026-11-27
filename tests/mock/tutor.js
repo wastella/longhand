@@ -8,6 +8,8 @@
 // Options (window.__MOCK__.tutor): threads { id: thread } to start with, failures [{ code,
 // message, resetsAt }] for the next requests to end with, refuse { code, message } for every
 // request to be refused outright, pastDays [day] for the record.
+// Other mock files may add answers: mock.answerHooks holds functions (request) => answer, tried
+// first; an answer that is an array of strings streams as those chunks.
 // window.__asked records every request; window.__prepared counts warm starts; window.__log holds
 // the usage log's entries, written and read as src-tauri/src/tutor/record.rs does.
 
@@ -69,7 +71,12 @@ const answers = {
   raisebox: 'Before $\\raisebox{60em}{X}\\rule{200em}{3em}\\kern{-90em}Y$ after.',
 };
 
-function answerFor(prompt) {
+function answerFor(request) {
+  for (const hook of mock.answerHooks || []) {
+    const answer = hook(request);
+    if (answer != null) return answer;
+  }
+  const { prompt } = request;
   const smuggled = prompt.match(/smuggle (\w+)/);
   if (smuggled) return answers.smuggle[smuggled[1]];
   if (prompt.includes('raisebox')) return answers.raisebox;
@@ -115,9 +122,9 @@ function start(request) {
     );
   const failure = failures.shift();
   if (failure) return send(30, { type: 'error', ...failure }, () => (running.delete(thread), keep(request, { role: 'tutor', text: '', status: 'error' })));
-  const text = answerFor(request.prompt);
-  const slow = request.prompt.includes('long answer');
-  const chunks = slow ? text.split(/(?<=\n\n)/) : [text];
+  const answer = answerFor(request);
+  const slow = request.prompt.includes('long answer') || Array.isArray(answer);
+  const chunks = Array.isArray(answer) ? answer : slow ? answer.split(/(?<=\n\n)/) : [answer];
   if (request.kind !== 'lookup') send(20, { type: 'tool', name: 'Read', target: `${mock.workspace.path}/stats/running.py` });
   chunks.forEach((chunk, i) => send(slow ? 60 + i * 50 : 60, { type: 'text', text: chunk }, () => (run.text += chunk)));
   send((slow ? 60 + chunks.length * 50 : 60) + 40, { type: 'done' }, () => (running.delete(thread), keep(request, { role: 'tutor', text: run.text })));

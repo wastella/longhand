@@ -561,11 +561,7 @@ uiTest('notes for a file that is not open appear when it opens; past the end the
 
 uiTest('selecting code offers the registered actions, out of the way of typing', async (page) => {
   await openFromTree(page, 'stats/running.py');
-  await page.click('.cm-line:nth-child(12)');
-  await chord(page, ['Shift', 'ArrowDown']);
-  await sleep(700);
-  assert.equal(await count(page, '.selection-actions'), 0, 'nothing is offered when no actions are registered');
-
+  // This stands in for the feedback area's own Explain.
   await page.evaluate(() => {
     window.__ran = [];
     window.__editor.registerSelectionAction({ id: 'explain', label: 'Explain', run: (selection) => window.__ran.push(selection) });

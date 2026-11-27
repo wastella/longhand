@@ -5,31 +5,8 @@ const lastAsked = (page) => page.evaluate(() => window.__asked.at(-1));
 const THREE_DAYS = Math.floor(Date.now() / 1000) + 3 * 86400;
 const ATTACK = '.msg.tutor script, .msg.tutor img, .msg.tutor iframe, .msg.tutor a[href], .msg.tutor [onclick], .msg.tutor [onerror]';
 
-async function failTestAndAsk(page) {
-  await page.evaluate(() => document.querySelector('#run-all-tests').click());
-  await page.waitForSelector('#tests-list .test.FAILED button');
-  await page.click('#tests-list .test.FAILED button');
-}
-
-uiTest("asking about a failure attaches it and sends the student's own account", async (page) => {
-  await failTestAndAsk(page);
-  assert.match(await page.$eval('#input', (n) => n.placeholder), /What did you expect/);
-  assert.match(await text(page, '#context-chips'), /test_variance/);
-  await askTutor(page, 'I expected 4.0');
-  const sent = await lastAsked(page);
-  assert.equal(sent.kind, 'conversation');
-  assert.equal(sent.about, 'failure');
-  assert.match(sent.prompt, /<context>[\s\S]*Failing test: tests\/test_running\.py::test_variance[\s\S]*<\/context>\s+I expected 4\.0$/);
-  assert.equal(sent.question, 'I expected 4.0');
-  assert.match(await text(page, '.msg.tutor'), /look at what push accumulates/);
-  assert.match(await text(page, '.msg.user .ctx'), /test_variance/);
-  assert.doesNotMatch(await text(page, '#context-chips'), /test_variance/, 'the attachment goes with one question only');
-});
-
-uiTest('the student can leave the attachment and the open file out of the next question', async (page) => {
+uiTest('the student can leave the open file out of the next question', async (page) => {
   await openFromTree(page, 'stats/running.py');
-  await failTestAndAsk(page);
-  await page.click('#context-chips .chip.attachment .chip-remove');
   await page.click('#context-chips .chip.file .chip-remove');
   assert.match(await text(page, '#context-chips'), /Sees only your question/);
   await askTutor(page, 'What is a running variance?');
@@ -41,8 +18,6 @@ uiTest('the student can leave the attachment and the open file out of the next q
 
 uiTest('the open file and selection travel with a question', async (page) => {
   await openFromTree(page, 'stats/running.py');
-  await page.evaluate(() => window.__emit('menu', 'ask-selection'));
-  assert.match(await text(page, '#status-msg'), /Select some code/);
   await page.click('.cm-content');
   // Select all: Cmd on macOS, Ctrl elsewhere.
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -50,12 +25,11 @@ uiTest('the open file and selection travel with a question', async (page) => {
   await page.keyboard.press('a');
   await page.keyboard.up(mod);
   assert.match(await text(page, '#context-chips'), /running\.py.*lines 1–\d+/);
-  await page.evaluate(() => window.__emit('menu', 'ask-selection'));
-  await page.waitForFunction(() => window.__asked.length === 1);
+  await askTutor(page, 'What does this class keep?');
   const sent = await lastAsked(page);
   assert.match(sent.prompt, /Open file: stats\/running\.py/);
   assert.match(sent.prompt, /Selected lines 1-\d+:/);
-  assert.equal(sent.about, 'explain');
+  assert.equal(sent.about, 'question');
 });
 
 uiTest('code beyond the strict limit is hidden until revealed, and the reveal is counted', async (page) => {
