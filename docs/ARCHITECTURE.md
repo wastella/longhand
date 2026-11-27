@@ -121,7 +121,8 @@ const { status, text, error } = await done; // status: 'done' | 'cancelled' | 'e
   `no-folder`, `invalid` or `failed`; `error.message` is a sentence a student can act on.
   `tutor/errors.js` turns one into a message with the action that helps.
 - **Render with `renderAnswer`.** It sanitizes, draws math (KaTeX, bundled into `dist/katex/`),
-  colours Python, and applies the hidden-code check (`tutor/hidden-code.js`): code is counted
+  colours Python (the editor's parser, tag groups and `--color-code-*` tokens, so answers and the
+  editor look alike), and applies the hidden-code check (`tutor/hidden-code.js`): code is counted
   across the whole answer (code blocks, shell-labelled blocks whose body is Python, inline code
   forming its own line or a statement, `<code>` with `<br>`, and `\texttt`/`\verb`/code-like text
   in math), and when it exceeds the policy (2 lines on Strict, 12 on Guided) all of it stays

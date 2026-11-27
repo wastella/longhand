@@ -155,34 +155,28 @@ kbd {
   width: 600px;
 }
 
-/* Syntax colours for code in answers (tutor/highlight.js). */
-.tok-keyword,
-.tok-bool {
-  color: var(--color-syntax-keyword);
+/* Syntax colours for code in answers (tutor/highlight.js): the editor's own tokens. */
+.msg pre .code-keyword {
+  color: var(--color-code-keyword);
 }
-.tok-string,
-.tok-string2 {
-  color: var(--color-syntax-string);
+.msg pre .code-string {
+  color: var(--color-code-string);
 }
-.tok-number,
-.tok-atom {
-  color: var(--color-syntax-number);
+.msg pre .code-number {
+  color: var(--color-code-number);
 }
-.tok-comment {
-  color: var(--color-syntax-comment);
+.msg pre .code-function {
+  color: var(--color-code-function);
+}
+.msg pre .code-type {
+  color: var(--color-code-type);
+}
+.msg pre .code-comment {
+  color: var(--color-code-comment);
   font-style: italic;
 }
-.tok-definition,
-.tok-propertyName.tok-definition {
-  color: var(--color-syntax-function);
-}
-.tok-className,
-.tok-typeName,
-.tok-variableName2 {
-  color: var(--color-syntax-type);
-}
-.tok-operator {
-  color: var(--color-syntax-operator);
+.msg pre .code-punctuation {
+  color: var(--color-code-punctuation);
 }
 
 /* Math (tutor/math.js). Display formulas scroll sideways rather than overflow the panel. Every
@@ -488,44 +482,15 @@ kbd {
   outline-offset: 1px;
 }
 
-/* The lookup bar: one of the few things that floats above the layout, so it has a shadow. */
-#lookup {
-  position: fixed;
-  top: 16vh;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(560px, calc(100vw - 2 * var(--space-10)));
-  z-index: var(--z-overlay);
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border-overlay);
-  border-radius: var(--radius-2xl);
-  box-shadow: var(--shadow-overlay);
-  overflow: hidden;
-}
-#lookup-input {
-  width: 100%;
-  border: none;
-  border-bottom: 1px solid var(--color-border);
-  background: none;
-  font: var(--text-lg) var(--font-ui);
-  padding: var(--space-6) var(--space-7);
-}
-#lookup-input:focus {
-  border-bottom-color: var(--color-border);
-}
+/* The lookup bar is a .palette (base.css); its answer is a popover inside it, under the field. */
 #lookup-answer {
-  margin: 0;
+  margin: var(--space-3) 0 0;
   max-height: 50vh;
   overflow: auto;
-  padding: var(--space-6) var(--space-7);
-  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-5) var(--space-4);
+  border-top: 1px solid var(--color-border);
   user-select: text;
 }
 #lookup-answer .msg.error {
   margin: 0;
-}
-#lookup-foot {
-  padding: var(--space-3) var(--space-7);
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
 }

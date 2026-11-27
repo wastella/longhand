@@ -120,7 +120,19 @@ uiTest('the guided policy shows short examples, with syntax colours', async (pag
   await askTutor(page, 'please include code');
   assert.equal(await count(page, '.msg.tutor .withheld'), 0);
   assert.equal(await count(page, '.msg.tutor pre'), 2);
-  assert.equal(await text(page, '.msg.tutor pre code.language-python .tok-keyword'), 'def');
+  assert.equal(await text(page, '.msg.tutor pre code.language-python .code-keyword'), 'def');
+  assert.equal(await text(page, '.msg.tutor pre code.language-python .code-function'), 'push');
+  // The same colours as the editor: its --color-code-* tokens, not a set of the tutor's own.
+  const sameAsEditor = await page.evaluate(() =>
+    ['keyword', 'function', 'number'].every((name) => {
+      const probe = Object.assign(document.createElement('span'), { style: `color: var(--color-code-${name})` });
+      document.body.append(probe);
+      const same = getComputedStyle(document.querySelector(`.msg.tutor .code-${name}`)).color === getComputedStyle(probe).color;
+      probe.remove();
+      return same;
+    }),
+  );
+  assert.equal(sameAsEditor, true);
   assert.match(await text(page, '.msg.tutor pre code.language-python'), /self\.total \+= x/, 'highlighting keeps the text intact');
 });
 

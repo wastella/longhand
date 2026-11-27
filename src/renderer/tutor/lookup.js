@@ -13,7 +13,7 @@ import { recheckAuth } from './setup.js';
 
 const field = h('input', {
   id: 'lookup-input',
-  class: 'text-input',
+  class: 'palette-input text-input',
   type: 'text',
   autocomplete: 'off',
   spellcheck: 'false',
@@ -21,9 +21,10 @@ const field = h('input', {
   'aria-label': 'Look up',
 });
 const answer = h('div', { id: 'lookup-answer', class: 'msg tutor', 'aria-live': 'polite', hidden: true });
-const foot = h('div', { id: 'lookup-foot' }, 'Enter to look up · Esc to close · not added to the conversation, kept in .longhand/');
+const foot = h('div', { id: 'lookup-foot', class: 'palette-note' }, 'Enter to look up · Esc to close · not added to the conversation, kept in .longhand/');
 const form = h('form', { id: 'lookup-form' }, field);
-export const lookupBar = h('div', { id: 'lookup', role: 'dialog', 'aria-label': 'Look up', hidden: true }, form, answer, foot);
+// The shared palette (base.css, as quick open uses), with the answer as a popover inside it.
+export const lookupBar = h('div', { id: 'lookup', class: 'palette', role: 'dialog', 'aria-label': 'Look up', hidden: true }, form, answer, foot);
 
 /** The lookup in progress, if any. */
 let current = null;
