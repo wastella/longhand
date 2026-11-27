@@ -16,6 +16,14 @@ const ZOOMS = [0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 /** pdf.js measures pages in points; 1 at 100% zoom means a point is drawn as 96/72 CSS pixels. */
 const CSS_PER_POINT = 96 / 72;
 const GAP = 12;
+/**
+ * The most pixels one page's canvas, or one picture inside a PDF, may take (16 million, 64 MB).
+ * A page that would need more is drawn at a lower resolution and stretched, so neither a huge
+ * zoom nor a hostile file can exhaust the memory.
+ */
+const MAX_PIXELS = 16 * 1024 * 1024;
+/** Fitting a tiny page to the width never zooms past this. */
+const MAX_FIT = 4;
 const PLACE_DELAY = 250;
 
 let library = null;
@@ -99,7 +107,7 @@ export function showPdf(host, path, { place = {}, onPlace = () => {} } = {}) {
   function scale() {
     if (zoom) return zoom * CSS_PER_POINT;
     const room = scroller.clientWidth - 2 * GAP;
-    return Math.max(0.25, room / pages[0].width);
+    return Math.min(MAX_FIT * CSS_PER_POINT, Math.max(0.25, room / pages[0].width));
   }
 
   function showPlace() {
@@ -138,8 +146,11 @@ export function showPdf(host, path, { place = {}, onPlace = () => {} } = {}) {
     const page = await doc.getPage(entry.number);
     if (gone || entry.drawnAt !== at) return;
     const viewport = page.getViewport({ scale: at });
-    const ratio = window.devicePixelRatio || 1;
-    const canvas = h('canvas', { width: String(Math.floor(viewport.width * ratio)), height: String(Math.floor(viewport.height * ratio)) });
+    const ratio = Math.min(window.devicePixelRatio || 1, Math.sqrt(MAX_PIXELS / (viewport.width * viewport.height)));
+    const canvas = h('canvas', {
+      width: String(Math.max(1, Math.floor(viewport.width * ratio))),
+      height: String(Math.max(1, Math.floor(viewport.height * ratio))),
+    });
     const text = h('div', { class: 'textLayer' });
     entry.node.replaceChildren(canvas, text);
     entry.task = page.render({ canvas, viewport, transform: ratio === 1 ? null : [ratio, 0, 0, ratio, 0, 0] });
@@ -222,7 +233,15 @@ export function showPdf(host, path, { place = {}, onPlace = () => {} } = {}) {
   (async () => {
     const [lib, bytes] = await Promise.all([pdfjs(), readBytes(path)]);
     if (gone) return;
-    task = lib.getDocument({ data: bytes, isEvalSupported: false, useWasm: false, enableXfa: false, useSystemFonts: true });
+    task = lib.getDocument({
+      data: bytes,
+      isEvalSupported: false,
+      useWasm: false,
+      enableXfa: false,
+      useSystemFonts: true,
+      maxImageSize: MAX_PIXELS,
+      canvasMaxAreaInBytes: MAX_PIXELS * 4,
+    });
     doc = await task.promise;
     if (gone) return task.destroy();
     const first = (await doc.getPage(1)).getViewport({ scale: 1 });

@@ -9,7 +9,7 @@
 import { confirm, invoke } from '../backend.js';
 import { emit, state as app } from '../state.js';
 import { showStatus } from '../shell/index.js';
-import { becomeNotice, close, fileGone, isWithin, refreshDirty, renderChrome, session, stampOf, stateOf, updateDoc } from './session.js';
+import { becomeNotice, close, fileGone, isWithin, refreshDirty, refreshView, renderChrome, session, stampOf, stateOf, updateDoc } from './session.js';
 import { fromDisk, replaceEndings, toDisk } from './line-endings.js';
 
 // How long a disk check may take before the student is told and checks pause until it answers.
@@ -161,7 +161,8 @@ export async function checkDisk(paths) {
   checking = true;
   try {
     const docs = [...session.docs.values()].filter(
-      (doc) => doc.kind === 'text' && !doc.saving && !doc.reloading && (!paths || paths.some((p) => p === '' || isWithin(doc.path, p))),
+      (doc) =>
+        (doc.kind === 'text' || doc.kind === 'view') && !doc.saving && !doc.reloading && (!paths || paths.some((p) => p === '' || isWithin(doc.path, p))),
     );
     if (!docs.length) return;
     const asked = docs.map((doc) => ({ path: doc.path, saves: doc.saves }));
@@ -188,6 +189,9 @@ export async function checkDisk(paths) {
       if (doc.path !== asked[i].path || !isOpen(doc) || doc.saving || doc.reloading || doc.saves !== asked[i].saves || onDisk.error) continue;
       if (onDisk.missing) {
         if (!doc.missing) await fileGone(doc);
+      } else if (doc.kind === 'view') {
+        // A PDF or picture is never edited here, so a new version is simply shown.
+        if (differs(onDisk, doc.stamp)) refreshView(doc, onDisk);
       } else if (doc.missing || differs(onDisk, doc.stamp)) {
         // This change is already on the banner.
         if (doc.banner?.kind === 'changed' && !(doc.banner.stamp && differs(onDisk, doc.banner.stamp))) continue;

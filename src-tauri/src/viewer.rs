@@ -7,7 +7,8 @@ use crate::files::resolve_in;
 use crate::workspace::{workspace, AppState};
 use serde_json::{json, Value};
 use std::fs;
-use std::io::{self, ErrorKind};
+use std::io::{self, ErrorKind, Read};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use tauri::ipc::Response;
 use tauri::State;
@@ -33,18 +34,38 @@ fn problem(code: &str, message: impl Into<String>) -> Value {
     json!({ "code": code, "message": message.into() })
 }
 
+fn too_large(size: u64) -> Value {
+    let mut out = problem("tooLarge", "This file is too large to show.");
+    out["size"] = json!(size);
+    out
+}
+
+/// Reads the file at `path`, checking what it is on the open handle itself, so nothing swapped
+/// in after the check (a pipe, a larger file) is read instead.
 fn read_viewable(path: &Path) -> Result<Vec<u8>, Value> {
     let limit = limit_for(path).ok_or_else(|| problem("failed", "Longhand does not show this kind of file."))?;
-    let meta = fs::metadata(path).map_err(|e| from_io(&e))?;
+    // Non-blocking, so opening a pipe returns at once instead of waiting for a writer.
+    let file = fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(path).map_err(|e| from_io(&e))?;
+    let meta = file.metadata().map_err(|e| from_io(&e))?;
     if !meta.is_file() {
         return Err(problem("notFile", "This is not a regular file."));
     }
     if meta.len() > limit {
-        let mut out = problem("tooLarge", "This file is too large to show.");
-        out["size"] = json!(meta.len());
-        return Err(out);
+        return Err(too_large(meta.len()));
     }
-    fs::read(path).map_err(|e| from_io(&e))
+    let mut bytes = Vec::with_capacity(meta.len() as usize);
+    // One byte past the limit tells a file that grew since the check.
+    file.take(limit + 1).read_to_end(&mut bytes).map_err(|e| from_io(&e))?;
+    if bytes.len() as u64 > limit {
+        return Err(too_large(bytes.len() as u64));
+    }
+    Ok(bytes)
+}
+
+/// The bytes of the viewable file `rel` inside the folder `ws`.
+fn read_in(ws: &Path, rel: &str) -> Result<Vec<u8>, Value> {
+    let path = resolve_in(ws, rel).map_err(|e| problem("failed", e))?;
+    read_viewable(&path)
 }
 
 fn from_io(e: &io::Error) -> Value {
@@ -59,12 +80,9 @@ fn from_io(e: &io::Error) -> Value {
 #[tauri::command]
 pub async fn view_read(state: State<'_, AppState>, rel: String) -> Result<Response, Value> {
     let ws = workspace(&state).map_err(|e| problem("failed", e))?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let path = resolve_in(&ws, &rel).map_err(|e| problem("failed", e))?;
-        read_viewable(&path).map(Response::new)
-    })
-    .await
-    .map_err(|e| problem("failed", e.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || read_in(&ws, &rel).map(Response::new))
+        .await
+        .map_err(|e| problem("failed", e.to_string()))?
 }
 
 #[cfg(test)]
@@ -114,6 +132,27 @@ mod tests {
         let name = std::ffi::CString::new(pipe.to_string_lossy().as_bytes()).unwrap();
         assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
         assert_eq!(read_viewable(&pipe).unwrap_err()["code"], "notFile");
+        assert_eq!(read_viewable(&dir.join("folder.pdf")).unwrap_err()["code"], "missing");
+        fs::create_dir(dir.join("folder.pdf")).unwrap();
+        assert_eq!(read_viewable(&dir.join("folder.pdf")).unwrap_err()["code"], "notFile");
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn only_files_inside_the_folder_are_read() {
+        let root = temp_dir("view-inside");
+        let ws = root.join("course");
+        fs::create_dir_all(ws.join("docs")).unwrap();
+        fs::write(ws.join("docs/h.pdf"), b"%PDF").unwrap();
+        fs::write(root.join("secret.png"), b"not yours").unwrap();
+        std::os::unix::fs::symlink(root.join("secret.png"), ws.join("link.png")).unwrap();
+        std::os::unix::fs::symlink(&root, ws.join("up")).unwrap();
+        assert_eq!(read_in(&ws, "docs/h.pdf").unwrap(), b"%PDF");
+        assert_eq!(read_in(&ws, "./docs/h.pdf").unwrap(), b"%PDF");
+        for rel in ["../secret.png", "docs/../../secret.png", "/etc/hosts.png", "link.png", "up/secret.png"] {
+            assert_eq!(read_in(&ws, rel).unwrap_err()["code"], "failed", "{rel}");
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 }

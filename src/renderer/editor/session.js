@@ -5,9 +5,8 @@
 // came from (`stamp`: { mtime, size }), the file's `format`, `missing` once it has been deleted
 // underneath the editor, and `saves`, counting the saves started. A file the editor will
 // not open (binary, too large) is a 'notice' doc with the reason in `notice`. A PDF or a picture
-// is a 'view' doc, shown read-only by the viewer area; a Markdown text doc with `rendered` set is
-// shown rendered by the viewer too, its CodeMirror state kept underneath. Insertion order of
-// `session.docs` is tab order.
+// is a 'view' doc, shown read-only by the viewer area. Insertion order of `session.docs` is tab
+// order.
 //
 // Other areas follow the text files through editor:opened, editor:changed, editor:renamed and
 // editor:closed (see state.js).
@@ -23,8 +22,8 @@ import { currentThemeMode, isStale, themeMode } from './theme.js';
 import { goTo } from './go-to-line.js';
 import { forgetAllNotes, moveNotes, releaseDetached, syncNotes } from './notes.js';
 import { fromDisk } from './line-endings.js';
-import { renderTabBar, renderTabTools, wireTabBar } from './tab-bar.js';
-import { canBeHandout, isMarkdown, openAsHandout, showFile, viewKind } from '../viewer/index.js';
+import { renderTabBar, wireTabBar } from './tab-bar.js';
+import { showFile, viewKind } from '../viewer/index.js';
 import { renderBanner, renderFileNotice } from './notice.js';
 import { flushTabs, recallTabs, rememberTabs } from './restore.js';
 
@@ -47,7 +46,7 @@ const loading = new Map();
 /** What the viewer shows in place of the code now, if anything: { destroy }. */
 let shownView = null;
 
-/** `elements`: { tabBar, tools, banner, host, notice, viewer }; `actions`: the banner's handlers, given the doc. */
+/** `elements`: { tabBar, banner, host, notice, viewer }; `actions`: the banner's handlers, given the doc. */
 export function attach(elements, actions) {
   ui = elements;
   bannerActions = actions;
@@ -68,12 +67,6 @@ export const stateOf = (doc) => (isShown(doc) ? session.view.state : doc.state);
 export function renderChrome() {
   renderTabBar(ui.tabBar, session, { onSelect: activate, onClose: (path) => close(path) });
   const doc = session.docs.get(session.active);
-  renderTabTools(ui.tools, doc, {
-    markdown: doc?.kind === 'text' && isMarkdown(doc.path),
-    handout: Boolean(doc) && doc.kind !== 'notice' && canBeHandout(doc.path),
-    onPreview: () => setRendered(doc, !doc.rendered),
-    onHandout: () => openAsHandout(doc.path),
-  });
   const bind = (run) => () => run(doc);
   renderBanner(ui.banner, doc, Object.fromEntries(Object.entries(bannerActions).map(([name, run]) => [name, bind(run)])));
 }
@@ -142,7 +135,7 @@ function textDoc(path, file, cursor) {
 }
 
 const noticeDoc = (path, notice) => ({ path, kind: 'notice', notice, dirty: false, banner: null });
-const viewDoc = (path) => ({ path, kind: 'view', dirty: false, banner: null });
+const viewDoc = (path, file) => ({ path, kind: 'view', stamp: stampOf(file), dirty: false, banner: null });
 
 /** Turns an open doc into a notice in place, when its file stopped being readable text. */
 export function becomeNotice(doc, notice) {
@@ -159,7 +152,7 @@ async function describe(path) {
   try {
     if (!viewKind(path)) return await invoke('doc_read', { rel: path });
     const [stat] = await invoke('doc_stat', { paths: [path] });
-    return { kind: stat?.missing ? 'missing' : 'view' };
+    return stat?.missing ? { kind: 'missing' } : { ...stat, kind: 'view' };
   } catch (e) {
     return { kind: 'error', message: String(e) };
   }
@@ -167,7 +160,7 @@ async function describe(path) {
 
 function newDoc(path, file, cursor) {
   if (file.kind === 'text') return textDoc(path, file, cursor);
-  return file.kind === 'view' ? viewDoc(path) : noticeDoc(path, file);
+  return file.kind === 'view' ? viewDoc(path, file) : noticeDoc(path, file);
 }
 
 async function read(path, cursor) {
@@ -206,13 +199,7 @@ function showInViewer(doc) {
   shownView = null;
   ui.viewer.hidden = !doc;
   if (!doc) return ui.viewer.replaceChildren();
-  shownView = showFile(ui.viewer, doc.path, doc.kind === 'text' ? { text: stateOf(doc).doc.toString() } : {});
-}
-
-/** Shows a Markdown tab rendered, or as its text again. */
-function setRendered(doc, rendered) {
-  doc.rendered = rendered;
-  if (doc.path === session.active) activate(doc.path);
+  shownView = showFile(ui.viewer, doc.path);
 }
 
 export function activate(path) {
@@ -230,10 +217,7 @@ export function activate(path) {
     // At once, so whatever opens next (quick open, a dialog) gives the focus back to the code.
     // A key that opens a file (Enter in the tree, quick open or a name field) must call
     // preventDefault, or it would carry on into the file as a stray line break.
-    if (doc.rendered) {
-      session.view.dom.hidden = true;
-      showInViewer(doc);
-    } else session.view.focus();
+    session.view.focus();
   } else if (doc.kind === 'view') {
     if (session.view) session.view.dom.hidden = true;
     showInViewer(doc);
@@ -245,6 +229,33 @@ export function activate(path) {
   emit('editor:active', path);
   publishCursor();
   remember();
+}
+
+/** Shows a PDF or picture again after its file changed on disk (`file`: its doc_stat). */
+export function refreshView(doc, file) {
+  doc.stamp = stampOf(file);
+  if (doc.path === session.active) showInViewer(doc);
+}
+
+/**
+ * Reopens a renamed tab whose new name means another kind of file (notes.pdf renamed to
+ * notes.txt), in place. A text tab with unsaved edits stays text.
+ */
+async function retype(doc) {
+  const file = await describe(doc.path);
+  if (session.docs.get(doc.path) !== doc || file.kind === 'missing') return;
+  if (doc.kind === 'text') {
+    if (doc.dirty) return;
+    releaseDetached(doc.path, stateOf(doc));
+    emit('editor:closed', doc.path);
+  }
+  const fresh = newDoc(doc.path, file);
+  const docs = [...session.docs].map(([path, old]) => [path, old === doc ? fresh : old]);
+  session.docs.clear();
+  for (const [path, each] of docs) session.docs.set(path, each);
+  if (fresh.kind === 'text') emit('editor:opened', fresh.path);
+  if (session.active === fresh.path) activate(fresh.path);
+  else renderChrome();
 }
 
 async function reveal(path) {
@@ -343,6 +354,7 @@ export function movePaths(from, to) {
   }
   if (active) activate(active);
   else renderChrome();
+  for (const [path, doc] of session.docs) if (isWithin(path, to) && (doc.kind === 'view') !== Boolean(viewKind(path)) && doc.kind !== 'notice') retype(doc);
 }
 
 /** Forgets every open file and note, for a newly opened folder. */

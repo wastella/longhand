@@ -319,6 +319,7 @@ mod tests {
         assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
         assert_eq!(read_document(&pipe).unwrap()["kind"], "notFile");
         assert_eq!(read_document(&dir).unwrap()["kind"], "notFile", "nor a folder");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

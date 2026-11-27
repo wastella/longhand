@@ -5,7 +5,7 @@
 import { mountHandout } from './handout.js';
 
 export { canBeHandout, isMarkdown, viewKind } from './files.js';
-export { openAsHandout, currentHandout } from './handout.js';
+export { openAsHandout, currentHandout, moveHandout } from './handout.js';
 export { showFile } from './view.js';
 
 export function mount(region) {

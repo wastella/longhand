@@ -6,6 +6,7 @@
 import { Marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { invoke } from '../backend.js';
+import { FORBID_ATTR, FORBID_TAGS, keepOwnClasses, taskBoxes } from '../purify.js';
 import { hideLongCode } from './hidden-code.js';
 import { highlightBlocks } from './highlight.js';
 import { drawFormulas, mathExtension } from './math.js';
@@ -15,7 +16,13 @@ let formulas = [];
 const marked = new Marked(
   { gfm: true, breaks: false },
   mathExtension((formula) => formulas.push(formula) - 1),
+  taskBoxes,
 );
+
+// Answers can be steered by what the tutor reads (a handout, say), so they keep only the classes
+// our own rendering gives them, and no ids or names that could shadow the app's elements.
+const purifier = DOMPurify(window);
+purifier.addHook('afterSanitizeAttributes', keepOwnClasses);
 
 /**
  * Renders `text` (Markdown) into `node`. `message` is { revealed: Set, streaming, grouped? } (see
@@ -25,9 +32,9 @@ export function renderAnswer(node, text, message) {
   formulas = [];
   const html = marked.parse(text);
   const found = formulas;
-  node.innerHTML = DOMPurify.sanitize(html, {
-    FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'img', 'math', 'svg'],
-    FORBID_ATTR: ['style'],
+  node.innerHTML = purifier.sanitize(html, {
+    FORBID_TAGS: [...FORBID_TAGS, 'img', 'math', 'svg'],
+    FORBID_ATTR: [...FORBID_ATTR, 'id', 'name'],
   });
   for (const link of node.querySelectorAll('a')) {
     const href = link.getAttribute('href') || '';

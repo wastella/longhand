@@ -1,7 +1,8 @@
 // Clone Repository: a sheet that takes a Git address and a place for it, runs the student's own
 // git there (clone.rs, which checks the address again), shows its progress, and opens the folder
 // it made. Errors stay in the sheet, beside the fields they are about, so the student can fix
-// the address and try again.
+// the address and try again. Closing the sheet cancels its clone; another sheet taking its place
+// (Settings, say) does not: the clone carries on and says when it is done.
 
 import { invoke, listen } from '../backend.js';
 import { h, spacer } from '../dom.js';
@@ -13,7 +14,6 @@ import { openSheet } from './sheet.js';
 const LOCATION_KEY = 'longhand.cloneLocation';
 
 let sheet = null;
-let running = null;
 let nextId = 0;
 const progressListeners = new Map();
 
@@ -69,6 +69,9 @@ export async function openCloneSheet() {
   const start = h('button', { type: 'button', class: 'button primary', id: 'clone-start' }, 'Clone');
   let location = storedLocation() || (await invoke('clone_location').catch(() => '')) || '';
   let nameEdited = false;
+  /** This sheet's clone while it runs (its id), and whether the sheet is still open. */
+  let running = null;
+  let open = true;
 
   const showLocation = () => {
     where.textContent = location || 'Choose a folder';
@@ -100,7 +103,7 @@ export async function openCloneSheet() {
     if (picked) location = picked;
     showLocation();
   };
-  cancel.onclick = () => (running ? invoke('clone_cancel', { id: running }) : sheet.close());
+  cancel.onclick = () => (running ? invoke('clone_cancel', { id: running }) : sheet?.close());
   const submit = async () => {
     if (running) return;
     if (!url.value.trim()) return showError('Enter the repository’s address.', url);
@@ -118,17 +121,21 @@ export async function openCloneSheet() {
       bar.parentElement.className = 'progress';
       bar.style.width = `${percent}%`;
     });
+    const offerToOpen = (path) => notify({ kind: 'success', message: `Cloned into ${path}`, action: { label: 'Open', run: () => openFolder(path) } });
     try {
       const { path } = await invoke('clone_start', { id, url: url.value.trim(), parent: location, name: name.value.trim() });
       storeLocation(location);
       running = null;
-      sheet?.close();
-      if (!(await openFolder(path))) notify({ kind: 'success', message: `Cloned into ${path}`, action: { label: 'Open', run: () => openFolder(path) } });
+      // Only a clone whose sheet is still open opens its folder; one that carried on behind
+      // another sheet says it is done instead.
+      if (!open) return offerToOpen(path);
+      close();
+      if (!(await openFolder(path))) offerToOpen(path);
     } catch (problem) {
       running = null;
-      if (!sheet) return;
-      setBusy(false);
       if (problem?.code === 'cancelled') return;
+      if (!open) return notify({ kind: 'error', message: problem?.message || String(problem) });
+      setBusy(false);
       const on = { 'invalid-url': url, 'not-found': url, 'invalid-name': name, exists: name }[problem?.code];
       showError(problem?.message || String(problem), on);
     } finally {
@@ -139,7 +146,7 @@ export async function openCloneSheet() {
   for (const input of [url, name]) input.addEventListener('keydown', (e) => e.key === 'Enter' && (e.preventDefault(), submit()));
 
   showLocation();
-  sheet = openSheet({
+  const opened = openSheet({
     title: 'Clone Repository',
     className: 'clone-sheet',
     body: [
@@ -151,12 +158,14 @@ export async function openCloneSheet() {
       progress,
     ],
     footer: [spacer(), cancel, start],
-    onClose: () => {
-      if (running) invoke('clone_cancel', { id: running });
-      running = null;
-      sheet = null;
+    onClose: (replaced) => {
+      if (running && !replaced) invoke('clone_cancel', { id: running });
+      open = false;
+      if (sheet === opened) sheet = null;
     },
   });
+  sheet = opened;
+  const close = () => opened.close();
   url.focus();
 }
 

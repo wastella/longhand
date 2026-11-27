@@ -1,29 +1,19 @@
 // The handout pane: the assignment's handout, read-only, beside the code. Which file it shows,
 // whether it is open and its width are remembered per folder (memory.js). When a folder opens,
 // the likely handout is found (find.js) and, if its name says it is one, offered once in a
-// notification; the pane never opens by itself over the student's work.
+// notification; the pane never opens by itself over the student's work. The title bar's toggle
+// and View > Show or Hide Handout show and hide it.
 
 import { invoke } from '../backend.js';
-import { h, paneHead, spacer } from '../dom.js';
+import { h, paneHead } from '../dom.js';
 import { on, state } from '../state.js';
-import { hidePanel, icon, isPanelShown, notify, registerCommand, setPanel, showPanel } from '../shell/index.js';
-import { canBeHandout, isMarkdown, nameOf } from './files.js';
+import { hidePanel, isPanelShown, notify, registerCommand, setPanel, showPanel } from '../shell/index.js';
+import { canBeHandout, nameOf } from './files.js';
 import { guessHandout } from './find.js';
 import { loadMemory, recall, remember } from './memory.js';
 import { showFile } from './view.js';
 
 const title = h('span', { class: 'handout-name truncate' });
-const closeButton = h(
-  'button',
-  {
-    type: 'button',
-    class: 'button ghost icon-button small',
-    'aria-label': 'Hide the handout',
-    'data-tip-command': 'toggle-handout',
-    'data-tip': 'Hide the handout',
-  },
-  icon('x', 'small'),
-);
 const body = h('div', { class: 'handout-body' });
 
 /** The file the pane shows: the student's choice, else the guess; null when there is neither. */
@@ -78,6 +68,15 @@ export function openAsHandout(path) {
   open();
 }
 
+/** Follows a file or folder renamed in the files panel, if the handout is in it. */
+export function moveHandout(from, to) {
+  const chosen = recall().handout;
+  const inside = (path) => path === from || path?.startsWith(from + '/');
+  if (inside(chosen)) remember({ handout: to + chosen.slice(from.length) });
+  if (inside(guess?.path)) guess = { ...guess, path: to + guess.path.slice(from.length) };
+  if (inside(shownPath)) render(true);
+}
+
 /** The file the handout pane shows (or would show once opened), or null. */
 export const currentHandout = handoutPath;
 
@@ -111,14 +110,13 @@ async function folderOpened(ws) {
 }
 
 export function mountHandout(region) {
-  region.append(paneHead(h('span', { class: 'handout-label' }, 'Handout'), title, spacer(), closeButton), body);
-  closeButton.onclick = close;
+  region.append(paneHead(h('span', { class: 'handout-label' }, 'Handout'), title), body);
   registerCommand('toggle-handout', () => state.workspace && (isPanelShown('handout') ? close() : open()));
   on('workspace:opened', folderOpened);
   on('panel:resized', ({ id, size }) => id === 'handout' && remember({ size }));
-  // A Markdown handout follows its file; a PDF is reloaded only when shown again.
+  // The handout follows its file: a new version is shown, a deleted one says so.
   on('files:changed', (paths) => {
-    if (shownPath && isMarkdown(shownPath) && paths.some((path) => path === '' || path === shownPath)) render(true);
+    if (shownPath && paths.some((path) => path === '' || shownPath === path || shownPath.startsWith(path + '/'))) render(true);
   });
-  on('editor:saved', (path) => path === shownPath && isMarkdown(path) && render(true));
+  on('editor:saved', (path) => path === shownPath && render(true));
 }

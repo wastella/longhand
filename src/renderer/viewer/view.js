@@ -22,15 +22,15 @@ async function markdownText(path) {
   throw file.kind === 'missing' ? { code: 'missing' } : { code: file.kind === 'tooLarge' ? 'tooLarge' : 'unreadable', size: file.size };
 }
 
-/** Rendered Markdown that keeps its scroll position. `text` is given, or read from the file. */
-function showMarkdown(host, path, text) {
+/** Rendered Markdown that keeps its scroll position. */
+function showMarkdown(host, path) {
   let gone = false;
   let timer = 0;
   const page = h('div', { class: 'md-doc' });
   const scroller = h('div', { class: 'md-scroll', tabindex: '0', 'aria-label': `${path}, rendered` }, page);
   const save = () => rememberPlace(path, { scroll: scroller.scrollTop });
   scroller.addEventListener('scroll', () => (clearTimeout(timer), (timer = setTimeout(save, SCROLL_DELAY))), { passive: true });
-  (text != null ? Promise.resolve(text) : markdownText(path)).then(
+  markdownText(path).then(
     (source) => {
       if (gone) return;
       renderMarkdown(page, source, path);
@@ -49,15 +49,14 @@ function showMarkdown(host, path, text) {
 }
 
 /**
- * Shows `path` read-only in `host`, replacing what was there. `text` is Markdown to render in
- * place of the file's own (an editor tab's unsaved text). Returns { destroy }, which the caller
- * calls before showing something else in `host`.
+ * Shows `path` read-only in `host`, replacing what was there. Returns { destroy }, which the
+ * caller calls before showing something else in `host`.
  */
-export function showFile(host, path, { text } = {}) {
+export function showFile(host, path) {
   const kind = viewKind(path);
   if (kind === 'pdf') return showPdf(host, path, { place: placeIn(path), onPlace: (place) => rememberPlace(path, place) });
   if (kind === 'image') return showImage(host, path);
-  if (isMarkdown(path)) return showMarkdown(host, path, text);
+  if (isMarkdown(path)) return showMarkdown(host, path);
   host.replaceChildren(problemView(path, { code: 'unreadable' }));
   return { destroy() {} };
 }

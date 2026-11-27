@@ -5,7 +5,7 @@ import { confirm, invoke } from '../backend.js';
 import { state } from '../state.js';
 import { activeFile, closeFilesUnder, movePaths, openFile, saveAll } from '../editor/index.js';
 import { notify, showStatus } from '../shell/index.js';
-import { canBeHandout, openAsHandout } from '../viewer/index.js';
+import { canBeHandout, moveHandout, openAsHandout } from '../viewer/index.js';
 import { showContextMenu } from './context-menu.js';
 import { forgetListings } from './listing.js';
 import { moveRecent } from './memory.js';
@@ -62,6 +62,7 @@ export async function rename(entry) {
   });
   if (!to) return;
   movePaths(entry.path, to);
+  moveHandout(entry.path, to);
   moveExpanded(entry.path, to);
   moveRecent(entry.path, to);
   forgetListings([entry.path, topOf(to, dir)]);

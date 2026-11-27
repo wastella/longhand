@@ -9,6 +9,7 @@ import { Marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { invoke } from '../backend.js';
 import { h } from '../dom.js';
+import { decode, FORBID_ATTR, FORBID_TAGS, keepOwnClasses, taskBoxes } from '../purify.js';
 import { openFile } from '../editor/index.js';
 import { drawFormulas, highlightBlocks, mathExtension } from '../tutor/index.js';
 import { imageUrl, resolvePath, viewKind } from './files.js';
@@ -17,6 +18,7 @@ let formulas = [];
 const marked = new Marked(
   { gfm: true, breaks: false },
   mathExtension((formula) => formulas.push(formula) - 1),
+  taskBoxes,
 );
 
 const purifier = DOMPurify(window);
@@ -29,6 +31,7 @@ purifier.addHook('afterSanitizeAttributes', (node) => {
     node.setAttribute(to, node.getAttribute(from));
     node.removeAttribute(from);
   };
+  keepOwnClasses(node);
   if (node.tagName === 'IMG') move('src', 'data-source');
   if (node.tagName === 'A') move('href', 'data-target');
   move('id', 'data-anchor');
@@ -37,27 +40,8 @@ purifier.addHook('afterSanitizeAttributes', (node) => {
 
 const SANITIZE = {
   USE_PROFILES: { html: true },
-  FORBID_TAGS: [
-    'style',
-    'form',
-    'input',
-    'button',
-    'textarea',
-    'select',
-    'iframe',
-    'frame',
-    'object',
-    'embed',
-    'link',
-    'meta',
-    'base',
-    'audio',
-    'video',
-    'source',
-    'picture',
-    'dialog',
-  ],
-  FORBID_ATTR: ['style', 'srcset', 'action', 'formaction', 'target', 'ping'],
+  FORBID_TAGS,
+  FORBID_ATTR,
   ALLOW_DATA_ATTR: false,
   ADD_ATTR: ['data-math'],
   RETURN_DOM_FRAGMENT: true,
@@ -89,13 +73,14 @@ function wireLink(link, root, path) {
   link.removeAttribute('data-target');
   let run = null;
   if (target.startsWith('#')) {
-    const name = decodeURIComponent(target.slice(1));
-    run = () => scrollToAnchor(root, name);
+    const name = decode(target.slice(1));
+    if (name !== null) run = () => scrollToAnchor(root, name);
   } else if (/^https?:\/\//i.test(target)) {
     link.dataset.tip = target;
     run = () => invoke('open_external', { url: target });
   } else if (target && !/^[a-z][a-z0-9+.-]*:/i.test(target) && !target.startsWith('//')) {
-    const file = resolvePath(path, decodeURIComponent(target.split(/[?#]/)[0]));
+    const name = decode(target.split(/[?#]/)[0]);
+    const file = name && resolvePath(path, name);
     if (file) {
       link.dataset.tip = `Open ${file}`;
       run = () => openFile(file);
@@ -115,7 +100,8 @@ function loadImage(img, path, isCurrent) {
   const missing = (why) => img.replaceWith(h('span', { class: 'md-image-missing' }, img.alt ? `${img.alt} ` : '', h('span', { class: 'dim' }, `(${why})`)));
   if (/^data:image\/(png|jpe?g|gif|webp);/i.test(source)) return void (img.src = source);
   if (/^[a-z][a-z0-9+.-]*:/i.test(source) || source.startsWith('//')) return missing('image from the web, not loaded');
-  const file = source && resolvePath(path, decodeURIComponent(source.split(/[?#]/)[0]));
+  const name = source && decode(source.split(/[?#]/)[0]);
+  const file = name && resolvePath(path, name);
   if (!file || viewKind(file) !== 'image') return missing('image not found in this folder');
   imageUrl(file).then(
     (url) => isCurrent() && (img.src = url),
