@@ -69,7 +69,7 @@ async fn blocking<T: Send + 'static>(job: impl FnOnce() -> T + Send + 'static) -
 }
 
 /// Reads a file for the editor. The result's `kind` is `text` (with `text` as it is on disk,
-/// `mtime`, `size` and `format`), or `missing`, or `binary`, `tooLarge` or `notText` (with
+/// `mtime`, `size` and `format`), or `missing`, or `binary`, `tooLarge`, `notText` or `notFile` (with
 /// `mtime` and `size`) for a file the editor shows a notice for instead.
 #[tauri::command]
 pub async fn doc_read(state: State<'_, AppState>, rel: String) -> R<Value> {
@@ -132,6 +132,10 @@ fn read_document(path: &Path) -> io::Result<Value> {
         result => result?,
     };
     let stamp = Stamp::of(&meta);
+    // A pipe or a device would never finish reading (or would block until something writes).
+    if !meta.is_file() {
+        return Ok(json!({ "kind": "notFile", "size": 0, "mtime": stamp.mtime }));
+    }
     if stamp.size > MAX_TEXT_BYTES {
         // Only the start is read, so a multi-gigabyte file costs no more than a small one.
         let mut start = Vec::new();
@@ -304,6 +308,17 @@ mod tests {
             let format: Format = serde_json::from_value(read["format"].clone()).unwrap();
             assert_eq!(encode(read["text"].as_str().unwrap(), format), original);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_pipe_is_not_read_so_opening_it_cannot_hang() {
+        let dir = temp_dir("doc-pipe");
+        let pipe = dir.join("fifo.txt");
+        let name = std::ffi::CString::new(pipe.to_string_lossy().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        assert_eq!(read_document(&pipe).unwrap()["kind"], "notFile");
+        assert_eq!(read_document(&dir).unwrap()["kind"], "notFile", "nor a folder");
     }
 
     #[test]

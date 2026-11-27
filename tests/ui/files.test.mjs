@@ -99,7 +99,17 @@ uiTest('a search with no matches says so', async (page) => {
 uiTest('the file tree menu creates, renames, copies paths, reveals and trashes', async (page) => {
   await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => (window.__copied = t) } }));
   await page.click('#tree .node[data-path="README.md"]', { button: 'right' });
-  assert.deepEqual(await menuItems(page), ['New File…', 'New Folder…', 'Rename…', 'Move to Trash', 'Copy Path', 'Copy Relative Path', await revealLabel(page)]);
+  const reveal = await revealLabel(page);
+  assert.deepEqual(await menuItems(page), [
+    'New File…',
+    'New Folder…',
+    'Open as Handout',
+    'Rename…',
+    'Move to Trash',
+    'Copy Path',
+    'Copy Relative Path',
+    reveal,
+  ]);
   await clickMenuItem(page, 'New File…');
   await page.type('#tree .new-name', 'notes.md');
   await page.keyboard.press('Enter');

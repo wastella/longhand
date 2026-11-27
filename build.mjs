@@ -28,3 +28,7 @@ cpSync('node_modules/@xterm/xterm/css/xterm.css', 'dist/xterm.css');
 // KaTeX's stylesheet and fonts for math in tutor answers; the browser only ever loads the woff2 files.
 cpSync('node_modules/katex/dist/katex.min.css', 'dist/katex/katex.min.css');
 cpSync('node_modules/katex/dist/fonts', 'dist/katex/fonts', { recursive: true, filter: (path) => !/\.(woff|ttf)$/.test(path) });
+// pdf.js for PDFs in the viewer, loaded the first time one opens (viewer/pdf.js). Named .js so
+// every webview serves them as JavaScript.
+cpSync('node_modules/pdfjs-dist/build/pdf.min.mjs', 'dist/pdfjs/pdf.js');
+cpSync('node_modules/pdfjs-dist/build/pdf.worker.min.mjs', 'dist/pdfjs/pdf.worker.js');

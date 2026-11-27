@@ -34,6 +34,7 @@ const shortcuts = [
   ['toggle-files', 'View', 'Show or Hide Files', 'CmdOrCtrl+B'],
   ['toggle-bottom', 'View', 'Show or Hide Terminal and Tests', 'CmdOrCtrl+J'],
   ['toggle-tutor', 'View', 'Show or Hide Tutor', 'CmdOrCtrl+L'],
+  ['toggle-handout', 'View', 'Show or Hide Handout', 'CmdOrCtrl+Shift+H'],
   ['focus-files', 'View', 'Go to Files', 'CmdOrCtrl+1'],
   ['focus-editor', 'View', 'Go to Editor', 'CmdOrCtrl+2'],
   ['focus-terminal', 'View', 'Go to Terminal', 'CmdOrCtrl+3'],

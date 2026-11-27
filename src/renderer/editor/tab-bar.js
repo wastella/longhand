@@ -80,6 +80,35 @@ export function renderTabBar(host, { docs, active }, { onSelect, onClose }) {
   if (hadFocus) current?.focus();
 }
 
+/**
+ * The buttons at the end of the tab row for the file on screen: Preview for a Markdown file
+ * (pressed while it is shown rendered) and Open as Handout for a file the handout pane can show.
+ */
+export function renderTabTools(host, doc, { markdown, handout, onPreview, onHandout }) {
+  const tools = [
+    markdown &&
+      h(
+        'button',
+        { type: 'button', class: 'button ghost small', id: 'markdown-preview', 'aria-pressed': String(Boolean(doc.rendered)), onclick: onPreview },
+        'Preview',
+      ),
+    handout &&
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'button ghost small',
+          id: 'open-as-handout',
+          'data-tip': 'Show this file in the handout pane, beside your code',
+          onclick: onHandout,
+        },
+        'Open as Handout',
+      ),
+  ].filter(Boolean);
+  host.hidden = !tools.length;
+  host.replaceChildren(...tools);
+}
+
 /** Keyboard and wheel handling for the tab row; attached once. */
 export function wireTabBar(host, { onSelect }) {
   host.setAttribute('role', 'tablist');

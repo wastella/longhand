@@ -16,6 +16,7 @@
 //   usage:changed      { today, total }                           the folder's usage counts changed
 //   auth:changed       { installed, loggedIn, plan }              the tutor's connection status is known
 //   panel:toggled      { id, visible }                            a side or bottom panel was shown or hidden
+//   panel:resized      { id, size }                               the student resized a panel (its splitter)
 //   text-size:changed  size in px                                 the code text size changed
 //   files:changed      [path]                                     files changed on disk outside the editor (the
 //                                                                 terminal, git, a script); paths are relative,

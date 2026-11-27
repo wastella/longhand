@@ -5,6 +5,7 @@ import { confirm, invoke } from '../backend.js';
 import { state } from '../state.js';
 import { activeFile, closeFilesUnder, movePaths, openFile, saveAll } from '../editor/index.js';
 import { notify, showStatus } from '../shell/index.js';
+import { canBeHandout, openAsHandout } from '../viewer/index.js';
 import { showContextMenu } from './context-menu.js';
 import { forgetListings } from './listing.js';
 import { moveRecent } from './memory.js';
@@ -129,6 +130,7 @@ export function showEntryMenu(at, entry, options) {
     [
       ...make,
       null,
+      ...(!entry.dir && canBeHandout(entry.path) ? [{ label: 'Open as Handout', run: () => openAsHandout(entry.path) }, null] : []),
       { label: 'Rename…', hint: 'F2', run: () => rename(entry) },
       { label: 'Move to Trash', hint: '⌘⌫', run: () => moveToTrash(entry) },
       null,

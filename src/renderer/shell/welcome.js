@@ -4,6 +4,7 @@
 
 import { h } from '../dom.js';
 import { on, state } from '../state.js';
+import { openCloneSheet } from './clone.js';
 import { chooseFolder, forgetRecent, getRecents, onRecentsChanged, openFolder, refreshRecents } from './folders.js';
 import { icon } from './icons.js';
 import { kbd } from './keys.js';
@@ -87,6 +88,7 @@ function noFolder() {
       'div',
       { class: 'welcome-actions' },
       h('button', { id: 'open-folder', class: 'button primary large', onclick: chooseFolder }, 'Open Folder…'),
+      h('button', { id: 'clone-repository', class: 'button large', onclick: openCloneSheet }, 'Clone Repository…'),
       h('span', { class: 'dim' }, 'or drop a folder here'),
     ),
     recentList(),

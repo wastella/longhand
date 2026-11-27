@@ -4,7 +4,9 @@
 // CodeMirror `state`, the text last read or written (`saved`), the version on disk that text
 // came from (`stamp`: { mtime, size }), the file's `format`, `missing` once it has been deleted
 // underneath the editor, and `saves`, counting the saves started. A file the editor will
-// not open (binary, too large) is a 'notice' doc with the reason in `notice`. Insertion order of
+// not open (binary, too large) is a 'notice' doc with the reason in `notice`. A PDF or a picture
+// is a 'view' doc, shown read-only by the viewer area; a Markdown text doc with `rendered` set is
+// shown rendered by the viewer too, its CodeMirror state kept underneath. Insertion order of
 // `session.docs` is tab order.
 //
 // Other areas follow the text files through editor:opened, editor:changed, editor:renamed and
@@ -21,7 +23,8 @@ import { currentThemeMode, isStale, themeMode } from './theme.js';
 import { goTo } from './go-to-line.js';
 import { forgetAllNotes, moveNotes, releaseDetached, syncNotes } from './notes.js';
 import { fromDisk } from './line-endings.js';
-import { renderTabBar, wireTabBar } from './tab-bar.js';
+import { renderTabBar, renderTabTools, wireTabBar } from './tab-bar.js';
+import { canBeHandout, isMarkdown, openAsHandout, showFile, viewKind } from '../viewer/index.js';
 import { renderBanner, renderFileNotice } from './notice.js';
 import { flushTabs, recallTabs, rememberTabs } from './restore.js';
 
@@ -41,7 +44,10 @@ let ui;
 let bannerActions;
 const loading = new Map();
 
-/** `elements`: { tabBar, banner, host, notice }; `actions`: the banner's handlers, given the doc. */
+/** What the viewer shows in place of the code now, if anything: { destroy }. */
+let shownView = null;
+
+/** `elements`: { tabBar, tools, banner, host, notice, viewer }; `actions`: the banner's handlers, given the doc. */
 export function attach(elements, actions) {
   ui = elements;
   bannerActions = actions;
@@ -62,6 +68,12 @@ export const stateOf = (doc) => (isShown(doc) ? session.view.state : doc.state);
 export function renderChrome() {
   renderTabBar(ui.tabBar, session, { onSelect: activate, onClose: (path) => close(path) });
   const doc = session.docs.get(session.active);
+  renderTabTools(ui.tools, doc, {
+    markdown: doc?.kind === 'text' && isMarkdown(doc.path),
+    handout: Boolean(doc) && doc.kind !== 'notice' && canBeHandout(doc.path),
+    onPreview: () => setRendered(doc, !doc.rendered),
+    onHandout: () => openAsHandout(doc.path),
+  });
   const bind = (run) => () => run(doc);
   renderBanner(ui.banner, doc, Object.fromEntries(Object.entries(bannerActions).map(([name, run]) => [name, bind(run)])));
 }
@@ -112,7 +124,9 @@ function publishCursor() {
 
 function remember() {
   if (session.restoring || !app.workspace) return;
-  const files = [...session.docs.values()].filter((doc) => doc.kind === 'text').map((doc) => ({ path: doc.path, cursor: stateOf(doc).selection.main.head }));
+  const files = [...session.docs.values()]
+    .filter((doc) => doc.kind === 'text' || doc.kind === 'view')
+    .map((doc) => ({ path: doc.path, cursor: doc.kind === 'text' ? stateOf(doc).selection.main.head : 0 }));
   rememberTabs(app.workspace.path, files, session.active);
 }
 
@@ -128,6 +142,7 @@ function textDoc(path, file, cursor) {
 }
 
 const noticeDoc = (path, notice) => ({ path, kind: 'notice', notice, dirty: false, banner: null });
+const viewDoc = (path) => ({ path, kind: 'view', dirty: false, banner: null });
 
 /** Turns an open doc into a notice in place, when its file stopped being readable text. */
 export function becomeNotice(doc, notice) {
@@ -139,17 +154,28 @@ export function becomeNotice(doc, notice) {
   if (doc.path === session.active) activate(doc.path);
 }
 
+/** What a new tab for `path` starts from: doc_read's answer, or for a file the viewer shows, whether it exists. */
+async function describe(path) {
+  try {
+    if (!viewKind(path)) return await invoke('doc_read', { rel: path });
+    const [stat] = await invoke('doc_stat', { paths: [path] });
+    return { kind: stat?.missing ? 'missing' : 'view' };
+  } catch (e) {
+    return { kind: 'error', message: String(e) };
+  }
+}
+
+function newDoc(path, file, cursor) {
+  if (file.kind === 'text') return textDoc(path, file, cursor);
+  return file.kind === 'view' ? viewDoc(path) : noticeDoc(path, file);
+}
+
 async function read(path, cursor) {
   const generation = session.generation;
-  let file;
-  try {
-    file = await invoke('doc_read', { rel: path });
-  } catch (e) {
-    file = { kind: 'error', message: String(e) };
-  }
+  const file = await describe(path);
   if (generation !== session.generation || file.kind === 'missing') return null;
   if (!session.docs.has(path)) {
-    session.docs.set(path, file.kind === 'text' ? textDoc(path, file, cursor) : noticeDoc(path, file));
+    session.docs.set(path, newDoc(path, file, cursor));
     if (file.kind === 'text') emit('editor:opened', path);
   }
   return session.docs.get(path);
@@ -174,11 +200,27 @@ function stashActive() {
   doc.scroll = session.view.scrollSnapshot();
 }
 
+/** Shows `doc` read-only in place of the code, or puts the viewer away (null). */
+function showInViewer(doc) {
+  shownView?.destroy();
+  shownView = null;
+  ui.viewer.hidden = !doc;
+  if (!doc) return ui.viewer.replaceChildren();
+  shownView = showFile(ui.viewer, doc.path, doc.kind === 'text' ? { text: stateOf(doc).doc.toString() } : {});
+}
+
+/** Shows a Markdown tab rendered, or as its text again. */
+function setRendered(doc, rendered) {
+  doc.rendered = rendered;
+  if (doc.path === session.active) activate(doc.path);
+}
+
 export function activate(path) {
   stashActive();
   const doc = session.docs.get(path);
   session.active = path;
-  ui.notice.hidden = doc.kind === 'text';
+  ui.notice.hidden = doc.kind !== 'notice';
+  showInViewer(null);
   if (doc.kind === 'text') {
     if (!session.view) session.view = new EditorView({ state: doc.state, parent: ui.host });
     session.view.dom.hidden = false;
@@ -188,10 +230,16 @@ export function activate(path) {
     // At once, so whatever opens next (quick open, a dialog) gives the focus back to the code.
     // A key that opens a file (Enter in the tree, quick open or a name field) must call
     // preventDefault, or it would carry on into the file as a stray line break.
-    session.view.focus();
+    if (doc.rendered) {
+      session.view.dom.hidden = true;
+      showInViewer(doc);
+    } else session.view.focus();
+  } else if (doc.kind === 'view') {
+    if (session.view) session.view.dom.hidden = true;
+    showInViewer(doc);
   } else {
     if (session.view) session.view.dom.hidden = true;
-    renderFileNotice(ui.notice, doc, { onClose: () => close(doc.path) });
+    renderFileNotice(ui.notice, doc, { onClose: () => close(doc.path), onReveal: () => reveal(doc.path) });
   }
   renderChrome();
   emit('editor:active', path);
@@ -199,10 +247,19 @@ export function activate(path) {
   remember();
 }
 
+async function reveal(path) {
+  try {
+    await invoke('fs_reveal', { rel: path });
+  } catch (e) {
+    notify({ kind: 'error', message: `Could not show ${path} in the Finder: ${e}` });
+  }
+}
+
 function showNothing() {
   session.active = null;
   if (session.view) session.view.dom.hidden = true;
   ui.notice.hidden = true;
+  showInViewer(null);
   renderChrome();
   emit('editor:active', null);
   publishCursor();

@@ -18,6 +18,7 @@ import { setThemeMode } from './theme.js';
 export { open as openFile, movePaths } from './session.js';
 export { save, saveAll } from './disk.js';
 export { registerSelectionAction };
+export { formatSize } from './notice.js';
 
 // How often open files are compared with the disk while the window is in use. Changes normally
 // arrive at once as `files:changed` from the folder watcher; this is the fallback for when the
@@ -134,7 +135,7 @@ function unsavedWork(reason) {
 /** Runs `run(view)` on the file on screen, if it is a text file. */
 const onView = (run) => () => {
   const doc = session.docs.get(session.active);
-  if (doc?.kind !== 'text') return;
+  if (doc?.kind !== 'text' || doc.rendered) return;
   session.view.focus();
   run(session.view);
 };
@@ -154,11 +155,13 @@ function registerCommands() {
 
 export function mount(region) {
   const tabBar = h('div', { id: 'tabs' });
+  const tools = h('div', { id: 'tab-tools', hidden: true });
   const banner = h('div', { id: 'editor-banner', role: 'alert', hidden: true });
   const notice = h('div', { class: 'editor-notice', hidden: true });
-  const host = h('div', { id: 'editor-host' }, notice);
-  region.append(tabBar, banner, host);
-  attach({ tabBar, banner, host, notice }, bannerActions);
+  const viewer = h('div', { id: 'file-view', hidden: true });
+  const host = h('div', { id: 'editor-host' }, notice, viewer);
+  region.append(h('div', { id: 'tab-row' }, tabBar, tools), banner, host);
+  attach({ tabBar, tools, banner, host, notice, viewer }, bannerActions);
   watchNotes(refreshNotes);
   registerCommands();
 

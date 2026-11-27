@@ -27,20 +27,20 @@ The reference points are small, opinionated native Mac apps, not VS Code.
 All values live in [`src/renderer/styles/tokens.css`](../src/renderer/styles/tokens.css). Use a
 token rather than a literal; if none fits, add one there rather than inventing a value in place.
 
-| Group    | Tokens                                                                                                                                                                                                                                                                          |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Surface  | `--color-surface` (editor, terminal), `--color-surface-raised` (side panels, bars), `--color-surface-hover` (hovered and selected rows, buttons), `--color-surface-sunken` (code in answers), `--color-surface-overlay` (menus, sheets, notifications), `--color-overlay-hover` |
-| Line     | `--color-border` (separators), `--color-border-control` (buttons, fields, selects), `--color-border-strong`, `--color-border-overlay` (the edge of anything floating)                                                                                                           |
-| Text     | `--color-text`, `--color-text-strong`, `--color-text-secondary`, `--color-text-muted`, `--color-on-accent`                                                                                                                                                                      |
-| Signal   | `--color-accent`, `--color-accent-soft`, `--color-success`, `--color-danger`, `--color-danger-soft`, `--color-warning`, `--focus-ring-color`, `--color-selection`, `--color-backdrop`                                                                                           |
-| Code     | `--color-code-*`: syntax colours (keyword, string, number, function, type, comment, punctuation) for the editor and code in tutor answers, and the editor's marks (line numbers, active line, matches, brackets); `--color-note-*` for tutor notes in the editor                |
-| Terminal | `--color-ansi-*`: the sixteen ANSI colours, read by `terminal/theme.js`                                                                                                                                                                                                         |
-| Type     | `--font-ui`, `--font-mono`, `--code-size` (a setting), `--text-2xs` … `--text-display`, `--leading-ui`, `--leading-reading`, `--leading-output`                                                                                                                                 |
-| Space    | `--space-1` … `--space-10`, `--space-12`, `--space-16`, where `--space-N` is 2N px                                                                                                                                                                                              |
-| Shape    | `--radius-xs` (3px) … `--radius-3xl` (10px), `--radius-round`, `--shadow-overlay`                                                                                                                                                                                               |
-| Control  | `--control-height-sm` (20px), `--control-height` (24px), `--control-height-lg` (30px), `--icon-size`, `--icon-size-sm`, `--icon-size-xs`, `--icon-stroke`                                                                                                                       |
-| Motion   | `--duration-fast` (hover colours), `--duration-normal` (things appearing), `--ease-out`                                                                                                                                                                                         |
-| Layout   | `--titlebar-height`, `--pane-head-height`, `--tab-bar-height`, `--status-height`, `--row-height`, default panel sizes, `--splitter-hit`, `--sheet-width`, `--palette-width`, `--notice-width`, z-index layers                                                                   |
+| Group    | Tokens                                                                                                                                                                                                                                                                                                       |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Surface  | `--color-surface` (editor, terminal), `--color-surface-raised` (side panels, bars), `--color-surface-hover` (hovered and selected rows, buttons), `--color-surface-sunken` (code in answers), `--color-surface-overlay` (menus, sheets, notifications), `--color-overlay-hover`, `--color-paper` (PDF pages) |
+| Line     | `--color-border` (separators), `--color-border-control` (buttons, fields, selects), `--color-border-strong`, `--color-border-overlay` (the edge of anything floating)                                                                                                                                        |
+| Text     | `--color-text`, `--color-text-strong`, `--color-text-secondary`, `--color-text-muted`, `--color-on-accent`                                                                                                                                                                                                   |
+| Signal   | `--color-accent`, `--color-accent-soft`, `--color-success`, `--color-danger`, `--color-danger-soft`, `--color-warning`, `--focus-ring-color`, `--color-selection`, `--color-backdrop`                                                                                                                        |
+| Code     | `--color-code-*`: syntax colours (keyword, string, number, function, type, comment, punctuation) for the editor and code in tutor answers, and the editor's marks (line numbers, active line, matches, brackets); `--color-note-*` for tutor notes in the editor                                             |
+| Terminal | `--color-ansi-*`: the sixteen ANSI colours, read by `terminal/theme.js`                                                                                                                                                                                                                                      |
+| Type     | `--font-ui`, `--font-mono`, `--code-size` (a setting), `--text-2xs` … `--text-display`, `--leading-ui`, `--leading-reading`, `--leading-output`                                                                                                                                                              |
+| Space    | `--space-1` … `--space-10`, `--space-12`, `--space-16`, where `--space-N` is 2N px                                                                                                                                                                                                                           |
+| Shape    | `--radius-xs` (3px) … `--radius-3xl` (10px), `--radius-round`, `--shadow-overlay`                                                                                                                                                                                                                            |
+| Control  | `--control-height-sm` (20px), `--control-height` (24px), `--control-height-lg` (30px), `--icon-size`, `--icon-size-sm`, `--icon-size-xs`, `--icon-stroke`                                                                                                                                                    |
+| Motion   | `--duration-fast` (hover colours), `--duration-normal` (things appearing), `--ease-out`                                                                                                                                                                                                                      |
+| Layout   | `--titlebar-height`, `--pane-head-height`, `--tab-bar-height`, `--status-height`, `--row-height`, default panel sizes, `--splitter-hit`, `--sheet-width`, `--palette-width`, `--notice-width`, z-index layers                                                                                                |
 
 A few compact controls keep odd pixel paddings (3px, 7px, 9px). These are optical adjustments
 that belong to the component; layout spacing uses the scale.
@@ -188,9 +188,9 @@ styles. `npm run preview -- --scenario kitchen-sink` shows every one in both the
 
 `icon(name, className)` from `shell/index.js` returns an inline SVG from a small set drawn by
 [Lucide](https://lucide.dev) (ISC licence, compatible with MIT; the full notice is in THIRD_PARTY_NOTICES.md and a short one in
-`shell/icons.js`): plus, x, chevron-left, chevron-right, chevron-down, folder, folder-open, file, search,
+`shell/icons.js`): plus, minus, x, chevron-left, chevron-right, chevron-down, folder, folder-open, file, search,
 settings, check, alert, info, trash, panel-left, panel-bottom, panel-right, play, stop, refresh,
-external. They are 16px (`.small` is 14px) with a 1.75 stroke in the text colour. Add one by
+external, book-open. They are 16px (`.small` is 14px) with a 1.75 stroke in the text colour. Add one by
 copying its shapes from Lucide into `icons.js`; do not mix in another set.
 
 ## Motion
@@ -204,8 +204,10 @@ busy.
 
 ## Layout
 
-The window is a title bar, three resizable regions (files, the editor over the bottom panel, the
-tutor) and a status bar. `shell/layout.js` remembers which panels are open and their sizes. When
+The window is a title bar, resizable regions (files, the editor over the bottom panel, the
+handout when it is open, the tutor) and a status bar. The handout, a document to read, sits on
+`--color-surface` like the editor; when it and the tutor do not both fit beside a 480px editor,
+the one shown less recently folds. `shell/layout.js` remembers which panels are open and their sizes. When
 the window is too small for every open panel at its minimum beside a 360px editor, the tutor folds
 away first, then the files; they return when the window grows. Before a folder is open only the
 welcome screen shows.

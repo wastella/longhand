@@ -12,6 +12,7 @@
   --color-surface-raised: #222329; /* side panels and the tab bar */
   --color-surface-hover: #2a2c33; /* hovered or selected rows, buttons, user messages */
   --color-surface-sunken: #17181b; /* code blocks in tutor answers */
+  --color-paper: #ffffff; /* PDF pages, which are drawn on white in both themes */
   --color-surface-overlay: #2a2c33; /* menus, sheets and notifications floating above the layout */
   --color-overlay-hover: #373a45; /* the highlighted row in a list on an overlay (the palette) */
   --color-border: #33353d;
@@ -86,6 +87,7 @@
   --color-surface-raised: #f5f5f7;
   --color-surface-hover: #e9eaee;
   --color-surface-sunken: #f2f3f5;
+  --color-paper: #ffffff;
   --color-surface-overlay: #ffffff;
   --color-overlay-hover: #ebecf0;
   --color-border: #dfe0e5;
@@ -217,6 +219,7 @@
   --row-height: 23px; /* a file tree row */
   --files-width: 220px; /* defaults; the student's own sizes are set inline by shell/layout.js */
   --tutor-width: 400px;
+  --handout-width: 420px;
   --palette-width: 560px; /* quick open and other lookups */
   --bottom-height: 240px;
   --splitter-hit: 9px; /* the draggable width around a splitter's 1px line */

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod clone;
 mod documents;
 mod feedback;
 mod files;
@@ -10,6 +11,7 @@ mod pytest;
 mod system;
 mod term;
 mod tutor;
+mod viewer;
 mod workspace;
 
 use tauri::{LogicalPosition, Manager, TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
@@ -60,6 +62,7 @@ fn main() {
         )
         .manage(AppState::default())
         .manage(files::FilesState::default())
+        .manage(clone::Clones::default())
         .setup(|app| {
             menu::build(app)?;
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
@@ -150,6 +153,13 @@ fn main() {
             lsp::lsp_send,
             lsp::lsp_ack,
             lsp::lsp_stop,
+            // Opening the assignment: PDFs and pictures for the viewer (viewer.rs), and Clone
+            // Repository (clone.rs).
+            viewer::view_read,
+            clone::clone_start,
+            clone::clone_cancel,
+            clone::clone_choose,
+            clone::clone_location,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start Longhand")

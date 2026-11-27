@@ -48,8 +48,10 @@ export function renderBanner(host, doc, actions) {
   );
 }
 
+const isMac = navigator.platform.startsWith('Mac');
+
 /** The notice shown instead of the editor for `doc.notice`: { kind, size?, message? }. */
-export function renderFileNotice(host, doc, { onClose }) {
+export function renderFileNotice(host, doc, { onClose, onReveal }) {
   const name = nameOf(doc.path);
   const { kind, size } = doc.notice;
   const [title, detail] = {
@@ -62,12 +64,18 @@ export function renderFileNotice(host, doc, { onClose }) {
       `It is ${formatSize(size)}. Longhand opens text files up to 3 MB so the editor stays responsive. To look inside, try head or less in the terminal.`,
     ],
     notText: [`${name} is not UTF-8 text`, 'Saving it from here could change its contents, so Longhand leaves it alone.'],
+    notFile: [`${name} is not a regular file`, 'It may be a pipe or a device, which could wait forever if Longhand read it.'],
     error: [`${name} could not be opened`, doc.notice.message],
   }[kind];
   host.replaceChildren(
     h('h2', {}, title),
     h('p', {}, detail),
     h('p', { class: 'notice-path' }, doc.path),
-    h('button', { type: 'button', onclick: onClose }, 'Close tab'),
+    h(
+      'div',
+      { class: 'notice-actions' },
+      h('button', { type: 'button', onclick: onReveal }, isMac ? 'Reveal in Finder' : 'Show in File Manager'),
+      h('button', { type: 'button', onclick: onClose }, 'Close tab'),
+    ),
   );
 }
