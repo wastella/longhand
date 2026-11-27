@@ -1,0 +1,24 @@
+[package]
+name = "longhand"
+version = "0.1.0"
+edition = "2021"
+description = "A quiet code editor for students: you write the code, the AI is a read-only tutor."
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+portable-pty = "0.9"
+regex = "1"
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
