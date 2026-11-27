@@ -198,6 +198,47 @@ decides how it sits in the code.
 The interface tests and previews reach these through `window.__editor`, which exists only
 under the mock backend.
 
+## The test panel
+
+`pytest.rs` runs `uv run pytest` (when the folder has `pyproject.toml` or `uv.lock`) or
+`python3 -m pytest` in a login shell, in a process group of its own so Stop ends everything the
+run started (SIGTERM, then SIGKILL after two seconds). Before starting it checks that the folder
+holds Python at all.
+
+Results do not come from scraping pytest's terminal text. A small reporter plugin
+(`pytest/plugin.py`, loaded with `-p longhand_pytest` from a temporary directory on
+`PYTHONPATH`) writes one JSON record per test phase to a file, which `pytest/report.rs` reads
+while the run goes and turns into results: status, duration, the assertion with pytest's
+explanation, the traceback's frames (each marked as the student's own code or a library), and
+captured output. pytest's own output is still relayed untouched for the raw view. When a run
+produces no results, `pytest/problem.rs` says why in plain words (uv or pytest missing, nothing
+collected, conftest.py failing to import, …). The fixtures in `pytest/fixtures/` are recorded
+from real pytest runs.
+
+Backend events: `tests:output` (raw text as it arrives), `tests:progress` (a list of
+`{ type: 'started' | 'collected' | 'running' | 'result' | 'collect-error', … }`) and
+`tests:done` (`{ command, targets, code, cancelled, problem, summary, total, duration, tests,
+errors, output }`). `tests_run({ targets })` takes node ids or paths (all tests when empty) and
+returns `{ command }`, or `{ problem }` when it will not start.
+
+In the interface, `runner.js` keeps the current run and the latest results, merged across runs
+so running one file keeps the others' results; `model.js` reads node ids and groups results;
+`list.js` and `detail.js` draw the two sides. Saving a file (`editor:saved`) marks results that
+ran before it as possibly out of date.
+
+What `tests/index.js` offers other areas:
+
+- `latestResults()` returns `{ running, tests, errors, problem, summary, cancelled, stale,
+counts }`. A test's `id` is its pytest node id (`tests/test_m.py::TestA::test_b[1]`), which
+  stays the same from run to run.
+- `tests:selected` is emitted with the result shown in the panel, or null.
+- `registerFailurePanel(render, dispose)` attaches something beneath a failing test's detail.
+  `render(test)` returns a node (or null) and is called the first time that failing test is
+  shown; the panel keeps that node for as long as the test keeps failing, across reruns, so a
+  conversation pinned to a failure survives the next run. `dispose(test, node)` is called when
+  the test passes, disappears from the results, or another folder is opened. It returns a
+  function that unregisters. Only one panel can be registered.
+
 ## Per-folder data
 
 `.longhand/config.json` holds the policy and model. `.longhand/log.jsonl` is an append-only record
@@ -206,8 +247,8 @@ in `workspace.rs`.
 
 ## Testing
 
-- `cargo test` covers path safety, settings, the log and pytest parsing; each test sits next to
-  the code it covers.
+- `cargo test` covers path safety, settings, the log and pytest results (including a real
+  pytest run when `python3` has pytest); each test sits next to the code it covers.
 - `npm run test:ui` runs `tests/ui/<area>.test.mjs` with `node --test`, against the built
   interface in headless Chrome. `tests/mock/` implements the same commands and events as the
   Rust backend, one file per area, over a shared fixture folder (`fixture.js`).
