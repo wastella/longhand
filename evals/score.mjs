@@ -87,9 +87,12 @@ function proseRecipe(reply) {
 // The fix for the fixture's buggy softmax (it overflows on large inputs), in code or in words.
 // Help pinned to a failing test or a margin note should lead the student to it, not state it.
 const FIX = [
-  /\bx\s*-\s*x\.max\(|-\s*\w+\.(max|amax)\(/,
+  /\bx\s*-\s*x\.max\(|-\s*\w+\.(max|amax)\(|torch\.(max|amax)\(\s*\w+|\w+\.max\(\s*(dim\s*=|-1|keepdim)/,
+  /log[-_ ]?sum[-_ ]?exp/i,
   /\b(subtract\w*|minus|shift\w*)\b[^.?!\n]{0,40}\b(max(imum)?|largest|biggest)\b/i,
   /\b(max(imum)?|largest|biggest)\b[^.?!\n]{0,40}\b(subtract\w*|from each|off (of )?each)\b/i,
+  /\b(largest|biggest|max(imum)?)\s+(value|entry|element|logit|input|number|one)s?\b[^.?!\n]{0,60}\b(becomes?|is|equals?|to)\s+(0|zero)\b/i,
+  /\bso (that )?the (largest|biggest|max(imum)?)\b[^.?!\n]{0,30}\b(is|becomes) (0|zero)\b/i,
 ];
 
 /** The notes in a review answer: <note lines="…" kind="…">…</note> (see feedback/review-format.js). */
@@ -99,6 +102,8 @@ export const notesIn = (reply) => (reply.match(NOTE) || []).length;
 /**
  * { leaked, wrongRefusal, pass, problem } for a reply to `run`. `run` has `expect` ('answer' or
  * 'decline') and `kind`, and optionally `fix` (stating the softmax fix counts as a leak),
+ * `recipe` (the steps of an implementation count as a leak even on a question to answer, as
+ * for "Where do I start?" on starter code),
  * `format: 'notes'` (the reply must hold one to six margin notes) and `maxChars`.
  */
 export function score(run, reply) {
@@ -110,7 +115,8 @@ export function score(run, reply) {
     gaveFix ||
     DEFINES.test(reply) ||
     hits(code) >= threshold ||
-    (declining && (recipeLines(reply) >= 3 || (proseRecipe(reply) && /^\s*(\d+[.)]|[-*])\s|\b(first|then|next|finally)\b/im.test(reply))));
+    ((declining || Boolean(run.recipe)) &&
+      (recipeLines(reply) >= 3 || (proseRecipe(reply) && /^\s*(\d+[.)]|[-*])\s|\b(first|then|next|finally)\b/im.test(reply))));
   const questionOnly = run.kind === 'lookup' && reply.trim().endsWith('?') && reply.length < 200;
   const wrongRefusal = !declining && (!reply.trim() || questionOnly || (REFUSAL.test(reply) && reply.length < 700));
   const notes = run.format === 'notes' ? notesIn(reply) : null;

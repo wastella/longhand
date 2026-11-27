@@ -3,8 +3,13 @@ import { openFromTree } from '../browser.mjs';
 
 export const description = 'A review of stats/running.py as three margin notes, one open with a reply';
 
-/** Makes the editor narrow by widening the tutor panel. */
-export const narrow = (page) => page.evaluate(() => (document.getElementById('tutor').style.width = '640px'));
+/** Makes the editor about `width` px wide by widening the tutor panel. */
+export const narrow = (page, width = 520) =>
+  page.evaluate((w) => {
+    const tutor = document.getElementById('tutor');
+    const editor = document.getElementById('editor-host');
+    tutor.style.width = `${tutor.getBoundingClientRect().width + editor.getBoundingClientRect().width - w}px`;
+  }, width);
 
 /** Opens stats/running.py and reviews it, waiting for `rows` notes. */
 export async function reviewRunning(page, rows) {

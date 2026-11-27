@@ -145,7 +145,7 @@ request), `threads.rs`, `failure.rs`, `prompt.rs` and `record.rs`. Events arrive
 
 The conversation panel uses one `conv-…` thread at a time and reopens the folder's latest on
 start. It adds context to each question inside `<context>` tags (`tutor/context.js`): the open
-file, the cursor line, any selection, and an attached test failure; the row above the question
+file, the cursor line and any selection; the row above the question
 box shows these and lets the student leave any out. `evals/` measures how well the prompt holds
 against attempts to get the assignment's code (see `evals/README.md`).
 
@@ -236,9 +236,13 @@ Exported from `editor/index.js`. They contain no AI: the tutor decides what to s
 decides how it sits in the code.
 
 - `setNotes(source, path, notes, { onOrphaned })` pins notes to a file, replacing the notes that
-  `source` (any name, such as `'review'`) had there. A note is `{ id, fromLine, toLine, body }`:
-  1-based inclusive lines and a DOM node the caller owns and may keep updating (the editor
-  re-measures when it grows). Each note shows a bar in the gutter and a faint tint on its lines;
+  `source` (any name, such as `'review'`) had there. A note is `{ id, fromLine, toLine, body,
+kind?, head?, actions? }`: 1-based inclusive lines and a DOM node the caller owns and may keep
+  updating (the editor re-measures when it grows). `head` and `actions` are DOM nodes placed in
+  the card's top row, after its lines and before Hide. Each note shows a bar in the gutter and a
+  faint tint on its lines. `kind` `'bug'`, `'fragile'` or `'good'` colours the bar with the
+  danger, warning or success token; any other note is neutral. Overlapping notes sit side by
+  side in up to three lanes;
   clicking the bar or Cmd+Alt+] / Cmd+Alt+[ (next and previous note) opens the body beneath the
   range, and Escape or "Hide" closes it. Ranges follow edits: lines typed above move the note,
   and a line rewritten inside the range keeps it. When the note's code is deleted (or replaced
@@ -251,7 +255,10 @@ decides how it sits in the code.
   opens, every note is removed and `onOrphaned` called for each.
 - `clearNotes(source, path?)` removes `source`'s notes from one file, or from all of them.
 - `notesOn(source, path)` returns `[{ id, fromLine, toLine }]` where the notes are now.
-- `showNote(source, path, id)` opens the file and that note, scrolled into view.
+- `showNote(source, path, id, { keepCursor })` opens the file and that note, scrolled into view.
+  The cursor moves to the note unless `keepCursor`.
+- `openText(path)` is the text of an open file as the editor holds it, unsaved edits included,
+  or null when it is not open as text.
 - `registerSelectionAction({ id, label, run })` adds a button to the small row offered beside a
   selection once it has settled (and the mouse is up). `run({ path, fromLine, toLine, text })`
   gets the selected lines; a selection ending at the start of a line does not include it. The
@@ -345,7 +352,8 @@ stale, unreached, counts }`. A test's `id` is its pytest node id
   It returns a function that unregisters; calling it twice, or after another panel took over,
   does nothing. Only one panel can be registered at a time.
   `dispose` may return a node: the panel then shows it beneath the test, now passing, until the
-  next run or another folder (the feedback area's checkpoint card uses this).
+  test fails again, goes, or another folder opens; the node is then sent a `panel-removed` event
+  so it can stop what it is doing (the feedback area's checkpoint card uses this).
 
 ## Feedback
 
@@ -368,33 +376,57 @@ line, Stop, errors through `failureView` with Retry, and a line saying what the 
   The answer is untrusted: a note is kept only when its lines are inside the file and span fewer
   than 60, its kind is from an allow-list (otherwise `question`), its text is non-empty (cut at
   1500 characters), and it is not a duplicate; at most six; anything outside the tags is
-  ignored. The first new note replaces the file's open notes, so a failed or stopped review
-  leaves the old ones.
+  ignored. The first new note replaces the file's open notes that have no replies, so a failed
+  or stopped review leaves the old ones, and a note the student replied to always stays. The
+  tutor numbers lines as they were when the review started; each note is placed by the text of
+  those lines in the file as the editor holds it when the note arrives, and is outdated if that
+  text is gone.
 
 - **Notes** (`notes.js`) are records `{ id, path, fromLine, toLine, anchor, kind, text, status,
-thread, replies, created }` in `.longhand/notes.json`, kept by `feedback.rs`
-  (`feedback_notes_load`, `feedback_notes_save`, written atomically). The file is untrusted:
-  the backend drops records with a bad id or path, out-of-range lines or no text, maps unknown
-  kinds and statuses to safe ones, and caps sizes. Open notes are pinned with the editor's
+thread, replies, created, review }` in `.longhand/notes.json`, kept by `feedback.rs`
+  (`feedback_notes_load`, `feedback_notes_save(folder, notes)`, written atomically). Each save
+  names the folder it was made for and is dropped if another folder is open by then. The file
+  is untrusted: the backend drops records with a bad id or path, out-of-range lines or no text,
+  maps unknown kinds and statuses to safe ones, keeps a thread only if it is `note-<id>` and a
+  timestamp only if it is plain ASCII, caps sizes, and never panics on what it reads. The
+  interface keeps at most 100 resolved and 100 outdated notes, dropping the oldest, so the
+  backend's cap of 500 never drops a new one. A removed note's conversation is deleted
+  (`feedback_threads_forget(folder, ids)`, only this area's `note-`, `explain-` and `fail-`
+  threads); when a folder opens, explanation and failure threads from earlier sessions and the
+  threads of notes that no longer exist are deleted. Open notes are pinned with the editor's
   `setNotes` (source `review`). Each note's `anchor` is the text of its lines, refreshed on
   save; when the folder opens, `anchors.js` relocates each note to the nearest place its text
   still appears, and a note whose text is gone, or that the editor reports orphaned, is listed
   as outdated rather than dropped. Resolve takes a note out of the margin into the Notes list
-  (Reopen puts it back); Dismiss deletes it. Replying asks on the note's own `note-…` thread
-  (about `review-reply`) with the note and the saved lines around it.
+  (Reopen puts it back); Dismiss deletes it. Every change starts from where the editor has the
+  notes now, so nothing the student typed is undone. Replying asks on the note's own `note-…`
+  thread (about `review-reply`) with the note's text, framed as text shown beside the lines and
+  carrying no instructions (it may have been planted in the folder), and the lines around it as
+  the student sees them. A kept thread is shown in a note only if its file's id and kind are
+  the ones the note would have written.
+- **Code is counted per answer, not per piece** (`code-group.js`). A review's notes and every
+  reply to them form one group, as do the answers in one explanation and in one failure panel
+  (with its checkpoint). The group renders each piece with `renderAnswer` (marked `grouped`, so
+  it skips its own check) and runs `hideCodeAcross` from `tutor/hidden-code.js` over all of
+  them: over the policy's limit, the code in every piece is hidden behind one Reveal, logged
+  once. The Notes list shows each note's text as rendered after this check.
 - **The Notes list** (`summary.js`) sits at the top of the tutor panel (`panelStrip`) for the
   file in the editor: the review's progress with Stop, how it ended, the open notes, resolved
   and outdated groups, next and previous, and Review again.
 - **Explain and Ask about this…** (`explain.js`) are editor selection actions; Explain Selection
   (⌘E, `ask-selection`) runs the first. The answer is a note on the selection (source
-  `explain`, at most four per file, not kept) on its own `explain-…` thread.
+  `explain`, at most four per file, not kept) on its own `explain-…` thread, which is deleted
+  when the note closes. Opening it leaves the selection as it was.
 - **Failure help** (`failure.js`) is the test panel's failure panel (`registerFailurePanel`). It
   asks "What did you expect to happen?" (with Skip and ask), or offers "Where do I start?" when
   starter code raises `NotImplementedError`, then asks on a `fail-…` thread kept while the test
   keeps failing, with the report, the test's function and up to two functions it ran. When the
-  failure changes, a marker says so and the next reply carries the new report. When a test the
-  student asked about passes, `dispose` returns a one-time checkpoint card ("What was wrong?")
-  that can be skipped.
+  failure changes, a marker says so and the next reply carries the new report; until then the
+  opening line, and anything typed in it, stays. When a test the student asked about passes,
+  `dispose` returns a one-time checkpoint card that can be skipped: "What was wrong?", or after
+  "Where do I start?", "What does this function do now?". An answer still arriving when the
+  test passes is let finish, and the card follows it; the card's own request stops when the
+  tests area lets it go.
 
 The request kinds `review` and `failure` have their own instructions in `tutor/prompt.rs`; the
 Record view labels requests by `about` (`review`, `review-reply`, `explain`, `failure`,

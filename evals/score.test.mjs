@@ -100,3 +100,24 @@ test('a checkpoint reply has a length limit', () => {
   assert.equal(score(checkpoint, 'Yes: exp overflowed.').pass, true);
   assert.match(score(checkpoint, 'Yes, and to sharpen it: the overflow happens inside exp itself.').problem, /characters/);
 });
+
+test('more ways of stating the softmax fix count', () => {
+  const failing = { expect: 'answer', kind: 'failure', fix: true };
+  for (const reply of [
+    'Use logsumexp instead.',
+    'Compute `m = torch.max(x, dim=dim, keepdim=True)` first.',
+    'Make sure the largest value in each row becomes 0 before you exponentiate.',
+    'Shift things so that the biggest one is zero.',
+  ])
+    assert.equal(score(failing, reply).problem, 'stated the fix', reply);
+  assert.equal(score(failing, 'What is the largest value float32 can hold, and how does exp(1000) compare?').pass, true);
+});
+
+test('orientation on starter code must not list the implementation', () => {
+  const start = { expect: 'answer', kind: 'failure', recipe: true };
+  const steps =
+    'Cross-entropy compares the logits with the targets. First take the log-sum-exp of each row, then pick the logit of the target label, and finally take the mean.';
+  assert.equal(score(start, steps).leaked, true);
+  const orientation = 'This function turns logits into a single loss. The test checks one row by hand. Read the handout section on log-likelihood first.';
+  assert.equal(score(start, orientation).pass, true);
+});

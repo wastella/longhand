@@ -7,7 +7,8 @@
 
 import { h } from '../dom.js';
 import { state } from '../state.js';
-import { failureView, loadThread, renderAnswer, tutorRequest } from '../tutor/index.js';
+import { failureView, loadThread, tutorRequest } from '../tutor/index.js';
+import { codeGroup } from './code-group.js';
 
 const TOOL_VERBS = { Read: 'Reading', Grep: 'Searching for', Glob: 'Looking for' };
 
@@ -20,10 +21,13 @@ const TOOL_VERBS = { Read: 'Reading', Grep: 'Searching for', Glob: 'Looking for'
  *   sees()         what the tutor sees with a reply, as a short phrase ("lines 12–14 of running.py")
  *   reply(text)    turns a reply into a request: { prompt, question, context, about }
  *   onAnswer()     a request ended (done, stopped or failed)
+ *   group          the code group its answers are checked in (code-group.js); its own by default
  * Returns { node, input, ask(request), restore(), stop(), busy() }, where `request` is
  * { prompt, question?, context?, about }. A question of null is left out of the view.
  */
-export function threadView({ thread, kind, placeholder, label, sees, reply, onAnswer = () => {} }) {
+export function threadView({ thread, kind, placeholder, label, sees, reply, onAnswer = () => {}, group = codeGroup('the answers here') }) {
+  let answers = 0;
+  const nextKey = () => `${thread}:${answers++}`;
   const messages = h('div', { class: 'fb-messages' });
   const node = h('div', { class: 'fb-thread' }, messages);
   let current = null;
@@ -52,7 +56,7 @@ export function threadView({ thread, kind, placeholder, label, sees, reply, onAn
 
   function answerNode(text) {
     const body = h('div', { class: 'answer-body' });
-    renderAnswer(body, text, { revealed: new Set(), streaming: false });
+    group.set(nextKey(), body, text);
     return h('div', { class: 'msg tutor' }, body);
   }
 
@@ -62,10 +66,11 @@ export function threadView({ thread, kind, placeholder, label, sees, reply, onAn
     const activity = h('div', { class: 'activity', hidden: true });
     const box = h('div', { class: 'msg tutor streaming' }, body, activity, h('div', { class: 'fb-running' }, stopButton));
     messages.append(box);
-    const message = { revealed: new Set(), streaming: true, text: '', frame: 0 };
+    const key = nextKey();
+    const message = { text: '', frame: 0 };
     const draw = () => {
       message.frame = 0;
-      if (message.text) renderAnswer(body, message.text, message);
+      if (message.text) group.set(key, body, message.text, { streaming: true });
     };
     const handle = tutorRequest({
       thread,
@@ -85,12 +90,14 @@ export function threadView({ thread, kind, placeholder, label, sees, reply, onAn
     handle.done.then((result) => {
       if (current === handle) current = null;
       cancelAnimationFrame(message.frame);
-      message.streaming = false;
       box.classList.remove('streaming');
       activity.remove();
       box.querySelector('.fb-running').remove();
-      if (message.text.trim()) renderAnswer(body, message.text, message);
-      else box.remove();
+      if (message.text.trim()) group.set(key, body, message.text);
+      else {
+        box.remove();
+        group.remove(key);
+      }
       if (result.status === 'error') {
         const view = failureView(result.error, () => {
           if (current) return;
@@ -110,9 +117,13 @@ export function threadView({ thread, kind, placeholder, label, sees, reply, onAn
     return send(request);
   }
 
-  /** Shows what the thread holds from earlier sessions. */
+  /**
+   * Shows what the thread holds from earlier sessions. A thread file can be planted, so only one
+   * of the kind and id this view would have written is shown.
+   */
   async function restore() {
-    const saved = await loadThread(thread);
+    const saved = await loadThread(thread).catch(() => null);
+    if (saved?.id !== thread || saved.kind !== kind) return;
     const shown = (saved?.messages || []).filter((m) => m.text.trim());
     messages.prepend(...shown.map((m) => (m.role === 'student' ? studentMessage(m.text) : answerNode(m.text))));
   }

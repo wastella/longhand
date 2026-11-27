@@ -2,6 +2,7 @@
 // holds a given line (a test, or the code a test exercised).
 
 import { invoke } from '../backend.js';
+import { openText } from '../editor/index.js';
 import { numbered, splitLines } from './review-format.js';
 
 const MAX_BLOCK_LINES = 80;
@@ -16,6 +17,12 @@ export async function readLines(path) {
   } catch {
     return null;
   }
+}
+
+/** A file's lines as the student sees them now: the editor's text when it is open, else as saved. */
+export async function currentLines(path) {
+  const text = openText(path);
+  return text == null ? readLines(path) : splitLines(text);
 }
 
 /**

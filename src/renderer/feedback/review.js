@@ -1,14 +1,20 @@
 // "Review this file": the tutor reads the saved file and answers with a few margin notes, which
 // are placed one by one as each arrives. Only the student starts a review. A new review of a file
 // replaces its open notes once the first new note arrives, so a review that fails or is stopped
-// before then leaves the old ones where they were; resolved notes are never touched.
+// before then leaves the old ones where they were; resolved notes, and notes the student has
+// replied to, are never touched.
+//
+// The tutor numbers lines as they were when the review started. The student may type while it
+// answers, so each note is placed by the text of those lines (anchors.js) in the file as it is
+// when the note arrives; a note whose lines are gone by then is listed as outdated.
 
-import { activeFile, save } from '../editor/index.js';
+import { activeFile, openText, save } from '../editor/index.js';
 import { on, state } from '../state.js';
 import { formatKeys, isPanelShown, notify, showPanel, showStatus } from '../shell/index.js';
 import { failureText, tutorRequest } from '../tutor/index.js';
+import { anchorOf, relocate } from './anchors.js';
 import { addReviewNote, clearOpenNotes, newId } from './notes.js';
-import { parseReview, reviewPrompt, tooLong } from './review-format.js';
+import { parseReview, reviewPrompt, splitLines, tooLong } from './review-format.js';
 import { readLines } from './source.js';
 
 /**
@@ -45,16 +51,23 @@ function run(path, lines) {
   changed();
   showStatus(`Reviewing ${fileName(path)}: notes will appear in the margin`, 6000);
   const mine = review;
+  const id = newId('review-');
   const place = (text) => {
     const notes = parseReview(text, lines.length);
-    if (!notes.length || mine !== review) return;
+    if (notes.length <= mine.placed || mine !== review) return;
     if (!mine.placed) clearOpenNotes(path);
-    for (const note of notes.slice(mine.placed)) addReviewNote(path, lines, note);
+    const open = openText(path);
+    const now = open == null ? lines : splitLines(open);
+    for (const note of notes.slice(mine.placed)) {
+      const anchor = anchorOf(lines, note.fromLine, note.toLine);
+      const where = now === lines ? note : relocate({ ...note, anchor }, now);
+      addReviewNote(path, { ...note, ...(where ? { fromLine: where.fromLine, toLine: where.toLine } : {}), anchor, outdated: !where }, id);
+    }
     mine.placed = notes.length;
     changed();
   };
   handle = tutorRequest({
-    thread: newId('review-'),
+    thread: id,
     kind: 'review',
     prompt: reviewPrompt(path, lines),
     question: `Review ${path}`,

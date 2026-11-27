@@ -1,12 +1,16 @@
 // "Explain" and "Ask about this…" on a selection: the answer appears as a note on the selected
 // lines (the same note as a review's, from another source), not in the side panel. Explanations
-// are disposable: they are not kept with the folder, and closing one removes it.
+// are disposable: they are not kept with the folder, and closing one removes it and its kept
+// conversation. The answers in one explanation are checked for code together.
 
 import { activeFile, registerSelectionAction, setNotes, showNote } from '../editor/index.js';
 import { on, state } from '../state.js';
 import { showStatus } from '../shell/index.js';
-import { noteAction, noteBody } from './note-body.js';
-import { newId } from './notes.js';
+import { h } from '../dom.js';
+import { codeGroup } from './code-group.js';
+import { noteAction, noteBody, noteHead } from './note-body.js';
+import { describe, newId } from './notes.js';
+import { forgetThreads } from './store.js';
 import { numbered } from './review-format.js';
 import { threadView } from './thread-view.js';
 
@@ -15,10 +19,9 @@ const SOURCE = 'explain';
 const MAX_PER_FILE = 4;
 const MAX_SELECTION_LINES = 400;
 
-/** path -> [{ id, fromLine, toLine, body, thread }] */
+/** path -> [{ id, fromLine, toLine, body, head, actions, thread }] */
 const open = new Map();
 
-const describe = ({ fromLine, toLine }) => (fromLine === toLine ? `line ${fromLine}` : `lines ${fromLine}–${toLine}`);
 const fileName = (path) => path.split('/').pop();
 
 function pin(path) {
@@ -26,7 +29,7 @@ function pin(path) {
   setNotes(
     SOURCE,
     path,
-    notes.map(({ id, fromLine, toLine, body }) => ({ id, fromLine, toLine, body })),
+    notes.map(({ id, fromLine, toLine, body, head, actions }) => ({ id, fromLine, toLine, body, head, actions })),
     { onOrphaned: (id) => close(path, id) },
   );
 }
@@ -35,12 +38,18 @@ function close(path, id) {
   const notes = open.get(path) || [];
   const note = notes.find((n) => n.id === id);
   if (!note) return;
-  note.thread.stop();
+  retire(note);
   open.set(
     path,
     notes.filter((n) => n !== note),
   );
   pin(path);
+}
+
+/** An explanation is going: its answer stops and its kept conversation is deleted. */
+function retire(note) {
+  note.thread.stop();
+  if (state.workspace) forgetThreads(state.workspace.path, [`explain-${note.id}`]);
 }
 
 /** The selected code as context, with its file and line numbers. */
@@ -68,13 +77,20 @@ async function openNote(selection, { label, placeholder, first }) {
     label: `Ask about ${describe(range)}`,
     sees: () => `${describe(range)} of ${fileName(path)} as you selected them, and your question`,
     reply: (text) => request(text, text),
+    group: codeGroup('this explanation'),
   });
-  const body = noteBody({ kind: 'explanation', label, thread, actions: [noteAction('Close', 'Close and remove this note', () => close(path, id))] });
-  const notes = [...(open.get(path) || []), { id, ...range, body, thread }];
-  while (notes.length > MAX_PER_FILE) notes.shift().thread.stop();
+  const body = noteBody({ kind: 'explanation', thread });
+  const actions = h(
+    'span',
+    { class: 'fb-note-actions' },
+    noteAction('Close', 'Close and remove this note', () => close(path, id)),
+  );
+  const notes = [...(open.get(path) || []), { id, ...range, body, head: noteHead('explanation', label), actions, thread }];
+  while (notes.length > MAX_PER_FILE) retire(notes.shift());
   open.set(path, notes);
   pin(path);
-  await showNote(SOURCE, path, id);
+  // The selection stays as it was, so the student can still see what they asked about.
+  await showNote(SOURCE, path, id, { keepCursor: true });
   if (first) thread.ask(request(first, null));
   else requestAnimationFrame(() => thread.input.focus());
 }

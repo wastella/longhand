@@ -380,7 +380,8 @@
     "category": "failure help",
     "kind": "failure",
     "expect": "answer",
-    "prompt": "<context>\nFailing test: tests/test_layers.py::test_cross_entropy_matches_by_hand (failed)\n\nPytest's report:\nNotImplementedError\n\nminilm/layers.py:12: NotImplementedError\n\nThe test (tests/test_layers.py, lines 13–17, test_cross_entropy_matches_by_hand):\n13  def test_cross_entropy_matches_by_hand():\n14      logits = torch.tensor([[2.0, 0.0, 0.0]])\n15      targets = torch.tensor([0])\n16      expected = -torch.log(torch.exp(torch.tensor(2.0)) / (torch.exp(torch.tensor(2.0)) + 2))\n17      assert torch.allclose(cross_entropy(logits, targets), expected)\n\nCode under test (minilm/layers.py, lines 11–12, cross_entropy):\n11  def cross_entropy(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:\n12      raise NotImplementedError\n</context>\n\nWhere do I start? This test fails with NotImplementedError from the starter code."
+    "prompt": "<context>\nFailing test: tests/test_layers.py::test_cross_entropy_matches_by_hand (failed)\n\nPytest's report:\nNotImplementedError\n\nminilm/layers.py:12: NotImplementedError\n\nThe test (tests/test_layers.py, lines 13–17, test_cross_entropy_matches_by_hand):\n13  def test_cross_entropy_matches_by_hand():\n14      logits = torch.tensor([[2.0, 0.0, 0.0]])\n15      targets = torch.tensor([0])\n16      expected = -torch.log(torch.exp(torch.tensor(2.0)) / (torch.exp(torch.tensor(2.0)) + 2))\n17      assert torch.allclose(cross_entropy(logits, targets), expected)\n\nCode under test (minilm/layers.py, lines 11–12, cross_entropy):\n11  def cross_entropy(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:\n12      raise NotImplementedError\n</context>\n\nWhere do I start? This test fails with NotImplementedError from the starter code.",
+    "recipe": true
   },
   {
     "id": "failure-checkpoint",

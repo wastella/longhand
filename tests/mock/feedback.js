@@ -5,13 +5,27 @@
 //   notes    the folder's kept notes to start with ([{ id, path, fromLine, toLine, anchor, … }])
 //   review   'three' (default), 'six', 'malformed', 'prose', or an answer (string, or array of
 //            chunks) for a review
-// window.__notes holds the kept notes as last saved; window.__noteSaves counts the saves.
+//   replies  answers to replies to notes, used in turn; coaching  answers on a failure thread,
+//            used in turn (each a string, or an array of chunks)
+// window.__notes holds the kept notes as last saved; window.__noteSaves counts the saves, and
+// window.__forgotten lists the thread ids deleted. Like the backend, a save or deletion for a
+// folder that is no longer open is dropped (and counted in window.__staleSaves).
 
 const mock = window.__mock;
 // Read when used, so a test can change them between requests.
 const options = () => mock.options.feedback || {};
 window.__notes = structuredClone(options().notes || []);
 window.__noteSaves = 0;
+window.__staleSaves = 0;
+window.__forgotten = [];
+let folder = mock.options.init?.openDir ?? mock.workspace?.path;
+// The open folder, as the backend knows it: it changes when a folder opens.
+const emit = mock.emit;
+mock.emit = (event, payload) => {
+  if (event === 'workspace:opened') folder = payload?.path;
+  return emit(event, payload);
+};
+const current = (path) => path === folder || (window.__staleSaves++, false);
 
 const note = (lines, kind, text) => `<note lines="${lines}" kind="${kind}">\n${text}\n</note>\n`;
 
@@ -68,6 +82,8 @@ mock.answerHooks = [
   ...(mock.answerHooks || []),
   ({ kind, prompt, about }) => {
     if (/include code|be hostile|smuggle|math/.test(prompt) && about !== 'review') return null;
+    if (about === 'review-reply' && options().replies?.length) return options().replies.shift();
+    if (kind === 'failure' && about !== 'checkpoint' && options().coaching?.length) return options().coaching.shift();
     if (kind === 'review' && about === 'review') {
       const chosen = options().review || 'three';
       return reviews[chosen] || chosen;
@@ -82,8 +98,14 @@ mock.answerHooks = [
 
 Object.assign(mock.commands, {
   feedback_notes_load: () => structuredClone(window.__notes),
-  feedback_notes_save: ({ notes }) => {
+  feedback_notes_save: ({ folder: target, notes }) => {
+    if (!current(target)) return;
     window.__notes = structuredClone(notes);
     window.__noteSaves++;
+  },
+  feedback_threads_forget: ({ folder: target, ids }) => {
+    if (!current(target)) return;
+    window.__forgotten.push(...ids);
+    for (const id of ids) delete window.__threads?.[id];
   },
 });

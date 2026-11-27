@@ -7,33 +7,28 @@ import { on } from '../state.js';
 import { activeFile } from '../editor/index.js';
 import { icon, runCommand } from '../shell/index.js';
 import { failureView } from '../tutor/index.js';
-import { dismiss, jumpTo, notesOnFile, reopen, watchNotes } from './notes.js';
+import { describe, dismiss, gistOf, jumpTo, notesOnFile, reopen, watchNotes } from './notes.js';
 import { NOTE_KINDS } from './review-format.js';
 import { clearReview, retryReview, review, stopReview, watchReview } from './review.js';
 
 export const summary = h('section', { id: 'fb-summary', 'aria-label': 'Notes on this file', hidden: true });
 /** Which folded groups the student opened: 'resolved', 'outdated'. */
 const unfolded = new Set();
+/** Outdated notes the student expanded to read in full. */
+const expanded = new Set();
 
 const lines = ({ fromLine, toLine }) => (fromLine === toLine ? `${fromLine}` : `${fromLine}–${toLine}`);
-/** A note's text as one plain line, for the list. */
-const gist = (text) =>
-  text
-    .replace(/```[\s\S]*?```/g, ' … ')
-    .replace(/[`*$#>]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
 
-function row(record, { onclick, title, action }) {
+function row(record, { onclick, title, action, open = null }) {
   return h(
     'div',
-    { class: 'fb-row', role: 'listitem' },
+    { class: `fb-row${open ? ' expanded' : ''}`, role: 'listitem' },
     h(
-      onclick ? 'button' : 'div',
-      { type: onclick ? 'button' : null, class: `list-row fb-row-main ${record.kind}`, title, onclick },
+      'button',
+      { type: 'button', class: `list-row fb-row-main ${record.kind}`, title, onclick, 'aria-expanded': open === null ? null : String(open) },
       h('span', { class: 'fb-row-lines' }, lines(record)),
       h('span', { class: 'fb-row-kind' }, NOTE_KINDS[record.kind]),
-      h('span', { class: 'fb-row-text' }, gist(record.text)),
+      h('span', { class: 'fb-row-text' }, gistOf(record)),
     ),
     action,
   );
@@ -113,7 +108,7 @@ function render() {
             type: 'button',
             class: 'button small ghost',
             id: 'fb-review-again',
-            'data-tip': 'New notes replace the open ones',
+            'data-tip': 'New notes replace the open ones you have not replied to; notes with replies and resolved notes stay',
             'data-tip-command': 'review-file',
             onclick: () => runCommand('review-file'),
           },
@@ -138,11 +133,15 @@ function render() {
       outdated.length === 1 ? '1 note no longer matches the code' : `${outdated.length} notes no longer match the code`,
       outdated.map((r) =>
         row(r, {
-          title: 'The lines this note was about have changed or gone',
-          onclick: null,
+          title: expanded.has(r.id) ? 'Show less' : 'The lines this note was about have changed or gone. Show the whole note',
+          open: expanded.has(r.id),
+          onclick: () => {
+            if (!expanded.delete(r.id)) expanded.add(r.id);
+            render();
+          },
           action: h(
             'button',
-            { type: 'button', class: 'button small ghost fb-action', 'aria-label': `Dismiss the note on line ${lines(r)}`, onclick: () => dismiss(r.id) },
+            { type: 'button', class: 'button small ghost fb-action', 'aria-label': `Dismiss the note on ${describe(r)}`, onclick: () => dismiss(r.id) },
             'Dismiss',
           ),
         }),

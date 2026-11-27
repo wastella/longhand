@@ -593,3 +593,44 @@ uiTest('selecting code offers the registered actions, out of the way of typing',
   await page.keyboard.press('Escape');
   assert.equal(await page.evaluate(() => document.activeElement.classList.contains('cm-content')), true);
 });
+
+uiTest('showNote can leave the cursor where it is', async (page) => {
+  await openFromTree(page, 'stats/running.py');
+  await pinNotes(page, 'stats/running.py', [{ id: 'a', fromLine: 12, toLine: 14, text: 'Note.' }]);
+  await page.click('.cm-line:nth-child(3)');
+  const before = await text(page, '#status-pos');
+  assert.equal(await page.evaluate(() => window.__editor.showNote('review', 'stats/running.py', 'a', { keepCursor: true })), true);
+  await page.waitForSelector('.cm-note');
+  assert.equal(await text(page, '#status-pos'), before);
+  await page.evaluate(() => window.__editor.showNote('review', 'stats/running.py', 'a'));
+  assert.match(await text(page, '#status-pos'), /^Ln 12,/);
+});
+
+uiTest('overlapping notes sit in lanes of the gutter, coloured by kind, with their own head and actions', async (page) => {
+  await openFromTree(page, 'stats/running.py');
+  await page.evaluate(() => {
+    const body = (text) => Object.assign(document.createElement('p'), { textContent: text });
+    const head = Object.assign(document.createElement('span'), { className: 'test-head', textContent: 'Possible bug' });
+    const actions = Object.assign(document.createElement('button'), { className: 'test-action', textContent: 'Resolve' });
+    window.__editor.setNotes('review', 'stats/running.py', [
+      { id: 'outer', fromLine: 10, toLine: 14, kind: 'bug', body: body('Outer'), head, actions },
+      { id: 'inner', fromLine: 12, toLine: 13, kind: 'good', body: body('Inner') },
+      { id: 'plain', fromLine: 17, toLine: 18, kind: 'nonsense', body: body('Plain') },
+    ]);
+  });
+  const marks = (line) =>
+    page.evaluate((n) => {
+      const top = [...document.querySelectorAll('.cm-lineNumbers .cm-gutterElement')].find((x) => x.textContent === String(n)).getBoundingClientRect().top;
+      const el = [...document.querySelectorAll('.cm-note-gutter .cm-gutterElement')].find((g) => Math.abs(g.getBoundingClientRect().top - top) < 1);
+      return el ? [...el.querySelectorAll('.cm-note-mark')].map((m) => m.className.replace('cm-note-mark', '').trim()) : [];
+    }, line);
+  assert.deepEqual(await marks(11), ['bug']);
+  assert.deepEqual(await marks(12), ['bug', 'start good']);
+  assert.deepEqual(await marks(13), ['bug', 'end good']);
+  assert.deepEqual(await marks(17), ['start'], 'an unknown kind is drawn neutral');
+  await page.evaluate(() => window.__editor.showNote('review', 'stats/running.py', 'outer'));
+  await page.waitForSelector('.cm-note');
+  assert.equal(await count(page, '.cm-note-head .test-head'), 1);
+  assert.equal(await count(page, '.cm-note-head .test-action'), 1);
+  assert.match(await text(page, '.cm-note-head'), /Lines 10–14\s*Possible bug\s*Resolve\s*Hide/);
+});

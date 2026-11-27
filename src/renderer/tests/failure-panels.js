@@ -54,7 +54,7 @@ export function registerFailurePanel(render, dispose = () => {}, update = () => 
 export function panelFor(test) {
   if (!renderer) return null;
   if (!failed(test)) return parting.get(test.id) || null;
-  parting.delete(test.id);
+  dropParting(test.id);
   if (!panels.has(test.id)) {
     const node = guarded('render', renderer.render, test);
     panels.set(test.id, { node: node instanceof Node ? node : null, test });
@@ -73,7 +73,7 @@ const failure = (test) => [test.status, test.phase, test.message, test.detail].j
 export function prunePanels(tests) {
   const byId = new Map(tests.map((test) => [test.id, test]));
   let left = false;
-  for (const id of parting.keys()) if (!byId.has(id)) parting.delete(id);
+  for (const id of [...parting.keys()]) if (!byId.has(id)) dropParting(id);
   for (const [id, panel] of panels) {
     const now = byId.get(id);
     if (!now || !failed(now)) {
@@ -94,7 +94,19 @@ export function prunePanels(tests) {
 
 export function disposeAll() {
   for (const [id, panel] of panels) release(id, panel.test);
-  parting.clear();
+  for (const id of [...parting.keys()]) dropParting(id);
+}
+
+/**
+ * Lets go of what a disposed panel left behind. The node is sent a `panel-removed` event, so
+ * whatever it is still doing (an answer streaming in) can stop.
+ */
+function dropParting(id) {
+  const node = parting.get(id);
+  if (!node) return;
+  parting.delete(id);
+  node.remove();
+  node.dispatchEvent(new Event('panel-removed'));
 }
 
 /** Removes a test's panel; returns what dispose left in its place. */

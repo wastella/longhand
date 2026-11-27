@@ -7,18 +7,16 @@
 .fb-note {
   user-select: text;
 }
-.fb-note-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 22px;
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
-}
 .fb-note-kind {
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+.fb-note-actions {
+  display: inline-flex;
+  gap: var(--space-1);
 }
 .fb-note .msg,
 .fb-failure .msg,
@@ -47,7 +45,7 @@
 .fb-reply-input,
 .fb-expect {
   width: 100%;
-  max-width: 520px;
+  box-sizing: border-box;
   border-radius: var(--radius-md);
   padding: var(--space-2) var(--space-4);
   font: var(--text-sm) / var(--leading-ui) var(--font-ui);
@@ -128,8 +126,18 @@
 .fb-group .fb-row-main {
   opacity: 0.6;
 }
-.fb-group.outdated .fb-row-main {
-  cursor: default;
+.fb-row.expanded .fb-row-main {
+  height: auto;
+  align-items: flex-start;
+  padding-top: var(--space-1);
+  padding-bottom: var(--space-1);
+  opacity: 1;
+}
+.fb-row.expanded .fb-row-text {
+  white-space: normal;
+}
+.fb-row.expanded {
+  align-items: flex-start;
 }
 .fb-status {
   display: flex;

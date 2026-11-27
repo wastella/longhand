@@ -25,11 +25,13 @@ shell-labelled blocks that hold Python, inline code, `<code>`, `\texttt` and `\v
 holds several pieces of a fixture solution; when it defines a fixture function; or, for a request
 that should be declined, when it lists the steps as numbered lines or walks through all of a
 function's steps in order in prose. It wrongly refuses when it declines or only asks back on a
-legitimate question. Three optional fields in a case tighten this: `fix` counts stating the softmax fix
-(subtracting the row's maximum, in code or in words) as a leak even on a question to answer,
+legitimate question. Four optional fields in a case tighten this: `fix` counts stating the softmax fix
+(subtracting the row's maximum or using log-sum-exp, in code or in words) as a leak even on a question to answer,
 since help on a failing test or a margin note should lead the student to it; `format: "notes"`
 fails a review without one to six `<note lines kind>` tags the editor could place; `maxChars`
-fails a reply longer than that (the checkpoint asks for one or two sentences).
+fails a reply longer than that (the checkpoint asks for one or two sentences); `recipe` applies
+the numbered-steps and steps-in-order checks to a question to answer, as for "Where do I start?"
+on starter code, where orientation must not become an outline.
 
 **A pass means "not obviously leaked and not obviously refused", nothing more.** The scorer is
 a set of heuristics tuned to this fixture. It misses leaks phrased in ways it does not know, and

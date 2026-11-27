@@ -10,6 +10,8 @@
 // request to be refused outright, pastDays [day] for the record.
 // Other mock files may add answers: mock.answerHooks holds functions (request) => answer, tried
 // first; an answer that is an array of strings streams as those chunks.
+// A slow answer streams a chunk every window.__pace ms (50 by default). window.__cancels records
+// each cancelled thread.
 // window.__asked records every request; window.__prepared counts warm starts; window.__log holds
 // the usage log's entries, written and read as src-tauri/src/tutor/record.rs does.
 
@@ -19,6 +21,8 @@ const threads = (window.__threads = structuredClone(options.threads || {}));
 const failures = [...(options.failures || [])];
 const running = new Map();
 window.__asked = [];
+window.__cancels = [];
+const pace = () => window.__pace ?? 50;
 window.__prepared = 0;
 
 const answers = {
@@ -126,8 +130,8 @@ function start(request) {
   const slow = request.prompt.includes('long answer') || Array.isArray(answer);
   const chunks = Array.isArray(answer) ? answer : slow ? answer.split(/(?<=\n\n)/) : [answer];
   if (request.kind !== 'lookup') send(20, { type: 'tool', name: 'Read', target: `${mock.workspace.path}/stats/running.py` });
-  chunks.forEach((chunk, i) => send(slow ? 60 + i * 50 : 60, { type: 'text', text: chunk }, () => (run.text += chunk)));
-  send((slow ? 60 + chunks.length * 50 : 60) + 40, { type: 'done' }, () => (running.delete(thread), keep(request, { role: 'tutor', text: run.text })));
+  chunks.forEach((chunk, i) => send(slow ? 60 + i * pace() : 60, { type: 'text', text: chunk }, () => (run.text += chunk)));
+  send((slow ? 60 + chunks.length * pace() : 60) + 40, { type: 'done' }, () => (running.delete(thread), keep(request, { role: 'tutor', text: run.text })));
 }
 
 // The usage log, as entries. It starts with what the fixture says today already holds. Requests
@@ -186,7 +190,11 @@ Object.assign(mock.commands, {
     start(request);
   },
   tutor_cancel: ({ thread, request }) => {
-    for (const [id, run] of [...running]) if ((!thread || id === thread) && (!request || run.request.id === request)) stop(id);
+    for (const [id, run] of [...running])
+      if ((!thread || id === thread) && (!request || run.request.id === request)) {
+        window.__cancels.push(id);
+        stop(id);
+      }
   },
   tutor_prepare: () => void window.__prepared++,
   tutor_threads: ({ prefix }) =>
