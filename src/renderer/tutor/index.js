@@ -5,8 +5,8 @@
 import { invoke } from '../backend.js';
 import { h, paneHead, spacer } from '../dom.js';
 import { emit, on, state } from '../state.js';
-import { registerCommand, registerFocusTarget, showPanel, showStatus } from '../shell/index.js';
-import { attach, form, input, renderChips, showCursor } from './composer.js';
+import { registerCommand, registerFocusTarget, showStatus } from '../shell/index.js';
+import { form, input, renderChips, showCursor } from './composer.js';
 import { chat, newConversation, resumeLatest, setupConversation } from './conversation.js';
 import { closeLadder, ladder } from './hints.js';
 import { historyView, showHistory } from './history.js';
@@ -19,20 +19,11 @@ import { isConnected, setupBox, showSetup } from './setup.js';
 export { tutorRequest, prepareTutor, listThreads, loadThread, usageRecord } from './engine.js';
 export { ask } from './conversation.js';
 export { renderAnswer } from './markdown.js';
+export { hideCodeAcross } from './hidden-code.js';
 export { failureText, failureView } from './errors.js';
 
 /** A place at the top of the panel, under the policy, for the Notes list on the open file (feedback/). */
 export const panelStrip = h('div', { id: 'tutor-strip' });
-
-/**
- * Opens the tutor with `attachment` ({ kind, label, text, placeholder }) attached to the next
- * question, so the student writes the question themselves.
- */
-export function askTutorAbout(attachment) {
-  showPanel('tutor');
-  showView('chat');
-  attach(attachment);
-}
 
 const POLICIES = {
   strict: { label: 'Strict', note: 'Strict: the tutor writes no code, only prose, math and shapes.' },

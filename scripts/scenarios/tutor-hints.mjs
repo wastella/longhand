@@ -1,6 +1,6 @@
 import { openFromTree } from '../browser.mjs';
 
-export const description = 'The hint ladder after its first step, with a failing test attached to the next question';
+export const description = 'The hint ladder after its first step, with help open beneath a failing test';
 
 export default async function (page) {
   await openFromTree(page, 'stats/running.py');

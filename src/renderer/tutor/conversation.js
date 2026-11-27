@@ -172,8 +172,8 @@ function send(request) {
 }
 
 /**
- * Sends `question` with the editor's context and any attachment. `about` is what the usage log
- * files it under (question, explain, review, hint); an attachment's own kind wins. `shown`
+ * Sends `question` with the editor's context. `about` is what the usage log files it under
+ * (question, hint). `shown`
  * replaces the question in the transcript, and `rung` marks a hint. Returns false when the
  * question could not be sent (empty, an answer is still coming, or no folder is open).
  */
@@ -181,12 +181,11 @@ export function ask(question, about = 'question', { shown, rung } = {}) {
   question = question.trim();
   if (!question || current || !state.workspace) return false;
   thread ??= newThreadId();
-  const { attachment, omit } = takeContext();
-  const { prompt, labels } = buildPrompt(question, attachment, omit);
-  const attached = attachment && !omit.has('attachment');
+  const { omit } = takeContext();
+  const { prompt, labels } = buildPrompt(question, omit);
   if (chat.querySelector('.empty')) chat.replaceChildren();
   chat.append(studentMessage(shown || question, labels));
-  send({ thread, prompt, question: shown || question, context: labels, about: attached ? attachment.kind : about, rung });
+  send({ thread, prompt, question: shown || question, context: labels, about, rung });
   return true;
 }
 
