@@ -10,7 +10,8 @@ import { openGoToLine } from './go-to-line.js';
 import { dropNotes, findNote, listNotes, moveToNote, openNoteAt, putNotes, refreshSpec, watchNotes } from './notes.js';
 import { openReplace } from './search-panel.js';
 import { flushTabs } from './restore.js';
-import { applyTheme, attach, close, enterFolder, fileGone, isWithin, open, session, stateOf, updateDoc } from './session.js';
+import { addFileExtension } from './extensions.js';
+import { applyTheme, attach, close, enterFolder, fileGone, isWithin, open, refreshFileExtensions, session, stateOf, updateDoc } from './session.js';
 import { registerSelectionAction } from './selection-actions.js';
 import { setThemeMode } from './theme.js';
 
@@ -87,6 +88,31 @@ export async function showNote(source, path, id, { keepCursor = false } = {}) {
 export function openText(path) {
   const doc = session.docs.get(path);
   return doc?.kind === 'text' ? stateOf(doc).doc.toString() : null;
+}
+
+/**
+ * Adds to every open file whatever CodeMirror extension `provide(path)` returns (nothing for a
+ * file it has no business with). It is asked when a file opens or is renamed, and again for the
+ * files `matches(path)` picks (all of them by default) whenever the returned function is called.
+ */
+export function registerFileExtension(provide) {
+  addFileExtension(provide);
+  return refreshFileExtensions;
+}
+
+/** The CodeMirror state of the text file open at `path`, unsaved edits included, or null. */
+export function fileState(path) {
+  const doc = session.docs.get(path);
+  return doc?.kind === 'text' ? stateOf(doc) : null;
+}
+
+/** The editor view, when the text file at `path` is the one on screen; otherwise null. */
+export const fileView = (path) => (session.active === path && session.docs.get(path)?.kind === 'text' ? session.view : null);
+
+/** Applies a CodeMirror transaction to the text file open at `path`, on screen or not. */
+export function updateFile(path, spec) {
+  const doc = session.docs.get(path);
+  if (doc?.kind === 'text') updateDoc(doc, spec);
 }
 
 /** Shows the registry's notes in an open file once they change. */

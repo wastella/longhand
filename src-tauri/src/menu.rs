@@ -44,8 +44,8 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
     };
     let plain = |id: &str, label: &str| MenuItemBuilder::with_id(id, label).build(app);
     // A native accelerator fires before the page sees the key, wherever focus is. A shortcut that
-    // means something while typing elsewhere (Ctrl+G cancels a search in the terminal's shell) is
-    // left to the editor's own key bindings: its item gets no accelerator, shows the keys in its
+    // means something while typing elsewhere (in the terminal's shell Ctrl+G cancels a search and
+    // Ctrl+- undoes) is left to the editor's own key bindings: its item gets no accelerator, shows the keys in its
     // label, and still goes into the shortcut reference.
     let hinted = |id: &str, label: &str, key: &str, shown: &str| {
         recorded.borrow_mut().push((id.to_string(), label.to_string(), key.to_string()));
@@ -101,6 +101,8 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
         .item(&item("find", "Find…", "CmdOrCtrl+F")?)
         .item(&item("replace", "Replace…", "CmdOrCtrl+Alt+F")?)
         .item(&hinted("go-to-line", "Go to Line…", "Ctrl+G", "Ctrl+G")?)
+        .item(&item("go-to-definition", "Go to Definition", "F12")?)
+        .item(&hinted("go-back", "Go Back", "Ctrl+-", "Ctrl+-")?)
         .item(&item("toggle-comment", "Toggle Comment", "CmdOrCtrl+/")?)
         .separator()
         // With Cmd: Option+] and Option+[ alone type ‘ and “ on a Mac keyboard.

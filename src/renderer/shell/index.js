@@ -20,7 +20,7 @@ import { mountWelcome, renderWelcome } from './welcome.js';
 export { registerCommand, runCommand } from './commands.js';
 export { showPanel, isPanelShown } from './layout.js';
 export { addBottomPane, showBottomPane } from './bottom-panel.js';
-export { showStatus } from './status-bar.js';
+export { addStatusItem, showStatus } from './status-bar.js';
 export { confirmLeave, registerLeaveGuard } from './leave-guards.js';
 export { notify } from './notify.js';
 export { registerSetting, getSetting, setSetting } from './settings.js';

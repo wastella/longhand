@@ -5,6 +5,10 @@
 //   workspace:ready    (none)                                     every area finished handling workspace:opened
 //   editor:active      path | null                                the file shown in the editor changed
 //   editor:saved       path                                       a file was written to disk
+//   editor:opened      path                                       a text file was opened in a tab (not yet shown)
+//   editor:changed     path                                       an open file's text changed (typing, undo, a reload)
+//   editor:renamed     { from, to }                               an open text file has a new path
+//   editor:closed      path                                       a text file's tab closed, or it stopped being text
 //   editor:cursor      { path, line, col, selection: { fromLine, toLine } | null } | null
 //   tests:finished     the result object of the backend's tests:done event (see tests/index.js)
 //   tests:selected     a test result | null                       the test shown in the test panel changed

@@ -6,12 +6,16 @@
 // underneath the editor, and `saves`, counting the saves started. A file the editor will
 // not open (binary, too large) is a 'notice' doc with the reason in `notice`. Insertion order of
 // `session.docs` is tab order.
+//
+// Other areas follow the text files through editor:opened, editor:changed, editor:renamed and
+// editor:closed (see state.js).
 
 import { EditorView } from '@codemirror/view';
 import { confirm, invoke } from '../backend.js';
 import { emit, state as app } from '../state.js';
 import { notify, showStatus } from '../shell/index.js';
 import { createEditorState, languageSlot } from './setup.js';
+import { fileExtensionSlot, fileExtensions } from './extensions.js';
 import { languageSupport } from './languages.js';
 import { currentThemeMode, isStale, themeMode } from './theme.js';
 import { goTo } from './go-to-line.js';
@@ -77,11 +81,15 @@ export function updateDoc(doc, spec) {
   doc.state = before.update(spec).state;
   syncNotes(doc.path, before, doc.state);
   refreshDirty(doc);
+  if (!before.doc.eq(doc.state.doc)) emit('editor:changed', doc.path);
 }
 
 function onViewUpdate(doc, update) {
   syncNotes(doc.path, update.startState, update.state);
-  if (update.docChanged) refreshDirty(doc);
+  if (update.docChanged) {
+    refreshDirty(doc);
+    emit('editor:changed', doc.path);
+  }
   if ((update.docChanged || update.selectionSet) && isShown(doc)) {
     publishCursor();
     remember();
@@ -123,7 +131,10 @@ const noticeDoc = (path, notice) => ({ path, kind: 'notice', notice, dirty: fals
 
 /** Turns an open doc into a notice in place, when its file stopped being readable text. */
 export function becomeNotice(doc, notice) {
-  if (doc.kind === 'text') releaseDetached(doc.path, stateOf(doc));
+  if (doc.kind === 'text') {
+    releaseDetached(doc.path, stateOf(doc));
+    emit('editor:closed', doc.path);
+  }
   Object.assign(doc, noticeDoc(doc.path, notice));
   if (doc.path === session.active) activate(doc.path);
 }
@@ -137,7 +148,10 @@ async function read(path, cursor) {
     file = { kind: 'error', message: String(e) };
   }
   if (generation !== session.generation || file.kind === 'missing') return null;
-  if (!session.docs.has(path)) session.docs.set(path, file.kind === 'text' ? textDoc(path, file, cursor) : noticeDoc(path, file));
+  if (!session.docs.has(path)) {
+    session.docs.set(path, file.kind === 'text' ? textDoc(path, file, cursor) : noticeDoc(path, file));
+    if (file.kind === 'text') emit('editor:opened', path);
+  }
   return session.docs.get(path);
 }
 
@@ -195,15 +209,15 @@ function showNothing() {
   remember();
 }
 
-/** Opens `path` in a tab (or switches to it), optionally with the cursor on `line`. Resolves false if it could not. */
-export async function open(path, line) {
+/** Opens `path` in a tab (or switches to it), optionally with the cursor on `line` (and `column`). Resolves false if it could not. */
+export async function open(path, line, column) {
   const doc = await load(path);
   if (!doc) {
     showStatus(`${path} no longer exists`);
     return false;
   }
   activate(path);
-  if (line && doc.kind === 'text') goTo(session.view, line);
+  if (line && doc.kind === 'text') goTo(session.view, line, column);
   return true;
 }
 
@@ -219,6 +233,7 @@ export async function close(path, force = false) {
   // Undo goes with the tab, so notes whose code was deleted cannot come back any more.
   if (doc.kind === 'text') releaseDetached(doc.path, stateOf(doc));
   session.docs.delete(doc.path);
+  if (doc.kind === 'text') emit('editor:closed', doc.path);
   if (session.active !== doc.path) {
     renderChrome();
     remember();
@@ -250,11 +265,11 @@ export async function fileGone(doc) {
 /** Points open tabs at their new paths after a file or folder was renamed from `from` to `to`. */
 export function movePaths(from, to) {
   stashActive();
+  const renamed = [];
   const moved = [...session.docs].map(([path, doc]) => {
     if (!isWithin(path, from)) return [path, doc];
     doc.path = to + path.slice(from.length);
-    // The new name may mean another language; undo history and the cursor survive.
-    if (doc.kind === 'text') doc.state = doc.state.update({ effects: languageSlot.reconfigure(languageSupport(doc.path, doc.state.doc.toString())) }).state;
+    if (doc.kind === 'text') renamed.push({ from: path, to: doc.path });
     return [doc.path, doc];
   });
   moveNotes(from, to);
@@ -262,6 +277,13 @@ export function movePaths(from, to) {
   session.docs.clear();
   for (const [path, doc] of moved) session.docs.set(path, doc);
   session.active = null;
+  for (const change of renamed) {
+    emit('editor:renamed', change);
+    // The new name may mean another language; undo history and the cursor survive.
+    const doc = session.docs.get(change.to);
+    const effects = [languageSlot.reconfigure(languageSupport(doc.path, doc.state.doc.toString())), fileExtensionSlot.reconfigure(fileExtensions(doc.path))];
+    doc.state = doc.state.update({ effects }).state;
+  }
   if (active) activate(active);
   else renderChrome();
 }
@@ -288,6 +310,12 @@ export async function enterFolder(folder) {
   } finally {
     session.restoring = false;
   }
+}
+
+/** Works out again what other areas add to the open files (extensions.js): all of them, or those `matches(path)` picks. */
+export function refreshFileExtensions(matches = () => true) {
+  for (const doc of session.docs.values())
+    if (doc.kind === 'text' && matches(doc.path)) updateDoc(doc, { effects: fileExtensionSlot.reconfigure(fileExtensions(doc.path)) });
 }
 
 /** Reconfigures the file on screen for a new colour theme; the others catch up when shown. */

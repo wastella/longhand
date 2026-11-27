@@ -1,0 +1,179 @@
+/* Language servers: the compiler's errors and warnings in the code, documentation on hover, the
+   status bar's problem count and the sheet that explains a missing server. Problems are wavy
+   underlines in the text; the tutor's notes are bars in the gutter with tinted lines (editor.css). */
+
+/* ---- problems in the code ---- */
+
+/* CodeMirror draws these as fixed-colour images; ours follow the theme. */
+#editor-host .cm-lintRange {
+  background-image: none;
+  padding-bottom: 0;
+  text-decoration: underline wavy;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-skip-ink: none;
+}
+#editor-host .cm-lintRange-error {
+  text-decoration-color: var(--color-danger);
+}
+#editor-host .cm-lintRange-warning {
+  text-decoration-color: var(--color-warning);
+}
+#editor-host .cm-lintRange-info {
+  text-decoration-color: var(--color-text-muted);
+}
+#editor-host .cm-lintRange-active {
+  background-color: var(--color-code-selection-match);
+}
+/* A problem with no width, such as a missing bracket at the end of a line. */
+#editor-host .cm-lintPoint::after {
+  border-bottom-color: var(--color-danger);
+}
+#editor-host .cm-lintPoint-warning::after {
+  border-bottom-color: var(--color-warning);
+}
+#editor-host .cm-lintPoint-info::after {
+  border-bottom-color: var(--color-text-muted);
+}
+#editor-host .cm-lineNumbers .cm-problem-line-error {
+  color: var(--color-danger);
+}
+#editor-host .cm-lineNumbers .cm-problem-line-warning {
+  color: var(--color-warning);
+}
+
+/* ---- what shows on hover: a problem's message, a name's documentation, a call's signature ---- */
+
+#editor-host .cm-tooltip-hover,
+#editor-host .cm-lsp-signature-tooltip {
+  max-width: min(560px, 70vw);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  line-height: var(--leading-ui);
+}
+#editor-host .cm-tooltip-section:not(:first-child) {
+  border-top: 1px solid var(--color-border);
+}
+#editor-host .cm-tooltip-lint {
+  margin: 0;
+  padding: 0;
+}
+#editor-host .cm-diagnostic {
+  padding: var(--space-3) var(--space-5) var(--space-3) var(--space-4);
+  margin: 0;
+  border-left: 2px solid var(--color-text-muted);
+  white-space: pre-wrap;
+}
+#editor-host .cm-diagnostic-error {
+  border-left-color: var(--color-danger);
+}
+#editor-host .cm-diagnostic-warning {
+  border-left-color: var(--color-warning);
+}
+#editor-host .cm-lsp-documentation {
+  padding: var(--space-3) var(--space-5);
+  max-height: 16em;
+  overflow: auto;
+}
+#editor-host .cm-lsp-documentation :is(p, pre, ul, ol) {
+  margin: 0 0 var(--space-3);
+}
+#editor-host .cm-lsp-documentation > :last-child {
+  margin-bottom: 0;
+}
+#editor-host .cm-lsp-documentation :is(pre, code) {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  white-space: pre-wrap;
+}
+#editor-host .cm-lsp-documentation hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: var(--space-3) 0;
+}
+#editor-host .cm-lsp-signature-tooltip {
+  padding: var(--space-3) var(--space-5);
+  max-height: 12em;
+  border-radius: var(--radius-lg);
+  overflow: auto;
+}
+#editor-host .cm-lsp-signature {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+}
+#editor-host .cm-lsp-active-parameter {
+  color: var(--color-text-strong);
+  font-weight: var(--weight-strong);
+}
+#editor-host .cm-lsp-signature-tooltip .cm-lsp-documentation {
+  padding: var(--space-2) 0 0;
+  color: var(--color-text-muted);
+  font-size: inherit;
+}
+/* The documentation beside the completion list is a child of the list's tooltip, which clips. */
+#editor-host .cm-tooltip-autocomplete {
+  overflow: visible;
+}
+#editor-host .cm-tooltip-autocomplete > ul {
+  border-radius: inherit;
+}
+#editor-host .cm-completionInfo {
+  /* It holds rendered Markdown, where the line breaks between blocks are not text. */
+  white-space: normal;
+  max-width: 360px;
+  padding: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
+
+/* ---- status bar ---- */
+
+.status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 100%;
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+.status-item:not(:disabled) {
+  cursor: pointer;
+}
+.status-item:not(:disabled):hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+.status-item:disabled {
+  opacity: 1;
+}
+
+/* ---- the sheet behind a missing or stopped server ---- */
+
+.language-sheet p {
+  margin: 0 0 var(--space-5);
+  line-height: var(--leading-reading);
+}
+.language-sheet .language-step {
+  margin-bottom: var(--space-3);
+  color: var(--color-text-muted);
+}
+.language-command {
+  margin: 0 0 var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.language-sheet .language-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}

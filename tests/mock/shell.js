@@ -26,6 +26,8 @@ const shortcuts = [
   ['find', 'Edit', 'Find…', 'CmdOrCtrl+F'],
   ['replace', 'Edit', 'Replace…', 'CmdOrCtrl+Alt+F'],
   ['go-to-line', 'Edit', 'Go to Line…', 'Ctrl+G'],
+  ['go-to-definition', 'Edit', 'Go to Definition', 'F12'],
+  ['go-back', 'Edit', 'Go Back', 'Ctrl+-'],
   ['toggle-comment', 'Edit', 'Toggle Comment', 'CmdOrCtrl+/'],
   ['next-note', 'Edit', 'Next Note', 'CmdOrCtrl+Alt+]'],
   ['previous-note', 'Edit', 'Previous Note', 'CmdOrCtrl+Alt+['],
