@@ -1,5 +1,5 @@
-//! Runs a short helper command (`xcrun -f`, `go env`, a login shell printing its PATH) and
-//! gives up on it after a time limit, so a tool that hangs cannot hold up looking for a server.
+//! Runs a short helper command (a login shell printing its PATH) and gives up on it after a
+//! time limit, so a profile that hangs cannot hold up looking for a server.
 
 use std::io::Read;
 use std::os::unix::process::CommandExt;
@@ -12,17 +12,11 @@ const POLL: Duration = Duration::from_millis(10);
 /// may be holding the pipe open, and what it printed itself has arrived by then.
 const OUTPUT_GRACE: Duration = Duration::from_millis(500);
 
-pub struct Outcome {
-    /// Whether the command exited with status 0.
-    pub success: bool,
-    /// What it printed, as lossy UTF-8.
-    pub stdout: String,
-}
-
-/// Runs `command` with nothing on standard input and its errors discarded. `None` when it could
-/// not be started or was still running after `limit`: it is then killed with everything it
-/// started (a profile that launched an agent, say).
-pub fn run(mut command: Command, limit: Duration) -> Option<Outcome> {
+/// Runs `command` with nothing on standard input and its errors discarded, and returns what it
+/// printed as lossy UTF-8, however it exited. `None` when it could not be started or was still
+/// running after `limit`: it is then killed with everything it started (a profile that launched
+/// an agent, say).
+pub fn run(mut command: Command, limit: Duration) -> Option<String> {
     command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
     // A session of its own rather than only a process group: an interactive shell in a
     // background group of a terminal's session is stopped the moment it touches that terminal.
@@ -43,9 +37,9 @@ pub fn run(mut command: Command, limit: Duration) -> Option<Outcome> {
         let _ = tx.send(String::from_utf8_lossy(&bytes).into_owned());
     });
     let deadline = Instant::now() + limit;
-    let status = loop {
+    loop {
         match child.try_wait() {
-            Ok(Some(status)) => break status,
+            Ok(Some(_)) => break,
             Ok(None) if Instant::now() < deadline => std::thread::sleep(POLL),
             _ => {
                 unsafe { libc::kill(-group, libc::SIGKILL) };
@@ -53,15 +47,8 @@ pub fn run(mut command: Command, limit: Duration) -> Option<Outcome> {
                 return None;
             }
         }
-    };
-    Some(Outcome { success: status.success(), stdout: rx.recv_timeout(OUTPUT_GRACE).unwrap_or_default() })
-}
-
-/// The trimmed output of a command that succeeded and printed something.
-pub fn answer(command: Command, limit: Duration) -> Option<String> {
-    let outcome = run(command, limit)?;
-    let text = outcome.stdout.trim();
-    (outcome.success && !text.is_empty()).then(|| text.to_string())
+    }
+    Some(rx.recv_timeout(OUTPUT_GRACE).unwrap_or_default())
 }
 
 #[cfg(test)]
@@ -75,20 +62,10 @@ mod tests {
     }
 
     #[test]
-    fn a_command_reports_its_output_and_whether_it_succeeded() {
-        let ok = run(sh("echo found"), Duration::from_secs(5)).unwrap();
-        assert!(ok.success);
-        assert_eq!(ok.stdout, "found\n");
-        let failed = run(sh("echo partly; exit 3"), Duration::from_secs(5)).unwrap();
-        assert!(!failed.success);
-        assert_eq!(failed.stdout, "partly\n");
-    }
-
-    #[test]
-    fn an_answer_needs_success_and_some_output() {
-        assert_eq!(answer(sh("echo ' /usr/bin/tool '"), Duration::from_secs(5)).as_deref(), Some("/usr/bin/tool"));
-        assert_eq!(answer(sh("echo /usr/bin/tool; exit 1"), Duration::from_secs(5)), None);
-        assert_eq!(answer(sh("true"), Duration::from_secs(5)), None);
+    fn a_command_reports_its_output_however_it_exits() {
+        assert_eq!(run(sh("echo found"), Duration::from_secs(5)).unwrap(), "found\n");
+        // A profile that ends in a failing command has still printed the PATH.
+        assert_eq!(run(sh("echo partly; exit 3"), Duration::from_secs(5)).unwrap(), "partly\n");
     }
 
     #[test]
@@ -120,8 +97,7 @@ mod tests {
     #[test]
     fn output_held_open_by_a_background_process_does_not_hold_up_the_answer() {
         let start = Instant::now();
-        let outcome = run(sh("echo early; sleep 30 &"), Duration::from_secs(20)).unwrap();
-        assert!(outcome.success);
+        assert!(run(sh("echo early; sleep 30 &"), Duration::from_secs(20)).is_some());
         assert!(start.elapsed() < Duration::from_secs(10));
     }
 }

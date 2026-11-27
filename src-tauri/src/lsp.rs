@@ -4,9 +4,8 @@
 //! (`src/renderer/language/`): this side never looks inside a message, and it is the interface
 //! that decides whether to start a server again after it exits.
 //!
-//! A language server runs the folder's code: the Python one imports from the folder's
-//! environment, rust-analyzer runs build scripts, jdtls a Gradle build. So nothing is looked
-//! for and nothing is started until the student has turned code checking on for the folder
+//! A language server runs the folder's code: the Python one starts the folder's interpreter and
+//! imports from its environment. So nothing is looked for and nothing is started until the student has turned code checking on for the folder
 //! (`lsp_consent_set`), which is remembered by the folder's path in the app's own data
 //! (`prefs.rs`) and enforced here, whatever the interface asks.
 //!
@@ -114,25 +113,8 @@ impl Look {
 /// Looks for `kind`'s server on the remembered search path, then, if `look` says so, on a fresh
 /// one, so a server installed a moment ago is found without restarting Longhand.
 fn locate(kind: Kind, folder: &Path, look: Look) -> Option<Found> {
-    let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
     let virtual_env = std::env::var_os("VIRTUAL_ENV").filter(|dir| !dir.is_empty()).map(PathBuf::from);
-    let own = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
-    let rustup_toolchain = own("RUSTUP_TOOLCHAIN");
-    let find = |shell: &search_path::Environment| {
-        let rustup_home = shell.var("RUSTUP_HOME").map(PathBuf::from).or_else(|| own("RUSTUP_HOME").map(PathBuf::from));
-        discover::find(
-            kind,
-            &Search {
-                folder,
-                path: &shell.path,
-                home: &home,
-                virtual_env: virtual_env.as_deref(),
-                vars: &shell.vars,
-                rustup_home: &rustup_home.unwrap_or_else(|| home.join(".rustup")),
-                rustup_toolchain: rustup_toolchain.as_deref(),
-            },
-        )
-    };
+    let find = |path: &str| discover::find(kind, &Search { folder, path, virtual_env: virtual_env.as_deref() });
     find(&search_path::current()).or_else(|| {
         let after = match look {
             Look::Remembered => return None,
@@ -256,8 +238,7 @@ pub fn lsp_consent_set(app: AppHandle, state: State<AppState>, on: bool) -> R<()
     Ok(())
 }
 
-/// Finds and starts the server for `kind` (`python`, `clang`, `java`, `typescript`, `rust` or
-/// `go`) in the open folder. Answers `{ status: "started", id, server, path, root, python }`,
+/// Finds and starts the server for `kind` (`python`) in the open folder. Answers `{ status: "started", id, server, path, root, python }`,
 /// `{ status: "missing" }` when none is installed, `{ status: "failed", message }` when one was
 /// found but would not start, or `{ status: "off" }` when code checking is not on for the
 /// folder. `look` says how hard to look when the server is not where servers were last found:
@@ -327,11 +308,7 @@ mod tests {
     }
 
     fn find_in(folder: &Path, kind: Kind) -> Option<Found> {
-        let nowhere = Path::new("/nonexistent");
-        discover::find(
-            kind,
-            &Search { folder, path: "", home: nowhere, virtual_env: None, vars: &[], rustup_home: nowhere, rustup_toolchain: None },
-        )
+        discover::find(kind, &Search { folder, path: "", virtual_env: None })
     }
 
     /// Starts the folder's stand-in server; returns `lsp_start`'s answer and the server's events.
@@ -371,7 +348,9 @@ mod tests {
     fn a_server_that_is_not_installed_is_missing_and_one_that_cannot_run_has_failed() {
         let (state, folder) = folder_with_server("lsp-missing", "exit 0");
         let nothing = |_: u64, _: Event| {};
-        assert_eq!(start(&state, Kind::Java, &folder, find_in(&folder, Kind::Java), nothing).unwrap(), json!({ "status": "missing" }));
+        let empty = temp_dir("lsp-missing-empty");
+        assert_eq!(start(&state, Kind::Python, &folder, find_in(&empty, Kind::Python), nothing).unwrap(), json!({ "status": "missing" }));
+        fs::remove_dir_all(empty).unwrap();
 
         // Found, then gone before it could be started.
         let found = find_in(&folder, Kind::Python);
@@ -515,63 +494,6 @@ mod tests {
                 Event::Exit { code, stderr } => panic!("the server exited early with {code:?}: {stderr}"),
             }
         }
-    }
-
-    /// The real thing, end to end: clangd as found on this machine, started the way the app
-    /// starts it, reporting an error in a C file. Skipped where clangd is not installed.
-    #[test]
-    fn clangd_reports_an_error_in_a_c_file() {
-        let folder = temp_dir("lsp-clangd").canonicalize().unwrap();
-        let Some(found) = locate(Kind::Clang, &folder, Look::Remembered) else {
-            fs::remove_dir_all(folder).unwrap();
-            return eprintln!("skipped: clangd is not installed");
-        };
-        let state = open(&folder);
-        let (tx, events) = channel();
-        let answer = start(&state, Kind::Clang, &folder, Some(found), move |id, event| {
-            let _ = tx.send((id, event));
-        });
-        let answer = answer.unwrap();
-        let id = id_of(&answer);
-        assert_eq!(answer["server"], "clangd");
-        let say = |message: Value| send(&state, id, &message.to_string());
-
-        let root = format!("file://{}", folder.display());
-        say(
-            json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "processId": null, "rootUri": root, "capabilities": {} } }),
-        );
-        let initialized = message_where(&events, |m| m["id"] == 1);
-        assert!(initialized["result"]["capabilities"].is_object(), "{initialized}");
-        say(json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} }));
-
-        let uri = format!("{root}/main.c");
-        let text = "int main(void) {\n  return undefined_name;\n}\n";
-        fs::write(folder.join("main.c"), text).unwrap();
-        say(json!({
-            "jsonrpc": "2.0",
-            "method": "textDocument/didOpen",
-            "params": { "textDocument": { "uri": uri, "languageId": "c", "version": 1, "text": text } }
-        }));
-        let published = message_where(&events, |m| {
-            m["method"] == "textDocument/publishDiagnostics"
-                && m["params"]["uri"] == uri.as_str()
-                && m["params"]["diagnostics"].as_array().is_some_and(|d| !d.is_empty())
-        });
-        let diagnostic = &published["params"]["diagnostics"][0];
-        assert!(diagnostic["message"].as_str().unwrap().contains("undefined_name"), "{diagnostic}");
-        assert_eq!(diagnostic["range"]["start"]["line"], 1, "{diagnostic}");
-
-        // An orderly goodbye: clangd answers `shutdown`, then exits by itself on `exit`.
-        say(json!({ "jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": null }));
-        message_where(&events, |m| m["id"] == 2);
-        say(json!({ "jsonrpc": "2.0", "method": "exit" }));
-        let exit = loop {
-            if let (_, Event::Exit { code, .. }) = events.recv_timeout(SOON).expect("clangd exits when told to") {
-                break code;
-            }
-        };
-        assert_eq!(exit, Some(0));
-        fs::remove_dir_all(folder).unwrap();
     }
 
     /// The main use case, against a real Python project: a server installed in the folder's own
