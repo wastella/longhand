@@ -1,0 +1,4 @@
+ImportError while loading conftest '/work/course/conftest.py'.
+conftest.py:1: in <module>
+    import missing_thing
+E   ModuleNotFoundError: No module named 'missing_thing'

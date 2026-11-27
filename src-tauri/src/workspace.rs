@@ -111,6 +111,7 @@ fn open_workspace(app: &AppHandle, dir: PathBuf) -> R<()> {
     save_last_workspace(app, &ws);
     tutor::reset(&state);
     term::kill(&state);
+    pytest::cancel(&state);
     let _ = app.emit(
         "workspace:opened",
         json!({

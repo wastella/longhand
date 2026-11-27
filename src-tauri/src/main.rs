@@ -51,7 +51,7 @@ fn main() {
                 let state = window.state::<AppState>();
                 term::kill(&state);
                 tutor::cancel(&state);
-                pytest::cancel(&state);
+                pytest::shutdown(&state);
             }
         })
         .invoke_handler(tauri::generate_handler![

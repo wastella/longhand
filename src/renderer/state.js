@@ -6,7 +6,8 @@
 //   editor:active      path | null                                the file shown in the editor changed
 //   editor:saved       path                                       a file was written to disk
 //   editor:cursor      { path, line, col, selection: { fromLine, toLine } | null } | null
-//   tests:finished     the result object of the backend's tests:done event
+//   tests:finished     the result object of the backend's tests:done event (see tests/index.js)
+//   tests:selected     a test result | null                       the test shown in the test panel changed
 //   tutor:finished     { ev, text }                               a tutor answer ended (done, error or stopped)
 //   usage:changed      { today, total }                           the folder's usage counts changed
 //   auth:changed       { installed, loggedIn, plan }              the tutor's connection status is known

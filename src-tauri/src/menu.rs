@@ -60,6 +60,7 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
         .separator()
         .item(&item("run-tests-file", "Run Tests in Current File", "CmdOrCtrl+T")?)
         .item(&item("run-tests", "Run All Tests", "CmdOrCtrl+Shift+T")?)
+        .item(&item("rerun-failed-tests", "Rerun Failed Tests", "CmdOrCtrl+Shift+Y")?)
         .build()?;
     let tutor = SubmenuBuilder::new(app, "Tutor")
         .item(&item("ask-selection", "Explain Selection", "CmdOrCtrl+E")?)
