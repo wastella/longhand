@@ -381,7 +381,10 @@ mod tests {
         }
         // Compared as JSON, so reformatting the file (Prettier) does not matter.
         let saved: Value = std::fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
-        assert!(saved == config, "evals/config.json is out of date: run `LONGHAND_WRITE_EVAL_CONFIG=1 cargo test eval_runner` in src-tauri");
+        assert!(
+            saved == config,
+            "evals/config.json is out of date: run `LONGHAND_WRITE_EVAL_CONFIG=1 cargo test eval_runner` in src-tauri"
+        );
     }
 
     #[test]
