@@ -36,7 +36,7 @@ const DISK_CHECK_MS = 5000;
 export function activeFile() {
   const { view, active, docs } = session;
   const custom = active && docs.get(active).kind === 'custom' ? docs.get(active) : null;
-  if (custom) return { path: active, dirty: custom.dirty, cursorLine: null, selection: null, place: custom.custom.place() };
+  if (custom) return { path: active, dirty: custom.dirty, custom: true, cursorLine: null, selection: null, place: custom.custom.place() };
   if (!view || !active || docs.get(active).kind !== 'text') return null;
   const { doc, selection } = view.state;
   const sel = selection.main;
@@ -137,22 +137,32 @@ function unsavedWork(reason) {
 }
 
 /** Runs `run(view)` on the file on screen, if it is a text file. */
-const onView = (run) => () => {
+/**
+ * A command on the active file's view. In a file another area draws (a notebook), `elsewhere`
+ * runs on the editor it has focused (a cell's) when it is a function, or is said in the status
+ * bar when it is a sentence, so the command is never silently nothing.
+ */
+const onView = (run, elsewhere) => () => {
   const doc = session.docs.get(session.active);
+  if (doc?.kind === 'custom') {
+    const cell = doc.custom.editorView?.();
+    if (typeof elsewhere === 'function' && cell) return elsewhere(cell);
+    return showStatus(typeof elsewhere === 'string' ? elsewhere : 'This works in a cell; click into one first');
+  }
   if (doc?.kind !== 'text') return;
   session.view.focus();
   run(session.view);
 };
 
-const toNote = (dir) => onView((view) => moveToNote(view, dir) || showStatus('No notes in this file'));
+const toNote = (dir) => onView((view) => moveToNote(view, dir) || showStatus('No notes in this file'), 'Notebooks have no notes yet');
 
 function registerCommands() {
   registerCommand('save', () => save());
   registerCommand('close-tab', () => session.active && close(session.active));
-  registerCommand('find', onView(openSearchPanel));
-  registerCommand('replace', onView(openReplace));
-  registerCommand('go-to-line', onView(openGoToLine));
-  registerCommand('toggle-comment', onView(toggleComment));
+  registerCommand('find', onView(openSearchPanel, 'Find does not search notebooks yet'));
+  registerCommand('replace', onView(openReplace, 'Replace does not work in notebooks yet'));
+  registerCommand('go-to-line', onView(openGoToLine, 'Go to Line does not work in notebooks yet'));
+  registerCommand('toggle-comment', onView(toggleComment, toggleComment));
   registerCommand('next-note', toNote(1));
   registerCommand('previous-note', toNote(-1));
 }

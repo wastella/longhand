@@ -198,7 +198,7 @@ uiTest(
     await page.waitForFunction(() => !document.querySelector('#tabs .tab.dirty'));
     const expected = BASIC.replace(`"print('hello')"`, `"print('hello') + '!'"`);
     assert.equal(await saved(page), expected);
-    // Undoing back to the saved text is clean again, as in any file.
+    // Undo after the save makes the notebook differ from the file again.
     await page.keyboard.down(MOD);
     await page.keyboard.press('KeyZ');
     await page.keyboard.up(MOD);
@@ -715,10 +715,144 @@ uiTest(
     await openNotebook(page);
     await editCell(page, 2);
     await page.waitForSelector('#tutor .chip, #tutor [data-key="file"]');
-    const title = await page.evaluate(() => [...document.querySelectorAll('#tutor [title]')].map((n) => n.title).find((t) => t.includes('hw.ipynb')));
-    assert.match(title, /hw\.ipynb/);
+    const title = () => page.evaluate(() => [...document.querySelectorAll('#tutor [title]')].map((n) => n.title).find((t) => t.includes('hw.ipynb')));
+    assert.equal(await title(), 'The tutor sees hw.ipynb, with the student in cell 3 of 3');
+    await editCell(page, 1);
+    assert.equal(await title(), 'The tutor sees hw.ipynb, with the student in cell 2 of 3');
   },
   { files: { 'hw.ipynb': BASIC } },
+);
+
+uiTest(
+  'an empty .ipynb opens as a new notebook with one code cell, and saves as Jupyter would',
+  async (page) => {
+    await page.click('#tree .node[data-path="new.ipynb"]');
+    await page.waitForSelector('.notebook:not([hidden]) .nb-cell');
+    assert.deepEqual(await cellTexts(page), ['']);
+    await editCell(page, 0);
+    await page.keyboard.type('x = 1');
+    await page.evaluate(() => window.__emit('menu', 'save'));
+    await page.waitForFunction(() => !document.querySelector('#tabs .tab.dirty'));
+    const written = JSON.parse(await saved(page, 'new.ipynb'));
+    assert.equal(written.nbformat, 4);
+    assert.equal(written.nbformat_minor, 5);
+    assert.equal(written.metadata.kernelspec.name, 'python3');
+    assert.deepEqual(
+      written.cells.map((c) => [c.cell_type, c.source, c.id.length]),
+      [['code', ['x = 1'], 8]],
+    );
+  },
+  { files: { 'new.ipynb': '' } },
+);
+
+uiTest(
+  'Open as Text keeps the tab in place and never leaves it without a file',
+  async (page) => {
+    await openNotebook(page, 'a.ipynb');
+    await page.click('#tree .node[data-path="broken.ipynb"]');
+    await page.waitForSelector('.notice-actions button');
+    // Clicked twice, and the tab list checked while the text is on its way.
+    const during = await page.evaluate(() => {
+      const button = document.querySelector('.notice-actions button');
+      button.click();
+      button.click();
+      return [...document.querySelectorAll('#tabs .tab')].map((t) => t.textContent.replace('×', ''));
+    });
+    assert.deepEqual(during, ['a.ipynb', 'broken.ipynb']);
+    await page.waitForSelector('#editor-host > .cm-editor:not([hidden])');
+    assert.deepEqual(await page.$$eval('#tabs .tab', (tabs) => tabs.map((t) => t.textContent.replace('×', ''))), ['a.ipynb', 'broken.ipynb']);
+    assert.equal(await text(page, '#status-file'), 'broken.ipynb');
+  },
+  { files: { 'a.ipynb': BASIC, 'broken.ipynb': '{ "cells": [' } },
+);
+
+uiTest(
+  'in a notebook, Find, Go to Line and Explain Selection say so; Toggle Comment and Undo work in the cell',
+  async (page) => {
+    await openNotebook(page);
+    for (const [command, said] of [
+      ['find', 'Find does not search notebooks yet'],
+      ['go-to-line', 'Go to Line does not work in notebooks yet'],
+      ['ask-selection', 'Explain Selection does not work in notebooks yet'],
+    ]) {
+      await page.evaluate((command) => window.__emit('menu', command), command);
+      assert.equal(await text(page, '#status-msg'), said);
+    }
+    await editCell(page, 1);
+    await page.evaluate(() => window.__emit('menu', 'toggle-comment'));
+    assert.equal((await cellTexts(page))[1], "# print('hello')");
+    // Edit > Undo reaches the focused cell as the browser's undo (beforeinput historyUndo).
+    await page.evaluate(() =>
+      document.activeElement.dispatchEvent(new InputEvent('beforeinput', { inputType: 'historyUndo', bubbles: true, cancelable: true })),
+    );
+    assert.equal((await cellTexts(page))[1], "print('hello')");
+  },
+  { files: { 'hw.ipynb': BASIC } },
+);
+
+uiTest(
+  'renaming an open notebook keeps it working under its new name',
+  async (page) => {
+    await openNotebook(page);
+    await editCell(page, 1);
+    await page.keyboard.type(' # edited');
+    await page.focus('#tree');
+    await page.keyboard.press('Home');
+    while ((await page.evaluate(() => document.querySelector('#tree .node.focused')?.dataset.path)) !== 'hw.ipynb') await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('F2');
+    await page.waitForSelector('#tree .new-name');
+    await page.keyboard.type('lab');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#tree .node[data-path="lab.ipynb"]');
+    await page.waitForFunction(() => [...document.querySelectorAll('#tabs .tab')].some((t) => t.textContent.includes('lab.ipynb')));
+    assert.equal((await cellTexts(page))[1], "print('hello') # edited", 'the unsaved edit is still there');
+    await press(page, 'Run All');
+    await waitForText(page, 1, 'hello');
+    assert.deepEqual(await page.evaluate(() => window.__kernel.paths), ['lab.ipynb'], 'Python starts in the renamed notebook');
+    await page.evaluate(() => window.__emit('menu', 'save'));
+    await page.waitForFunction(() => !document.querySelector('#tabs .tab.dirty'));
+    assert.match(await saved(page, 'lab.ipynb'), /# edited/);
+  },
+  { files: { 'hw.ipynb': BASIC } },
+);
+
+uiTest(
+  'reopening the folder brings a notebook tab back as a notebook',
+  async (page) => {
+    await openNotebook(page);
+    await sleep(500); // the open files are remembered after a short pause
+    await page.evaluate(() => window.__emit('workspace:opened', { ...window.__mock.workspace }));
+    await page.waitForSelector('.notebook:not([hidden]) .nb-cell');
+    assert.deepEqual(await page.$$eval('#tabs .tab', (tabs) => tabs.map((t) => t.textContent.replace('×', ''))), ['hw.ipynb']);
+    assert.equal(await count(page, '.notebook'), 1, 'one notebook, not the old one left behind');
+    assert.equal(await count(page, '.notebook:not([hidden]) .nb-cell'), 3);
+  },
+  { files: { 'hw.ipynb': BASIC } },
+);
+
+uiTest(
+  'loading the disk version while a cell runs shows the new cells and the kernel carries on',
+  async (page) => {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await openNotebook(page);
+    await press(page, 'Run All');
+    await page.waitForSelector('.nb-cell.running');
+    await page.evaluate((text) => window.__changeOnDisk('hw.ipynb', text), notebook([['code', 'from_disk = 1']]));
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.waitForSelector('#editor-banner:not([hidden])');
+    await page.click('#editor-banner button:nth-child(2)');
+    await page.waitForFunction(() => document.querySelector('.nb-cell .cm-content')?.textContent === 'from_disk = 1');
+    await press(page, 'Interrupt');
+    await page.waitForFunction(() => document.querySelector('.nb-kernel-status').dataset.state === 'idle');
+    await sleep(100);
+    assert.deepEqual(await cellTexts(page), ['from_disk = 1']);
+    assert.equal(await outputsOf(page, 0), '', 'the old cell’s output did not land in the new one');
+    assert.deepEqual(errors, []);
+    await press(page, 'Run All');
+    await page.waitForFunction(() => document.querySelector('.nb-cell .nb-prompt').textContent === '[2]');
+  },
+  { files: { 'hw.ipynb': notebook([['code', 'while True:\n    pass']]) } },
 );
 
 uiTest(

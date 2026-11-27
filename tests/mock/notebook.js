@@ -7,11 +7,11 @@
 //   anything else whose last line is an expression shows it as the result
 // Options: notebookProblem: { kind, title, detail, fix } makes the helper end without starting
 // the kernel (as with ipykernel missing); notebookStartError makes notebook_start fail.
-// Hooks for tests: window.__kernel { started: [id], sent: [{ id, message }], stopped: [id],
+// Hooks for tests: window.__kernel { started: [id], paths: [path], sent: [{ id, message }], stopped: [id],
 // acked }, and window.__kernelSay(message) sends a helper message to the latest kernel.
 
 const mock = window.__mock;
-const kernel = (window.__kernel = { started: [], sent: [], stopped: [], acked: 0 });
+const kernel = (window.__kernel = { started: [], paths: [], sent: [], stopped: [], acked: 0 });
 const live = new Map();
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
@@ -94,9 +94,10 @@ async function execute(id, run, code) {
 }
 
 Object.assign(mock.commands, {
-  notebook_start: ({ id }) => {
+  notebook_start: ({ id, path }) => {
     if (mock.options.notebookStartError) throw mock.options.notebookStartError;
     kernel.started.push(id);
+    kernel.paths.push(path);
     live.set(id, { count: 0, sent: 0, abortUpTo: 0, queue: Promise.resolve(), interrupt: null });
     setTimeout(() => {
       if (mock.options.notebookProblem) return end(id, { code: 1, problem: mock.options.notebookProblem });

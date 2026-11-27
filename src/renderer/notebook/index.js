@@ -52,6 +52,7 @@ function openNotebook(file) {
     },
     running: () => view.kernel.running,
     place: () => view.place(),
+    editorView: () => view.focusedEditor(),
   };
 }
 

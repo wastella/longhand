@@ -4,6 +4,7 @@
 // Cmd+Z while no cell's editor has the focus, or with Undo on the notice a deletion shows.
 
 import { confirm } from '../backend.js';
+import { emit } from '../state.js';
 import { h, spacer } from '../dom.js';
 import { icon, notify, showStatus } from '../shell/index.js';
 import { typeInTerminal } from '../terminal/index.js';
@@ -157,7 +158,10 @@ export class NotebookView {
 
   /** The cell the student is working in (last focused), which Run Cell runs. */
   focused(view) {
+    const moved = this.current !== view.cell.key;
     this.current = view.cell.key;
+    // The tutor's context says which cell the student is in; a notebook has no cursor to report.
+    if (moved) emit('editor:cursor', null);
     // A Markdown cell shows its rendered text again once the student moves to another cell.
     for (const other of this.views.values()) if (other !== view) other.leave();
   }
@@ -219,6 +223,12 @@ export class NotebookView {
 
   hide() {
     this.dom.hidden = true;
+  }
+
+  /** The focused cell's editor, for the editor's commands (Toggle Comment); null outside a cell. */
+  focusedEditor() {
+    const view = this.views.get(this.current);
+    return view && !view.editorHost.hidden && view.view.hasFocus ? view.view : null;
   }
 
   /** Where the student is, for the tutor: "cell 3 of 12". */

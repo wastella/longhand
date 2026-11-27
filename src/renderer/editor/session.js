@@ -193,15 +193,17 @@ function release(doc) {
 
 /** Reopens a file its custom editor could not show (a malformed notebook) as plain text, in the same tab. */
 export async function openAsText(path) {
-  if (session.docs.get(path)?.kind !== 'notice') return;
+  const notice = session.docs.get(path);
+  if (notice?.kind !== 'notice') return;
   asText.add(path);
-  const order = [...session.docs.keys()];
-  session.docs.delete(path);
-  if (!(await load(path))) return;
-  const docs = new Map(session.docs);
-  session.docs.clear();
-  for (const p of [...order, ...docs.keys()]) if (docs.has(p) && !session.docs.has(p)) session.docs.set(p, docs.get(p));
-  activate(path);
+  // The notice stays in its tab until the text replaces it, so the tab always has a doc.
+  const doc = await read(path, undefined, notice);
+  if (!doc) {
+    asText.delete(path);
+    return;
+  }
+  if (session.active === path) activate(path);
+  else renderChrome();
 }
 
 /** Turns an open doc into a notice in place, when its file stopped being readable text. */
@@ -213,7 +215,11 @@ export function becomeNotice(doc, notice) {
   if (doc.path === session.active) activate(doc.path);
 }
 
-async function read(path, cursor) {
+/**
+ * Reads `path` into a new doc, unless it is open already (then that doc). With `replacing`, the
+ * new doc takes that doc's place in its tab, if it is still there when the file arrives.
+ */
+async function read(path, cursor, replacing = null) {
   const generation = session.generation;
   let file;
   try {
@@ -222,7 +228,8 @@ async function read(path, cursor) {
     file = { kind: 'error', message: String(e) };
   }
   if (generation !== session.generation || file.kind === 'missing') return null;
-  if (!session.docs.has(path)) {
+  if (replacing && session.docs.get(path) !== replacing) return null;
+  if (!session.docs.has(path) || replacing) {
     const custom = file.kind === 'text' && customFor(path);
     session.docs.set(path, custom ? customDoc(path, file, custom) : file.kind === 'text' ? textDoc(path, file, cursor) : noticeDoc(path, file));
     if (file.kind === 'text' && !custom) emit('editor:opened', path);

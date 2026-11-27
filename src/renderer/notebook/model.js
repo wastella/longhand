@@ -25,6 +25,8 @@ export class Notebook {
     this.cells = cells;
     this.rest = rest;
     this.minor = minor;
+    // A notebook always has a cell to type in, even one saved with none.
+    if (!cells.length) cells.push(this.newCell('code'));
     this.undoStack = [];
     this.redoStack = [];
     this.markSaved(this.mark());

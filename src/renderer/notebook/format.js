@@ -45,6 +45,8 @@ function readCell(raw, index) {
  * Throws a NotebookError for text that is not an nbformat 4 notebook.
  */
 export function parseNotebook(text) {
+  // An empty file (New File… named .ipynb) is a new notebook, as Jupyter would write one.
+  if (!text.replace(/^\uFEFF/, '').trim()) return emptyNotebook();
   let raw;
   try {
     raw = parseJson(text.replace(/^﻿/, ''));
@@ -63,6 +65,16 @@ export function parseNotebook(text) {
   if (!Array.isArray(raw.cells)) throw new NotebookError('invalid', 'It has no list of cells.');
   const { cells, ...rest } = raw;
   return { cells: cells.map(readCell), rest, minor: numberOf(raw.nbformat_minor) ?? 0 };
+}
+
+/** A new notebook: one empty code cell, for Python 3, in format 4.5. */
+function emptyNotebook() {
+  const kernelspec = { display_name: 'Python 3', language: 'python', name: 'python3' };
+  return {
+    cells: [makeCell('code', '', { id: newCellId(), metadata: {} })],
+    rest: { metadata: { kernelspec, language_info: { name: 'python' } }, nbformat: 4, nbformat_minor: 5 },
+    minor: 5,
+  };
 }
 
 /** nbformat's rejoin_lines then split_lines on a mime bundle: text, JavaScript and SVG are kept as lists of lines. */
