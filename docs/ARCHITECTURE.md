@@ -14,7 +14,7 @@ effects, and a web interface in the system webview that owns everything on scree
 │                              backend (src-tauri/src)                               │
 │  main.rs       start-up and command registration                                   │
 │  workspace.rs  the open folder, per-folder config, usage log, app state            │
-│  files.rs      file commands, in_workspace, find in files                          │
+│  files.rs      file commands, in_workspace, quick open, find in files, watching    │
 │  menu.rs       the native menu; item ids become `menu` events                      │
 │  system.rs     confirm dialog, opening links, self-test result                     │
 │  term.rs       login shell on a pseudo-terminal                                    │
@@ -33,7 +33,7 @@ backend for start-up state. Each area builds its own markup in its `mount()`.
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `shell/`    | Layout and splitters, panel toggles, bottom panel tabs, title bar (usage, auth), status bar, welcome, text size, the command registry |
 | `editor/`   | CodeMirror setup and languages, tabs, saving, reloading files changed on disk, the unsaved-changes quit prompt                        |
-| `files/`    | File tree, its context menu and naming field, find in files                                                                           |
+| `files/`    | File tree, its context menu and naming field, quick open, find in files, watching the folder                                          |
 | `terminal/` | xterm.js and the shell session                                                                                                        |
 | `tests/`    | Running pytest and showing results                                                                                                    |
 | `tutor/`    | Conversation, Markdown rendering and the hidden-code check, context building, setup steps, quick actions                              |
@@ -84,6 +84,29 @@ open file, the cursor line, any selection, and an attached test failure.
 Answers stream back as events. The interface renders them as Markdown and hides fenced code blocks
 longer than the policy allows (2 lines on Strict, 12 on Guided; shell and plain-text blocks are
 exempt) behind a button that records the reveal (`tutor/hidden-code.js`).
+
+## Finding and watching files
+
+`files/walk.rs` decides what the app sees. `.git`, `.longhand` and `.DS_Store` are never shown.
+Environments, caches and build output (`.venv`, `__pycache__`, `node_modules`, …) and anything
+the folder's own `.gitignore` and `.ignore` files exclude (applied even before `git init`) are
+shown quietly in the tree and left out of quick open and find in files. Ignore files above the
+open folder and the user's global excludes do not count, so a `.gitignore` in the home folder
+cannot hide coursework. Other dotfiles, such as `.gitignore`, are shown normally.
+
+Quick open and find in files share one cached list of the folder's files (`files/index.rs`,
+capped at 100,000). `fs_watch` watches the folder with `notify`; changes are gathered into
+batches (200 ms of quiet, at most one per second, `[""]` past 500 paths) and sent as the
+`files:changed` event, `{ root, paths }`. Batches stop once their folder is no longer the open
+one, and the interface drops any whose `root` is not the open folder. A batch marks the list stale rather than walking again, so a training
+script writing checkpoints costs one walk at the next quick open. Searches run on a blocking
+thread, skip files over 1 MB and binary files, stop at 500 hits, and each new search cancels the
+one before it; a walk or search of a folder that is no longer open gives up. Every file command
+that touches the disk runs off the main thread. The interface refreshes only the tree folders a batch touched and passes the
+batch on to other areas as `files:changed`, leaving out the editor's own saves.
+
+Which folders were expanded and which files were opened recently are kept per folder in
+`tree-memory.json` in the app's data directory, not in the student's folder.
 
 ## Per-folder data
 

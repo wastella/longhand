@@ -12,6 +12,7 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
     let file = SubmenuBuilder::new(app, "File")
         .item(&item("open-folder", "Open Folder…", "CmdOrCtrl+O")?)
         .item(&item("new-file", "New File…", "CmdOrCtrl+N")?)
+        .item(&item("quick-open", "Go to File…", "CmdOrCtrl+P")?)
         .separator()
         .item(&item("save", "Save", "CmdOrCtrl+S")?)
         .item(&item("close-tab", "Close Tab", "CmdOrCtrl+W")?)

@@ -31,6 +31,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
+        .manage(files::FilesState::default())
         .setup(|app| {
             menu::build(app)?;
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
@@ -66,7 +67,13 @@ fn main() {
             files::fs_create,
             files::fs_rename,
             files::fs_trash,
+            // Files area: quick open, find in files, watching, Finder, the tree's memory.
             files::fs_search,
+            files::fs_files,
+            files::fs_watch,
+            files::fs_reveal,
+            files::files_memory_load,
+            files::files_memory_save,
             system::confirm,
             system::open_external,
             system::smoke_result,
