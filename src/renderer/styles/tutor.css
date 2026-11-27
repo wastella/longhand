@@ -1,0 +1,493 @@
+/* The tutor panel: policy, conversation, history, record, setup, hints, quick actions, the
+   question box; and the lookup bar that floats over the editor. */
+
+/* Policy: a two-way switch in the pane header. */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.segmented button {
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-4);
+}
+.segmented button + button {
+  border-left: 1px solid var(--color-border);
+}
+.segmented button:hover {
+  color: var(--color-text);
+}
+.segmented button[aria-pressed='true'] {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+.pane-head button[aria-pressed='true'].ghost {
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+}
+
+#course-note {
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+#chat {
+  flex: 1;
+  overflow: auto;
+  overflow-anchor: none;
+  padding: var(--space-4) var(--space-6) var(--space-8);
+  user-select: text;
+}
+.empty {
+  color: var(--color-text-muted);
+  padding: var(--space-10) var(--space-2);
+}
+.empty ul {
+  padding-left: var(--space-9);
+  margin: var(--space-4) 0;
+}
+kbd {
+  font: var(--text-xs) var(--font-ui);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  padding: 0 var(--space-2);
+}
+
+.msg {
+  margin: var(--space-6) 0;
+}
+.msg.user {
+  background: var(--color-surface-hover);
+  border-radius: var(--radius-2xl);
+  padding: var(--space-4) var(--space-5);
+  white-space: pre-wrap;
+}
+.msg.user .ctx {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  margin-top: var(--space-2);
+}
+.msg.tutor {
+  line-height: var(--leading-reading);
+  overflow-wrap: anywhere;
+}
+.msg.tutor p {
+  margin: 0 0 9px;
+}
+.msg.tutor ul,
+.msg.tutor ol {
+  margin: 0 0 9px;
+  padding-left: var(--space-10);
+}
+.msg.tutor h1,
+.msg.tutor h2,
+.msg.tutor h3 {
+  font-size: var(--text-md);
+  margin: var(--space-6) 0 5px;
+}
+.msg.tutor code {
+  font: var(--text-sm) var(--font-mono);
+  background: var(--color-surface-hover);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-xs);
+}
+.msg.tutor pre {
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  overflow: auto;
+  margin: 0 0 9px;
+  overflow-wrap: normal;
+}
+.msg.tutor pre code {
+  background: none;
+  padding: 0;
+}
+.msg.tutor a {
+  color: var(--color-accent);
+  cursor: pointer;
+}
+.msg.tutor table {
+  border-collapse: collapse;
+  margin-bottom: 9px;
+}
+.msg.tutor td,
+.msg.tutor th {
+  border: 1px solid var(--color-border);
+  padding: 3px 7px;
+}
+.answer-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* Copy sits under a finished answer; it stays out of sight until the answer is hovered or focused. */
+.msg-actions {
+  display: flex;
+  justify-content: flex-end;
+  min-height: var(--space-10);
+  margin-top: var(--space-1);
+  opacity: 0;
+}
+/* Transparent rather than hidden, so Tab still reaches Copy and focus reveals it. */
+.msg.tutor:hover .msg-actions,
+.msg.tutor:focus-within .msg-actions {
+  opacity: 1;
+}
+.msg.tutor.streaming .msg-actions {
+  visibility: hidden;
+}
+.msg-actions button {
+  font-size: var(--text-xs);
+}
+.copy-scratch {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 600px;
+}
+
+/* Syntax colours for code in answers (tutor/highlight.js): the editor's own tokens. */
+.msg pre .code-keyword {
+  color: var(--color-code-keyword);
+}
+.msg pre .code-string {
+  color: var(--color-code-string);
+}
+.msg pre .code-number {
+  color: var(--color-code-number);
+}
+.msg pre .code-function {
+  color: var(--color-code-function);
+}
+.msg pre .code-type {
+  color: var(--color-code-type);
+}
+.msg pre .code-comment {
+  color: var(--color-code-comment);
+  font-style: italic;
+}
+.msg pre .code-punctuation {
+  color: var(--color-code-punctuation);
+}
+
+/* Math (tutor/math.js). Display formulas scroll sideways rather than overflow the panel. Every
+   formula is clipped to its own box (paint containment), so a formula that moves its content
+   (\raisebox, \kern, \rule) cannot draw over the rest of the panel. */
+.msg .math {
+  display: inline-block;
+  max-width: 100%;
+  contain: paint;
+  padding: 0.12em 0;
+  vertical-align: baseline;
+}
+.msg .math-display {
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0 0 9px;
+  padding: var(--space-1) 0;
+}
+.withheld.inline {
+  display: inline;
+  padding: 0 var(--space-1);
+  font-style: italic;
+}
+.msg.tutor .katex {
+  font-size: 1.08em;
+}
+
+.msg.error {
+  color: var(--color-danger);
+  white-space: pre-wrap;
+}
+.msg.error p {
+  margin: 0 0 var(--space-3);
+}
+.msg.error.rate-limited,
+.msg.error.offline,
+.msg.error.busy {
+  color: var(--color-text-secondary);
+}
+.msg.error .row button {
+  font-size: var(--text-xs);
+}
+.activity,
+.note {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  margin: var(--space-1) 0;
+}
+.activity {
+  font-family: var(--font-mono);
+}
+.thinking {
+  color: var(--color-text-muted);
+}
+/* Code hidden by the policy (tutor/hidden-code.js). */
+.withheld {
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 7px var(--space-5);
+  margin: 0 0 9px;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.withheld button {
+  font-size: var(--text-xs);
+  flex: none;
+}
+
+/* History and record replace the conversation in the panel. */
+.tutor-view {
+  flex: 1;
+  overflow: auto;
+  padding: var(--space-3) 0 var(--space-8);
+}
+#history-list .thread {
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: var(--space-4) var(--space-6);
+  text-align: left;
+}
+#history-list .thread:hover,
+#history-list .thread.active {
+  background: var(--color-surface-hover);
+}
+.thread-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.thread-meta {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+.record-intro,
+.storage-note {
+  margin: var(--space-3) var(--space-6) var(--space-6);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.storage-note {
+  margin-top: var(--space-6);
+  line-height: 1.5;
+}
+.storage-note code {
+  font-size: 0.95em;
+}
+.record-day {
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--color-border);
+  user-select: text;
+}
+.record-day.total {
+  border-top: none;
+}
+.record-date {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-1);
+}
+
+#setup {
+  padding: var(--space-8) var(--space-7) var(--space-9);
+  border-top: 1px solid var(--color-border);
+  user-select: text;
+}
+#setup h2 {
+  font-size: var(--text-lg);
+  margin: 0 0 var(--space-3);
+}
+#setup > p {
+  margin: 0 0 var(--space-7);
+  color: var(--color-text-muted);
+}
+#setup ol {
+  margin: 0 0 var(--space-8);
+  padding-left: var(--space-9);
+}
+#setup li {
+  margin-bottom: var(--space-6);
+}
+#setup li::marker {
+  color: var(--color-text-muted);
+}
+.step-title {
+  margin-bottom: var(--space-3);
+}
+.step-note {
+  font-size: var(--text-sm);
+  margin-top: var(--space-2);
+}
+#setup .command {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 3px 3px 3px var(--space-4);
+}
+#setup .command code {
+  flex: 1;
+  min-width: 0;
+  font: var(--text-mono-sm) var(--font-mono);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+#setup .command button {
+  flex: none;
+  font-size: var(--text-xs);
+}
+#setup .row .dim {
+  font-size: var(--text-xs);
+}
+
+/* The hint ladder. */
+#hints {
+  margin: 0 var(--space-6) var(--space-3);
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+}
+.hints-title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-strong);
+}
+#hints p {
+  margin: var(--space-1) 0 var(--space-4);
+  font-size: var(--text-xs);
+}
+.rungs {
+  display: flex;
+  gap: var(--space-3);
+}
+.rung {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-4);
+  min-width: 0;
+}
+.rung-step {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.rung-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rung.reached {
+  border-color: var(--color-border-strong);
+}
+.rung.reached .rung-step::after {
+  content: ' ✓';
+}
+
+#quick {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
+  flex-wrap: wrap;
+}
+#quick button {
+  font-size: var(--text-sm);
+}
+
+#ask {
+  padding: 0 var(--space-6) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+/* What the tutor sees with the next question. */
+#context-chips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 20px;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  overflow: hidden;
+}
+.sees {
+  flex: none;
+  margin-right: var(--space-1);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 60%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0 0 0 var(--space-3);
+  color: var(--color-text-secondary);
+}
+.chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip-remove {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: 1;
+  padding: 1px var(--space-2);
+}
+.chip-remove:hover {
+  color: var(--color-text);
+}
+#input {
+  width: 100%;
+  resize: none;
+  font: inherit;
+  border-radius: var(--radius-xl);
+  padding: var(--space-4) var(--space-5);
+}
+#ask-hint {
+  font-size: var(--text-xs);
+}
+
+/* Visible keyboard focus for everything in the panel and the lookup bar. */
+#tutor button:focus-visible,
+#lookup button:focus-visible {
+  outline: 1px solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+/* The lookup bar is a .palette (base.css); its answer is a popover inside it, under the field. */
+#lookup-answer {
+  margin: var(--space-3) 0 0;
+  max-height: 50vh;
+  overflow: auto;
+  padding: var(--space-5) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  user-select: text;
+}
+#lookup-answer .msg.error {
+  margin: 0;
+}

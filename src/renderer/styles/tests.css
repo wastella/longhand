@@ -1,0 +1,478 @@
+/* The test pane: where the run is and the results on the left, one result or the output on the right. */
+
+#tests {
+  display: flex;
+}
+#tests-list {
+  width: 42%;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border);
+}
+#tests-rows {
+  flex: 1;
+  overflow: auto;
+  padding-bottom: var(--space-4);
+}
+#tests-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 0 var(--space-6) var(--space-6);
+  user-select: text;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+/* Header actions and badge */
+#tests-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+#tests-badge.fail {
+  color: var(--color-danger);
+}
+#tests-badge.pass {
+  color: var(--color-success);
+}
+#tests-badge.stale {
+  color: var(--color-text-muted);
+}
+
+/* Summary: progress while running, the tally after */
+.tests-summary {
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+}
+.tests-summary-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 20px;
+  white-space: nowrap;
+}
+.tests-summary-line button {
+  font-size: var(--text-xs);
+  flex: none;
+}
+/* The tally wraps rather than cutting off a count. */
+.tests-tally {
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+}
+.tests-tally-part {
+  white-space: nowrap;
+}
+.tests-summary-line:has(.tests-tally) {
+  align-items: flex-start;
+}
+.tests-summary-line button.active {
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+}
+.tests-clock {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.tests-summary-now {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--text-mono-sm) var(--font-mono);
+}
+.tests-summary-note {
+  color: var(--color-text-secondary);
+  margin-top: var(--space-1);
+}
+.tests-progress {
+  height: 2px;
+  margin-top: var(--space-3);
+  background: var(--color-border);
+  border-radius: var(--radius-xs);
+}
+.tests-progress-bar {
+  height: 100%;
+  background: var(--color-text-muted);
+  border-radius: var(--radius-xs);
+}
+/* No count to measure against: a short bar that keeps moving. */
+.tests-progress.indeterminate {
+  overflow: hidden;
+}
+.tests-progress.indeterminate .tests-progress-bar {
+  width: 30%;
+  animation: tests-progress-slide 1.4s ease-in-out infinite;
+}
+@keyframes tests-progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tests-progress.indeterminate .tests-progress-bar {
+    width: 100%;
+    opacity: 0.4;
+    animation: none;
+  }
+}
+.tests-summary-stale {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  margin-top: var(--space-1);
+}
+.tests-summary-stale span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tests-summary-stale button {
+  font-size: var(--text-xs);
+  flex: none;
+}
+.tests-fail {
+  color: var(--color-danger);
+}
+.tests-keys {
+  margin: 0;
+  padding: 0 var(--space-6);
+  font-size: var(--text-xs);
+}
+
+/* An environment problem */
+.tests-problem {
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  user-select: text;
+}
+.tests-problem p {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+.tests-problem .tests-problem-title {
+  color: var(--color-text-strong);
+  font-size: var(--text-md);
+  font-weight: var(--weight-strong);
+  margin-bottom: var(--space-2);
+}
+.tests-fix {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  margin-bottom: var(--space-2);
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.tests-fix code {
+  flex: 1;
+  font: var(--text-mono-sm) var(--font-mono);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+.tests-problem button {
+  font-size: var(--text-xs);
+  flex: none;
+}
+
+/* Rows: files, parameterised functions and tests */
+.tests-row {
+  gap: var(--space-3);
+  height: var(--row-height);
+  padding-right: var(--space-4);
+  font: var(--text-sm) var(--font-mono);
+}
+.tests-row:focus-visible,
+#tests button:focus-visible,
+#tests-actions button:focus-visible,
+#tests summary:focus-visible {
+  outline: 1px solid var(--focus-ring-color);
+  outline-offset: -1px;
+}
+.tests-row.depth-0 {
+  padding-left: var(--space-2);
+}
+.tests-row.depth-1 {
+  padding-left: var(--space-8);
+}
+.tests-row.depth-2 {
+  padding-left: calc(var(--space-8) + var(--space-9));
+}
+.tests-group .twist {
+  width: var(--space-7);
+  flex: none;
+  display: inline-flex;
+  justify-content: center;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: var(--text-2xs);
+}
+.tests-group.depth-0 {
+  font-family: var(--font-ui);
+  color: var(--color-text-secondary);
+}
+.tests-group.depth-1 .twist {
+  margin-left: calc(-1 * var(--space-2));
+}
+.tests-row .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A test in a class: the class name shrinks first, so the test's own name stays readable. */
+.tests-name-split {
+  display: flex;
+}
+.tests-name-class,
+.tests-name-func {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tests-name-class {
+  flex: 0 1 auto;
+  color: var(--color-text-secondary);
+}
+.tests-name-func {
+  flex: none;
+  max-width: 100%;
+}
+.tests-count,
+.tests-time {
+  flex: none;
+  font: var(--text-xs) var(--font-ui);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.tests-time.slow {
+  color: var(--color-text-secondary);
+}
+.tests-row button {
+  font: var(--text-xs) var(--font-ui);
+  padding: 1px 7px;
+  flex: none;
+}
+/* Run sits out of sight until the row is pointed at or chosen. It keeps its room, so the
+   buttons beside it do not move under the pointer. */
+.tests-row .tests-row-run {
+  visibility: hidden;
+}
+.tests-row:hover .tests-row-run,
+.tests-row.active .tests-row-run,
+.tests-row:focus-within .tests-row-run {
+  visibility: visible;
+}
+
+/* Status dots */
+#tests .dot {
+  width: var(--space-4);
+  height: var(--space-4);
+  border-radius: var(--radius-round);
+  flex: none;
+  background: var(--color-text-muted);
+}
+#tests .PASSED .dot,
+#tests .XFAIL .dot,
+#tests .dot.PASSED,
+#tests .dot.XFAIL {
+  background: var(--color-success);
+}
+#tests .FAILED .dot,
+#tests .ERROR .dot,
+#tests .dot.FAILED,
+#tests .dot.ERROR {
+  background: var(--color-danger);
+}
+#tests .SKIPPED .dot,
+#tests .XPASS .dot,
+#tests .dot.SKIPPED,
+#tests .dot.XPASS {
+  background: var(--color-warning);
+}
+#tests .RUNNING .dot {
+  background: none;
+  border: 1px solid var(--color-text-muted);
+}
+.test.RUNNING .name {
+  color: var(--color-text-muted);
+}
+/* Results that ran before the latest save: still shown, but no longer confident. */
+#tests .test.stale .dot {
+  opacity: 0.4;
+}
+.test.stale .name {
+  color: var(--color-text-secondary);
+}
+
+/* Detail of one result */
+.tests-detail-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 34px;
+  margin: 0 calc(-1 * var(--space-6)) var(--space-3);
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-6);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+.tests-detail-head button {
+  font-size: var(--text-xs);
+}
+.tests-detail-name {
+  font: var(--text-sm) var(--font-mono);
+  color: var(--color-text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.tests-status {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  flex: none;
+}
+.tests-status.FAILED,
+.tests-status.ERROR {
+  color: var(--color-danger);
+}
+.tests-command {
+  font: var(--text-xs) var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#tests-detail pre {
+  margin: 0;
+  font: var(--text-sm) / var(--leading-output) var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#tests-detail p {
+  margin: var(--space-3) 0;
+}
+.tests-message {
+  color: var(--color-text-strong);
+  padding: var(--space-3) var(--space-5);
+  border-left: 2px solid var(--color-danger);
+  background: var(--color-surface-sunken);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.tests-phase,
+.tests-hint,
+.tests-stale-note {
+  color: var(--color-text-muted);
+}
+.tests-at {
+  color: var(--color-text-muted);
+}
+.tests-outcome {
+  color: var(--color-text-secondary);
+}
+
+/* A path:line that opens the file */
+.tests-loc {
+  font: inherit;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-text-secondary);
+  text-decoration: underline dotted var(--color-text-muted);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.tests-loc:hover {
+  color: var(--color-accent);
+  text-decoration-color: currentColor;
+}
+.tests-detail-head .tests-loc {
+  font: var(--text-xs) var(--font-mono);
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Traceback */
+.tests-traceback {
+  margin-top: var(--space-5);
+}
+.tests-frame {
+  margin-bottom: var(--space-4);
+}
+.tests-frame-head {
+  font: var(--text-xs) var(--font-mono);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-1);
+}
+.tests-frame pre {
+  padding-left: var(--space-6);
+  color: var(--color-text-secondary);
+}
+.tests-frame:not(.own) pre,
+.tests-path {
+  color: var(--color-text-muted);
+}
+.tests-frame pre .err {
+  color: var(--color-text);
+}
+.tests-frame pre .caret {
+  color: var(--color-text-muted);
+}
+.tests-note {
+  white-space: pre-wrap;
+  font: var(--text-xs) / var(--leading-output) var(--font-mono);
+  color: var(--color-text-muted);
+}
+.tests-library,
+.tests-section {
+  margin-bottom: var(--space-4);
+}
+#tests-detail summary {
+  cursor: pointer;
+  width: fit-content;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-sm);
+}
+#tests-detail summary:hover {
+  color: var(--color-text);
+}
+.tests-section pre {
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-surface-sunken);
+  border-radius: var(--radius-sm);
+}
+#tests-detail pre.tests-raw {
+  color: var(--color-text-secondary);
+  /* pytest lays its output out for an 80-column terminal; wrapping would break its rules and tables. */
+  white-space: pre;
+  overflow-x: auto;
+}
+.tests-detail-head .tests-detail-title {
+  font: var(--text-sm) var(--font-ui);
+}
+.tests-more {
+  font-size: var(--text-xs);
+  margin: var(--space-2) 0;
+}
+
+/* Whatever another area attaches to a failure (see registerFailurePanel). */
+.tests-failure-panel {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}

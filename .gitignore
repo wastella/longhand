@@ -5,3 +5,5 @@ src-tauri/gen/
 .longhand/
 .DS_Store
 docs/.preview-*.png
+.claude/
+evals/results/

@@ -1,0 +1,21 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.6, pytest-9.0.3, pluggy-1.6.0
+plugins: anyio-4.9.0, langsmith-0.3.18
+collected 23 items / 22 deselected / 1 selected
+
+tests/test_basics.py bytes: ÿþ ok
+F
+
+=================================== FAILURES ===================================
+_____________________________ test_non_utf8_output _____________________________
+
+    def test_non_utf8_output():
+        sys.stdout.flush()
+        os.write(1, b"bytes: \xff\xfe ok\n")
+>       assert 0
+E       assert 0
+
+tests/test_basics.py:41: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_basics.py::test_non_utf8_output - assert 0
+======================= 1 failed, 22 deselected in 0.02s =======================

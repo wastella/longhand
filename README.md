@@ -3,36 +3,55 @@
 [![CI](https://github.com/wastella/longhand/actions/workflows/ci.yml/badge.svg)](https://github.com/wastella/longhand/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A quiet code editor for students. You write every line; the AI is a read-only tutor that answers
-like a teaching assistant in office hours.
+tl;dr: Longhand is an AI-native IDE built for students.
 
-![Longhand with a failing test and the tutor asking a guiding question](docs/screenshot.png)
-
-Most AI editors are built to write code for you. That is the wrong tool when the point of the
-work is learning to write it yourself. Longhand keeps the parts of AI help that support learning
-(explaining concepts, looking up APIs, explaining errors, reviewing what you wrote) and leaves out
+IDEs catering to professional devs harm students by providing AI-integration optimizing for productivity, not learning.
+Longhand is for when the process of thinking through (and writing) code matters more than the end result. Longhand keeps the parts of AI
+help that support learning (explaining concepts, looking up APIs, explaining errors, reviewing what you wrote) and leaves out
 the parts that replace it.
-
-> **Status:** in development, not yet released. macOS only. See the [roadmap](#roadmap) for what
-> is missing.
 
 ## What it does
 
-- **Editor, file tree, terminal and test panel.** Syntax highlighting, find in files, ordinary
-  completion from the language and the open file. No AI autocomplete and no agent mode.
-- **A tutor that cannot touch your code.** It can read the open folder. It cannot edit files or
-  run commands, because it is started without those tools.
-- **Office-hours behaviour.** Direct answers for lookups (what a function does, what an error
-  means). Questions and sanity checks for debugging. Reviews as observations tied to line ranges,
-  never a rewritten file.
-- **Help starts from your own attempt.** "Ask tutor" on a failing test attaches the traceback and
-  asks what you expected first.
+**The tutor can read your work, and nothing else.** It runs through your own Claude Code login
+with read-only tools, so it cannot edit a file or run a command. There is no AI autocomplete and
+no agent mode.
+
+Help shows up where the work is, in three shapes:
+
+- **Notes in the margin.** _Review this file_ (⇧⌘R) pins a handful of observations to the lines
+  they are about, like a TA's pen marks: a question to consider, a possible bug and how to see it,
+  something done well. Reply to a note to ask why, resolve it, or dismiss it. Select code and
+  choose _Explain_ to get the explanation as a note on that selection.
+- **Help under a failing test.** It starts by asking what you expected to happen (you can skip
+  that), then helps you find the problem without stating the fix. The conversation stays with the
+  test across reruns. When the test passes, one optional question: in a sentence, what was wrong?
+- **Lookups and conversation.** ⇧⌘K answers a quick question (what a function returns, what an
+  error means) in a popover and gets out of the way. The side panel is for open-ended questions
+  about concepts and math, with rendered formulas and a hint ladder for when you are stuck.
+
+Around that, an editor built for coursework and not much else:
+
+- **Editor.** Python-first editing, find and replace, go to line, and tabs that reopen with the
+  folder. Failed saves and files changed on disk are never silently lost or overwritten.
+- **Files.** Go to File (⌘P), find in files, and a keyboard-driven tree that updates as files
+  change. Generated and git-ignored folders are dimmed, and multi-gigabyte data files do not slow
+  it down.
+- **Terminal.** Up to four, with Run File (⌘R) and clickable `path:line` locations in tracebacks.
+- **Tests.** Run one pytest test, a file, everything, or just the failures, with live progress.
+  Failures show the assertion first and link to the line.
+- **Light and dark themes**, and a keyboard shortcut for nearly everything (Help > Keyboard
+  Shortcuts).
+
+And the guardrails:
+
 - **Course rules respected.** If the folder has an `AGENTS.md` or `CLAUDE.md` with rules for AI
   assistants, as some courses now ship, the tutor follows it.
 - **Two policies per folder.** _Strict_: no code in answers. _Guided_: short examples on toy or
-  analogous problems. Code beyond the limit is hidden behind a **Reveal (logged)** button.
-- **Your own record.** Questions, test runs and reveals are written to `.longhand/log.jsonl` in
-  the folder, with today's counts in the title bar. It never leaves your machine.
+  analogous problems. Code beyond the limit is hidden behind a **Reveal (logged)** button, counted
+  across a whole answer so a solution cannot arrive in pieces.
+- **Your own record.** Questions, hints, lookups, test runs and reveals are counted per day in a
+  Record view and in the title bar. The log and your tutor conversations are kept in `.longhand/`
+  inside the folder, which Longhand tells Git to ignore. They never leave your machine.
 
 ## Install
 
@@ -65,8 +84,9 @@ chatbot is always one window away. Treat the policies as a commitment you chose,
 - Files the tutor reads, and your questions, go to Anthropic through your own Claude account,
   under the terms of that account.
 - Longhand has no server, no telemetry and no accounts of its own.
-- The usage log and per-folder settings stay in `.longhand/` inside the folder. Add it to
-  `.gitignore` if you do not want to commit it.
+- Your tutor conversations, margin notes, usage log and per-folder settings stay in `.longhand/`
+  inside the folder. Longhand tells Git to ignore that folder, so they are not committed by
+  accident.
 
 ## Build from source
 

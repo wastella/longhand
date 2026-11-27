@@ -1,0 +1,426 @@
+/* The app shell: title bar, panel layout, splitters, welcome screen, bottom panel, status bar,
+   notifications and the settings and shortcut sheets. */
+
+/* ---- title bar ---- */
+
+#titlebar {
+  height: var(--titlebar-height);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: 0 var(--space-4) 0 var(--titlebar-inset);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  font-size: var(--text-sm);
+  cursor: default;
+}
+#ws-name {
+  font-weight: var(--weight-strong);
+  margin-left: calc(-1 * var(--space-2));
+}
+#reliance,
+#auth {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+#auth {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.titlebar-toggles {
+  display: flex;
+  gap: var(--space-1);
+  margin-left: calc(-1 * var(--space-2));
+}
+
+/* ---- panels ---- */
+
+#app {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+#files,
+#tutor {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface-raised);
+  min-width: 0;
+  width: var(--files-width);
+}
+#tutor {
+  width: var(--tutor-width);
+}
+/* The editor and the welcome screen share the top cell; the bottom panel sits below. */
+#center {
+  flex: 1;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+#editor,
+#welcome {
+  grid-area: 1 / 1;
+  min-height: 0;
+}
+#center > .split-h {
+  grid-row: 2;
+}
+#bottom {
+  grid-row: 3;
+  height: var(--bottom-height);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-surface);
+}
+
+/* Splitters: a 1px line with a wider invisible grip, turning amber while hovered or dragged. */
+.split-v,
+.split-h {
+  position: relative;
+  z-index: var(--z-splitter);
+  flex: none;
+  background: var(--color-border);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.split-v {
+  width: 1px;
+  cursor: col-resize;
+}
+.split-h {
+  height: 1px;
+  cursor: row-resize;
+}
+.split-v::after,
+.split-h::after {
+  content: '';
+  position: absolute;
+}
+.split-v::after {
+  inset: 0 calc((1px - var(--splitter-hit)) / 2);
+}
+.split-h::after {
+  inset: calc((1px - var(--splitter-hit)) / 2) 0;
+}
+.split-v:hover,
+.split-h:hover {
+  background: var(--color-accent);
+  transition-delay: 150ms;
+}
+.split-v.dragging,
+.split-h.dragging,
+.split-v:focus-visible,
+.split-h:focus-visible {
+  background: var(--color-accent);
+  outline: none;
+}
+body.resizing-columns,
+body.resizing-columns * {
+  cursor: col-resize !important;
+}
+body.resizing-rows,
+body.resizing-rows * {
+  cursor: row-resize !important;
+}
+
+/* A folder dragged over the window. */
+body.dropping::after {
+  content: 'Drop a folder to open it';
+  position: fixed;
+  inset: var(--space-4);
+  z-index: var(--z-sheet);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--color-accent);
+  border-radius: var(--radius-3xl);
+  background: var(--color-backdrop);
+  color: var(--color-text-strong);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-strong);
+  pointer-events: none;
+}
+
+/* ---- welcome ---- */
+
+#welcome {
+  /* Above the editor's own (positioned) host, which shares this cell. */
+  position: relative;
+  z-index: 1;
+  margin-top: var(--tab-bar-height);
+  display: flex;
+  justify-content: center;
+  overflow: auto;
+  background: var(--color-surface);
+}
+/* With no folder open the welcome screen has the window to itself, over the empty tab bar. */
+body.no-folder #welcome {
+  margin-top: 0;
+}
+.welcome-inner {
+  width: 100%;
+  max-width: 500px;
+  margin: auto 0;
+  padding: var(--space-16) var(--space-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+#welcome h1 {
+  margin: 0;
+  font-size: var(--text-display);
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.welcome-lede {
+  margin: 0 0 var(--space-6);
+  color: var(--color-text-muted);
+  line-height: var(--leading-reading);
+}
+.welcome-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  font-size: var(--text-sm);
+}
+.welcome-hints {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-3) var(--space-8);
+  margin: 0;
+  max-width: 280px;
+  color: var(--color-text-muted);
+}
+.welcome-hint {
+  display: contents;
+}
+.welcome-hint dd {
+  margin: 0;
+  justify-self: end;
+}
+
+.recents {
+  margin-top: var(--space-12);
+}
+.recents .section-label {
+  padding: 0 var(--space-4) var(--space-3);
+}
+/* The rows' highlight reaches past the column so their text lines up with the title. */
+#recent-list {
+  list-style: none;
+  margin: 0 calc(-1 * var(--space-4));
+  padding: 0;
+}
+.recent {
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-md);
+}
+.recent:hover,
+.recent:focus-within {
+  background: var(--color-surface-hover);
+}
+.recent-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  height: 30px;
+  padding: 0 var(--space-4);
+  background: none;
+  border: none;
+  text-align: left;
+}
+.recent-open:focus-visible {
+  outline-offset: -2px;
+}
+.recent-name {
+  flex: none;
+  max-width: 45%;
+}
+.recent-path {
+  flex: 1;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.recent-when {
+  flex: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.recent.missing .recent-name {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+}
+.recent-remove {
+  margin-right: var(--space-2);
+  opacity: 0;
+}
+.recent:hover .recent-remove,
+.recent-remove:focus-visible {
+  opacity: 1;
+}
+
+/* ---- bottom panel ---- */
+
+.tab-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-sm);
+}
+.tab-btn:hover {
+  color: var(--color-text);
+}
+.tab-btn.active {
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+}
+.bottom-pane {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---- status bar ---- */
+
+#status {
+  height: var(--status-height);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: 0 var(--space-6);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+#status-file {
+  flex: 0 1 auto;
+}
+#status-saved.unsaved {
+  color: var(--color-accent);
+}
+#status-msg {
+  flex: 0 1 auto;
+}
+
+/* ---- notifications ---- */
+
+.notices {
+  position: fixed;
+  right: var(--space-6);
+  bottom: calc(var(--status-height) + var(--space-6));
+  z-index: var(--z-notice);
+  width: var(--notice-width);
+  max-width: calc(100vw - 2 * var(--space-6));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  pointer-events: none;
+}
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-4) var(--space-5) var(--space-6);
+  background: var(--color-surface-overlay);
+  border: 1px solid var(--color-border-overlay);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-overlay);
+  pointer-events: auto;
+  animation: rise var(--duration-normal) var(--ease-out);
+}
+.notice-icon {
+  margin-top: 1px;
+  color: var(--color-text-muted);
+}
+.notice.success .notice-icon {
+  color: var(--color-success);
+}
+.notice.error .notice-icon {
+  color: var(--color-danger);
+}
+.notice-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+.notice-message {
+  margin: 0;
+  line-height: var(--leading-ui);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.notice-close {
+  margin-top: -1px;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ---- settings and shortcut sheets ---- */
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-5) 0;
+}
+.setting-row + .setting-row {
+  border-top: 1px solid var(--color-border);
+}
+.setting-text {
+  flex: 1;
+  min-width: 0;
+}
+.setting-text p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.setting-row select {
+  min-width: 150px;
+}
+
+.shortcuts-sheet {
+  width: 640px;
+}
+.shortcut-list {
+  columns: 2;
+  column-gap: var(--space-16);
+}
+.shortcut-group {
+  break-inside: avoid;
+  padding-bottom: var(--space-8);
+}
+.shortcut-group dl {
+  margin: var(--space-3) 0 0;
+}
+.shortcut {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: 3px 0;
+}
+.shortcut dd {
+  margin: 0;
+}
