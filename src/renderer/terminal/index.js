@@ -43,10 +43,15 @@ function onExit({ id }) {
   const once = xterm.onKey(() => (once.dispose(), start()));
 }
 
-/** Shows the terminal and sends `text` to the shell as if typed (end it with \r to run it). */
+/** Sends `text` to the shell as if typed (end it with \r to run it). Resolves once the shell has it. */
+export async function sendToTerminal(text) {
+  if (shellId) await invoke('term_input', { id: shellId, data: text });
+}
+
+/** Brings the terminal to the front, then types `text` into it for the student to run. */
 export function typeInTerminal(text) {
   showBottomPane('terminal');
-  if (shellId) invoke('term_input', { id: shellId, data: text });
+  sendToTerminal(text);
 }
 
 /** The terminal's size in characters, as { cols, rows }. */

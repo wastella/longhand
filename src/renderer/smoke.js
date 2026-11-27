@@ -7,7 +7,7 @@ import { h } from './dom.js';
 import { once, state } from './state.js';
 import { activeFile, openFile, save } from './editor/index.js';
 import { runCommand, showBottomPane } from './shell/index.js';
-import { terminalSize, typeInTerminal } from './terminal/index.js';
+import { sendToTerminal, terminalSize } from './terminal/index.js';
 import { ask, renderAnswer } from './tutor/index.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -46,7 +46,7 @@ async function checkTerminal(r) {
   let output = '';
   const unlisten = await listen('term:data', ({ data }) => (output += data));
   await wait(1500);
-  typeInTerminal('echo smoke-$((40+2))\r');
+  await sendToTerminal('echo smoke-$((40+2))\r');
   await until(() => output.includes('smoke-42'), 10000, 'terminal echo');
   r.terminal = true;
   unlisten();
