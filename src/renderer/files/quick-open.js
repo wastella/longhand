@@ -11,7 +11,7 @@ import { recentFiles } from './memory.js';
 const MAX_SHOWN = 50;
 
 const input = h('input', {
-  class: 'palette-input text-input',
+  class: 'palette-input',
   placeholder: 'Go to file',
   spellcheck: 'false',
   role: 'combobox',

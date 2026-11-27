@@ -1,7 +1,7 @@
-//! The open folder: which one it is, its per-folder settings and usage log in `.longhand/`,
-//! and the app-wide record of the last folder opened.
+//! The open folder: which one it is, and its per-folder settings and usage log in `.longhand/`.
+//! App-wide preferences, including the recent folders, are in `prefs.rs`.
 
-use crate::{pytest, term, tutor};
+use crate::{prefs, pytest, term, tutor};
 use serde_json::{json, Value};
 use std::fs;
 use std::io::Write;
@@ -25,21 +25,6 @@ pub fn err<E: std::fmt::Display>(e: E) -> String {
 
 pub fn workspace(state: &AppState) -> R<PathBuf> {
     state.workspace.lock().unwrap().clone().ok_or_else(|| "No folder is open".to_string())
-}
-
-// ---- per-user state ----
-
-fn app_state_path(app: &AppHandle) -> Option<PathBuf> {
-    app.path().app_data_dir().ok().map(|d| d.join("state.json"))
-}
-fn load_app_state(app: &AppHandle) -> Value {
-    app_state_path(app).and_then(|p| fs::read_to_string(p).ok()).and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_else(|| json!({}))
-}
-fn save_last_workspace(app: &AppHandle, ws: &Path) {
-    if let Some(p) = app_state_path(app) {
-        let _ = fs::create_dir_all(p.parent().unwrap());
-        let _ = fs::write(p, json!({ "workspace": ws }).to_string());
-    }
 }
 
 // ---- per-folder settings and log ----
@@ -90,14 +75,23 @@ fn log_summary_for(ws: &Path) -> Value {
 
 // ---- opening a folder ----
 
-fn open_workspace(app: &AppHandle, dir: PathBuf) -> R<()> {
-    let ws = dir.canonicalize().map_err(err)?;
-    if !ws.is_dir() {
-        return Err("Not a folder".into());
+/// Why `dir` cannot be opened as a folder, in words a student can act on.
+fn check_folder(dir: &Path) -> R<()> {
+    if !dir.exists() {
+        return Err(format!("{} no longer exists. It may have been moved or deleted.", dir.display()));
     }
+    if !dir.is_dir() {
+        return Err(format!("{} is a file. Open the folder that contains it instead.", dir.display()));
+    }
+    Ok(())
+}
+
+fn open_workspace(app: &AppHandle, dir: PathBuf) -> R<()> {
+    check_folder(&dir)?;
+    let ws = dir.canonicalize().map_err(err)?;
     let state = app.state::<AppState>();
     *state.workspace.lock().unwrap() = Some(ws.clone());
-    save_last_workspace(app, &ws);
+    prefs::remember_folder(app, &ws);
     tutor::reset(&state);
     term::kill(&state);
     pytest::cancel(&state);
@@ -114,33 +108,33 @@ fn open_workspace(app: &AppHandle, dir: PathBuf) -> R<()> {
     Ok(())
 }
 
-pub fn choose_folder(app: &AppHandle) {
-    let handle = app.clone();
-    app.dialog().file().pick_folder(move |picked| {
-        if let Some(Ok(path)) = picked.map(|p| p.into_path()) {
-            let _ = open_workspace(&handle, path);
-        }
-    });
-}
-
 // ---- commands ----
 
 #[tauri::command]
 pub async fn app_init(app: AppHandle) -> Value {
-    let last = load_app_state(&app)["workspace"].as_str().filter(|p| Path::new(p).is_dir()).map(String::from);
-    json!({
-        "lastWorkspace": last,
-        "auth": tutor::read_auth(),
-        "smoke": std::env::var("LONGHAND_SMOKE").is_ok(),
-        "smokeDir": std::env::var("LONGHAND_SMOKE_DIR").ok(),
-        // `longhand path/to/folder` opens that folder straight away.
-        "openDir": std::env::args().nth(1).filter(|a| Path::new(a).is_dir()),
-    })
+    let mut init = prefs::startup(&app);
+    init["version"] = json!(app.package_info().version.to_string());
+    init["auth"] = tutor::read_auth();
+    init["smoke"] = json!(std::env::var("LONGHAND_SMOKE").is_ok());
+    init["smokeDir"] = json!(std::env::var("LONGHAND_SMOKE_DIR").ok());
+    // `longhand path/to/folder` opens that folder straight away.
+    init["openDir"] = json!(std::env::args().nth(1).filter(|a| Path::new(a).is_dir()));
+    init
 }
 
+/// Asks for a folder with the system picker. Returns its path, or null if the student cancelled;
+/// the interface then opens it with workspace_open once nothing would be lost.
 #[tauri::command]
-pub fn workspace_choose(app: AppHandle) {
-    choose_folder(&app);
+pub async fn workspace_choose(app: AppHandle) -> Option<String> {
+    let picked = app.dialog().file().set_title("Open Folder").blocking_pick_folder()?;
+    picked.into_path().ok().map(|p| p.to_string_lossy().to_string())
+}
+
+/// Whether `dir` can be opened as a folder, checked before anyone is asked about unsaved work.
+/// Async, so a slow volume does not block the window.
+#[tauri::command]
+pub async fn folder_check(dir: String) -> R<()> {
+    check_folder(Path::new(&dir))
 }
 
 #[tauri::command]
@@ -196,6 +190,16 @@ pub mod tests {
         fs::write(ws.join(".longhand/config.json"), r#"{"policy":"guided"}"#).unwrap();
         assert_eq!(read_config(&ws)["policy"], "guided");
         assert_eq!(read_config(&ws)["model"], "sonnet");
+        fs::remove_dir_all(ws).unwrap();
+    }
+
+    #[test]
+    fn missing_folders_and_files_cannot_be_opened() {
+        let ws = temp_dir("check");
+        assert!(check_folder(&ws).is_ok());
+        assert!(check_folder(&ws.join("gone")).unwrap_err().contains("no longer exists"));
+        fs::write(ws.join("notes.txt"), "").unwrap();
+        assert!(check_folder(&ws.join("notes.txt")).unwrap_err().contains("is a file"));
         fs::remove_dir_all(ws).unwrap();
     }
 

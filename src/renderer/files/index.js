@@ -2,13 +2,13 @@
 // from this file only.
 
 import { on, state } from '../state.js';
-import { registerCommand } from '../shell/index.js';
+import { registerCommand, registerFocusTarget } from '../shell/index.js';
 import { newFile } from './actions.js';
 import { closeContextMenus } from './context-menu.js';
 import { openFind, resetFind, setupFind } from './find.js';
 import { forgetAllListings } from './listing.js';
 import { loadMemory, rememberOpened } from './memory.js';
-import { findToggle, header, newFileButton, searchView, showView, treeView } from './panel.js';
+import { findToggle, header, newFileButton, searchInput, searchView, showView, treeView } from './panel.js';
 import { forgetFiles, mountQuickOpen, openQuickOpen } from './quick-open.js';
 import { renderTree, resetTree, reveal, setEmptyAction } from './tree.js';
 import { setupTreeInput } from './tree-input.js';
@@ -32,6 +32,7 @@ export function mount(region) {
   setupWatch();
   mountQuickOpen();
   setEmptyAction(() => newFile(''));
+  registerFocusTarget('files', () => (treeView.hidden ? searchInput : treeView));
 
   newFileButton.onclick = () => newFile();
   findToggle.onclick = () => (searchView.hidden ? openFind() : (showView('tree'), treeView.focus()));

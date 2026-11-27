@@ -3,13 +3,15 @@
 mod documents;
 mod files;
 mod menu;
+mod prefs;
 mod pytest;
 mod system;
 mod term;
 mod tutor;
 mod workspace;
 
-use tauri::{Manager, TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
+use tauri::{LogicalPosition, Manager, TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_window_state::StateFlags;
 use workspace::AppState;
 
 /// Claude Code finds its login through the user's name, which a bare launch environment may lack.
@@ -27,31 +29,56 @@ fn ensure_user_env() {
     std::env::set_var("USER", name);
 }
 
+/// Stops everything the app started, so nothing outlives it: every terminal's session, the
+/// tutor's runs and its warm lookup process, and any test run (waiting for it, then removing the
+/// pytest reporter). Runs once, from whichever comes first: the window being destroyed (closing
+/// it) or the app exiting (Quit, which exits without destroying the window).
+fn stop_processes(app: &tauri::AppHandle) {
+    static STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if STOPPED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let state = app.state::<AppState>();
+    term::kill(&state);
+    tutor::cancel(&state);
+    pytest::shutdown(&state);
+}
+
 fn main() {
     ensure_user_env();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Remembers the window's size and position. Visibility is left out: a window saved while
+        // the app was hidden would otherwise never show again. The window is shown below instead.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(StateFlags::all() - StateFlags::VISIBLE - StateFlags::DECORATIONS)
+                .build(),
+        )
         .manage(AppState::default())
         .manage(files::FilesState::default())
         .setup(|app| {
             menu::build(app)?;
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Longhand")
                 .inner_size(1440.0, 900.0)
-                .min_inner_size(900.0, 560.0)
+                // Below about 800px wide the tutor and then the files panel fold away (shell/layout.js).
+                .min_inner_size(720.0, 480.0)
                 .title_bar_style(TitleBarStyle::Overlay)
                 .hidden_title(true)
+                // Centres the window buttons in the 38px title bar (--titlebar-height).
+                .traffic_light_position(LogicalPosition::new(16.0, 13.0))
+                // Hidden until the saved size and position are restored, so it does not jump.
+                .visible(false)
                 // The window only ever shows the app itself; links open in the browser.
                 .on_navigation(|url| matches!(url.scheme(), "tauri" | "about"))
                 .build()?;
+            window.show()?;
             Ok(())
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
-                let state = window.state::<AppState>();
-                term::kill(&state);
-                tutor::cancel(&state);
-                pytest::shutdown(&state);
+                stop_processes(window.app_handle());
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -80,6 +107,15 @@ fn main() {
             system::confirm,
             system::open_external,
             system::smoke_result,
+            system::app_quit,
+            // Shell: app-wide settings, recent folders, layout, appearance and the shortcut list
+            prefs::settings_set,
+            prefs::recents_list,
+            prefs::recent_forget,
+            prefs::layout_save,
+            workspace::folder_check,
+            system::window_set_theme,
+            menu::shortcuts_list,
             // The terminals (term.rs).
             term::term_start,
             term::term_reset,
@@ -104,10 +140,8 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("failed to start Longhand")
         .run(|app, event| {
-            // Quitting from the menu may skip the window's Destroyed event; the terminals'
-            // processes must not outlive the app either way.
             if let tauri::RunEvent::Exit = event {
-                term::kill(&app.state::<AppState>());
+                stop_processes(app);
             }
         });
 }

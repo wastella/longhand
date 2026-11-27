@@ -33,7 +33,8 @@ const mock = mockFiles.map((name) => `// ${name}\n(() => {\n${readFileSync(new U
 
 /**
  * Opens a page on the interface. `options` reach the mock as window.__MOCK__ (for example
- * { auth: { installed: false, loggedIn: false } }). Resolves once the file tree has loaded.
+ * { auth: { installed: false, loggedIn: false } }). Resolves once the file tree has loaded, or
+ * once `options.waitFor` matches, for pages that start without a folder open.
  */
 export async function openApp(browser, options = {}) {
   const page = await browser.newPage();
@@ -42,7 +43,7 @@ export async function openApp(browser, options = {}) {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.evaluateOnNewDocument(`window.__MOCK__ = ${JSON.stringify(options)};\n${mock}`);
   await page.goto(pathToFileURL('dist/index.html').href);
-  await page.waitForSelector('#tree .node');
+  await page.waitForSelector(options.waitFor || '#tree .node');
   return { page, errors };
 }
 

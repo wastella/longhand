@@ -28,16 +28,15 @@ async function main() {
   terminal.mount();
   tests.mount();
   tutor.mount(region('tutor'));
-  shell.applySavedTextSize();
 
   listen('workspace:opened', openWorkspace);
   listen('menu', (id) => shell.runCommand(id));
 
   const init = await invoke('app_init');
   emit('auth:changed', init.auth);
+  await shell.restore(init);
   if (init.smoke) return runSmoke(init.smokeDir);
-  if (init.openDir) return invoke('workspace_open', { dir: init.openDir });
-  if (init.lastWorkspace) shell.offerLastWorkspace(init.lastWorkspace);
+  shell.openFirstFolder(init);
 }
 
 main();
