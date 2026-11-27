@@ -1,17 +1,41 @@
 import assert from 'node:assert/strict';
 import { askTutor, count, isHidden, openFromTree, sleep, text, uiTest } from './helpers.mjs';
 
-uiTest("asking about a failure attaches it and sends the student's own account", async (page) => {
+const lastAsked = (page) => page.evaluate(() => window.__asked.at(-1));
+const ATTACK = '.msg.tutor script, .msg.tutor img, .msg.tutor iframe, .msg.tutor a[href], .msg.tutor [onclick], .msg.tutor [onerror]';
+
+async function failTestAndAsk(page) {
   await page.evaluate(() => document.querySelector('#run-all-tests').click());
   await page.waitForSelector('#tests-list .test.FAILED button');
   await page.click('#tests-list .test.FAILED button');
+}
+
+uiTest("asking about a failure attaches it and sends the student's own account", async (page) => {
+  await failTestAndAsk(page);
   assert.match(await page.$eval('#input', (n) => n.placeholder), /What did you expect/);
+  assert.match(await text(page, '#context-chips'), /test_variance/);
   await askTutor(page, 'I expected 4.0');
-  const sent = await page.evaluate(() => window.__asked.at(-1));
-  assert.equal(sent.kind, 'failure');
+  const sent = await lastAsked(page);
+  assert.equal(sent.kind, 'conversation');
+  assert.equal(sent.about, 'failure');
   assert.match(sent.prompt, /<context>[\s\S]*Failing test: tests\/test_running\.py::test_variance[\s\S]*<\/context>\s+I expected 4\.0$/);
+  assert.equal(sent.question, 'I expected 4.0');
   assert.match(await text(page, '.msg.tutor'), /look at what push accumulates/);
   assert.match(await text(page, '.msg.user .ctx'), /test_variance/);
+  assert.doesNotMatch(await text(page, '#context-chips'), /test_variance/, 'the attachment goes with one question only');
+});
+
+uiTest('the student can leave the attachment and the open file out of the next question', async (page) => {
+  await openFromTree(page, 'stats/running.py');
+  await failTestAndAsk(page);
+  await page.click('#context-chips .chip.attachment .chip-remove');
+  await page.click('#context-chips .chip.file .chip-remove');
+  assert.match(await text(page, '#context-chips'), /Sees only your question/);
+  await askTutor(page, 'What is a running variance?');
+  const sent = await lastAsked(page);
+  assert.equal(sent.prompt, 'What is a running variance?');
+  assert.deepEqual(sent.context, []);
+  assert.match(await text(page, '#context-chips'), /running\.py/, 'the file is offered again for the question after');
 });
 
 uiTest('the open file and selection travel with a question', async (page) => {
@@ -24,11 +48,13 @@ uiTest('the open file and selection travel with a question', async (page) => {
   await page.keyboard.down(mod);
   await page.keyboard.press('a');
   await page.keyboard.up(mod);
+  assert.match(await text(page, '#context-chips'), /running\.py.*lines 1–\d+/);
   await page.evaluate(() => window.__emit('menu', 'ask-selection'));
   await page.waitForFunction(() => window.__asked.length === 1);
-  const sent = await page.evaluate(() => window.__asked[0]);
+  const sent = await lastAsked(page);
   assert.match(sent.prompt, /Open file: stats\/running\.py/);
   assert.match(sent.prompt, /Selected lines 1-\d+:/);
+  assert.equal(sent.about, 'explain');
 });
 
 uiTest('code beyond the strict limit is hidden until revealed, and the reveal is counted', async (page) => {
@@ -41,19 +67,190 @@ uiTest('code beyond the strict limit is hidden until revealed, and the reveal is
   assert.match(await text(page, '#reliance'), /1 code reveal/);
 });
 
-uiTest('the guided policy shows short examples', async (page) => {
-  await page.select('#policy', 'guided');
-  await sleep(100);
+uiTest('the guided policy shows short examples, with syntax colours', async (page) => {
+  await page.click('#policy [data-policy="guided"]');
+  await page.waitForFunction(() => document.querySelector('#policy [data-policy="guided"]').getAttribute('aria-pressed') === 'true');
+  assert.match(await text(page, '#course-note'), /Guided/);
   await askTutor(page, 'please include code');
   assert.equal(await count(page, '.msg.tutor .withheld'), 0);
   assert.equal(await count(page, '.msg.tutor pre'), 2);
+  assert.equal(await text(page, '.msg.tutor pre code.language-python .tok-keyword'), 'def');
+  assert.match(await text(page, '.msg.tutor pre code.language-python'), /self\.total \+= x/, 'highlighting keeps the text intact');
 });
 
 uiTest('tutor answers cannot inject markup or navigate the window', async (page) => {
   await askTutor(page, 'please be hostile');
-  assert.equal(await count(page, '.msg.tutor script, .msg.tutor img, .msg.tutor iframe, .msg.tutor [onclick], .msg.tutor [onerror]'), 0);
-  assert.equal(await count(page, '.msg.tutor a[href]'), 0);
+  assert.equal(await count(page, ATTACK), 0);
   assert.equal(await page.evaluate(() => window.__pwned), undefined);
+});
+
+uiTest('math renders, while prices and code stay as written', async (page) => {
+  await askTutor(page, 'explain the math');
+  assert.equal(await count(page, '.msg.tutor .math .katex'), 3);
+  assert.equal(await count(page, '.msg.tutor .math-display .katex-display'), 1);
+  const answer = await text(page, '.msg.tutor .answer-body');
+  assert.match(answer, /costs \$5 to \$10 of nothing/);
+  assert.equal(await text(page, '.msg.tutor p:last-child code'), '$HOME');
+});
+
+uiTest('math cannot be used to inject markup, styles or links', async (page) => {
+  await askTutor(page, 'math hostile');
+  assert.equal(await count(page, ATTACK + ', .msg.tutor .pwn'), 0);
+  const styles = await page.$$eval('.msg.tutor [style]', (nodes) => nodes.map((n) => n.getAttribute('style')).join(' '));
+  assert.doesNotMatch(styles, /position|url\(|inset/);
+  assert.equal(await page.evaluate(() => window.__pwned), undefined);
+  assert.doesNotMatch(await text(page, '.msg.tutor'), /spoof.*\\mathrm/);
+});
+
+uiTest('copy takes the answer as shown, with hidden code still hidden', async (page) => {
+  await page.evaluate(() => {
+    window.__copied = null;
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => (window.__copied = t) } });
+  });
+  await askTutor(page, 'please include code');
+  await page.hover('.msg.tutor');
+  await page.click('.msg.tutor .copy');
+  await page.waitForFunction(() => window.__copied);
+  const copied = await page.evaluate(() => window.__copied);
+  assert.match(copied, /uv run pytest/);
+  assert.match(copied, /\[code hidden by the policy\]/);
+  assert.doesNotMatch(copied, /def push/);
+  assert.equal(await text(page, '.msg.tutor .copy'), 'Copied');
+});
+
+uiTest('Stop ends a long answer, and scrolling up stops the panel following it', async (page) => {
+  await page.type('#input', 'a long answer please');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => /Paragraph 16/.test(document.querySelector('.msg.tutor').textContent));
+  await page.$eval('#chat', (chat) => (chat.scrollTop = 0) || chat.dispatchEvent(new Event('scroll')));
+  await sleep(200);
+  assert.equal(await page.$eval('#chat', (chat) => chat.scrollTop), 0, 'the student keeps their place');
+  await page.click('#stop');
+  await page.waitForSelector('#chat .note');
+  assert.equal(await text(page, '#chat .note'), 'Stopped.');
+  assert.equal(await isHidden(page, '#send'), false);
+  assert.doesNotMatch(await text(page, '.msg.tutor'), /Paragraph 30/);
+});
+
+uiTest(
+  'a usage limit says when it resets, and Retry asks again without repeating the question',
+  async (page) => {
+    await askTutor(page, 'What is AdamW?');
+    await page.waitForSelector('.msg.error');
+    assert.match(await text(page, '.msg.error'), /usage limit\. It resets at \d{1,2}:\d{2}/);
+    await page.click('.msg.error .retry');
+    await page.waitForFunction(() => !document.querySelector('.msg.error') && document.querySelector('.msg.tutor'));
+    await page.waitForFunction(() => !document.querySelector('#send').hidden);
+    const sent = await lastAsked(page);
+    assert.equal(sent.retry, true);
+    assert.equal(sent.prompt, 'What is AdamW?');
+    assert.equal(await count(page, '.msg.user'), 1);
+  },
+  { tutor: { failures: [{ code: 'rate-limited', message: 'You have reached your Claude usage limit.', resetsAt: Math.floor(Date.now() / 1000) + 3600 }] } },
+);
+
+uiTest(
+  'a logged-out CLI explains what to do and offers to check again',
+  async (page) => {
+    await askTutor(page, 'What is AdamW?');
+    await page.waitForSelector('.msg.error');
+    assert.match(await text(page, '.msg.error'), /not logged in.*claude/);
+    assert.equal(await count(page, '.msg.error .retry'), 0, 'retrying cannot help until the student logs in');
+    assert.equal(await count(page, '.msg.error button'), 1);
+  },
+  { tutor: { failures: [{ code: 'logged-out', message: 'Claude Code is not logged in. Run `claude` in the terminal, log in, then try again.' }] } },
+);
+
+uiTest(
+  "the folder's last conversation comes back, and earlier ones are listed",
+  async (page) => {
+    await page.waitForFunction(() => document.querySelectorAll('#chat .msg').length === 2);
+    assert.match(await text(page, '#chat .msg.user'), /What does a causal mask do/);
+    assert.match(await text(page, '#chat .msg.tutor'), /attend/);
+    await askTutor(page, 'And why does it use -inf?');
+    assert.equal((await lastAsked(page)).thread, 'conv-yesterday');
+
+    await page.click('#new-chat');
+    assert.equal(await count(page, '#chat .empty'), 1);
+    await askTutor(page, 'What is a residual stream?');
+    const fresh = (await lastAsked(page)).thread;
+    assert.match(fresh, /^conv-/);
+    assert.notEqual(fresh, 'conv-yesterday');
+
+    await page.click('#show-history');
+    await page.waitForSelector('#history-list .thread');
+    assert.equal(await count(page, '#history-list .thread'), 2);
+    assert.match(await text(page, '#history-list .thread.active'), /residual stream/);
+    await page.click('#history-list .thread:not(.active)');
+    await page.waitForFunction(() => document.querySelector('#history').hidden && !document.querySelector('#chat').hidden);
+    assert.match(await text(page, '#chat'), /causal mask[\s\S]*-inf/);
+  },
+  {
+    tutor: {
+      threads: {
+        'conv-yesterday': {
+          id: 'conv-yesterday',
+          kind: 'conversation',
+          title: 'What does a causal mask do?',
+          created: '2026-11-26T10:00:00Z',
+          updated: '2026-11-26T10:01:00Z',
+          messages: [
+            { role: 'student', text: 'What does a causal mask do?', at: '2026-11-26T10:00:00Z' },
+            { role: 'tutor', text: 'It stops each position from attending to later ones.', at: '2026-11-26T10:01:00Z' },
+          ],
+        },
+      },
+    },
+  },
+);
+
+uiTest('the hint ladder climbs one explicit step at a time and the record shows how far', async (page) => {
+  await page.click('#stuck');
+  assert.equal(await isHidden(page, '#hints'), false);
+  await page.type('#input', 'the softmax overflow');
+  await page.click('#hints .rung:nth-child(1)');
+  await page.waitForFunction(() => window.__asked.length === 1 && !document.querySelector('#send').hidden);
+  let sent = await lastAsked(page);
+  assert.deepEqual([sent.about, sent.rung], ['hint', 1]);
+  assert.match(sent.prompt, /softmax overflow[\s\S]*orientation only/);
+  assert.match(await text(page, '#chat .msg.user'), /^Hint 1 · Orientation: the softmax overflow/);
+  await page.click('#hints .rung:nth-child(2)');
+  await page.waitForFunction(() => window.__asked.length === 2 && !document.querySelector('#send').hidden);
+  sent = await lastAsked(page);
+  assert.equal(sent.rung, 2);
+  assert.match(sent.prompt, /Do not describe the steps of my code/);
+  assert.equal(await count(page, '#hints .rung.reached'), 2);
+
+  await page.click('#show-record');
+  await page.waitForSelector('#record .record-day');
+  assert.match(await text(page, '#record'), /Today[\s\S]*2 hints · hints up to step 2 \(key idea\)/);
+  assert.doesNotMatch(await text(page, '#record'), /streak|score|great/i);
+  await page.keyboard.press('Escape');
+  assert.equal(await isHidden(page, '#chat'), false);
+});
+
+uiTest('the lookup bar answers in a popover that is not part of the conversation', async (page) => {
+  await page.evaluate(() => window.__emit('menu', 'lookup'));
+  assert.equal(await isHidden(page, '#lookup'), false);
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'lookup-input');
+  assert.equal(await page.evaluate(() => window.__prepared), 1, 'the CLI is started while the student types');
+  await page.type('#lookup-input', 'what does torch.tril return');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => /diagonal set to zero/.test(document.querySelector('#lookup-answer').textContent));
+  const sent = await lastAsked(page);
+  assert.deepEqual([sent.thread, sent.kind, sent.about, sent.prompt], ['lookup', 'lookup', 'lookup', 'what does torch.tril return']);
+  assert.equal(await count(page, '#chat .msg'), 0);
+  assert.match(await text(page, '#reliance'), /question/, 'the usage counter was refreshed');
+  await page.keyboard.press('Escape');
+  assert.equal(await isHidden(page, '#lookup'), true);
+});
+
+uiTest('lookups go through the hidden-code check too', async (page) => {
+  await page.evaluate(() => window.__emit('menu', 'lookup'));
+  await page.type('#lookup-input', 'please include code');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('#lookup-answer .withheld button');
+  assert.doesNotMatch(await text(page, '#lookup-answer'), /def push/);
 });
 
 uiTest(
@@ -72,4 +269,15 @@ uiTest(
     assert.equal(await isHidden(page, '#ask'), false);
   },
   { auth: { installed: false, loggedIn: false } },
+);
+
+uiTest(
+  'a Claude Code too old for the read-only flags asks to be updated',
+  async (page) => {
+    assert.equal(await isHidden(page, '#setup'), false);
+    assert.match(await text(page, '#setup'), /1\.0\.3 is installed but too old/);
+    assert.match(await text(page, '#setup-steps'), /claude update/);
+    assert.equal(await count(page, '#setup-steps li'), 2);
+  },
+  { auth: { installed: true, loggedIn: true, tooOld: true, version: '1.0.3', missing: ['--restricted'] } },
 );
