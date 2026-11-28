@@ -4,7 +4,6 @@
 // See "The tutor engine" in docs/ARCHITECTURE.md.
 
 import { invoke, listen } from '../backend.js';
-import { emit } from '../state.js';
 
 /** Requests waiting for events, by request id. */
 const pending = new Map();
@@ -63,10 +62,9 @@ export function tutorRequest({ thread, kind = 'conversation', prompt, onText, on
   listening ??= listen('tutor:event', dispatch);
   listening
     .then(() => invoke('tutor_request', { request: { id, thread, kind, prompt, ...options } }))
-    .then(async () => {
+    .then(() => {
       // Stopped before the backend had the request: stop it now that it does.
       if (entry.stopped) invoke('tutor_cancel', { thread, request: id });
-      emit('usage:changed', await invoke('log_summary'));
     })
     .catch((error) => settle(entry, 'error', asFailure(error)));
   const cancel = () => {

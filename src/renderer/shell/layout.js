@@ -7,10 +7,7 @@
 // open there is nothing for the panels to show, so only the welcome screen is shown.
 //
 // The handout (viewer/) sits between the editor and the tutor. Whether it is open, and its width,
-// belong to the folder, so the viewer area sets them (setPanel) and they are not saved here. The
-// handout and the tutor both need room to read, and the code room to write: with both shown, the
-// editor keeps a comfortable width and the handout gives up width first, down to its minimum;
-// only when that is not enough does the one earlier in the fold order fold.
+// belong to the folder, so the viewer area sets them (setPanel) and they are not saved here.
 
 import { invoke } from '../backend.js';
 import { emit, on } from '../state.js';
@@ -25,7 +22,6 @@ export const DEFAULT_SIZES = { files: 220, bottom: 240, handout: 420, tutor: 400
 export const MIN_SIZES = { files: 160, bottom: 100, handout: 300, tutor: 280 };
 export const MAX_SIZES = { files: 640, bottom: 1200, handout: 960, tutor: 640 };
 const EDITOR_MIN_WIDTH = 360;
-const EDITOR_COMFORT_WIDTH = 480;
 const EDITOR_MIN_HEIGHT = 140;
 const SPLITTER_WIDTH = 1;
 const SAVE_DELAY = 400;
@@ -62,22 +58,12 @@ export function fitLayout() {
 
   const shown = Object.fromEntries(SIDES.map((id) => [id, folderOpen && layout[id].open]));
   const total = (sizes) => SIDES.reduce((sum, id) => sum + (shown[id] ? sizes[id] : 0), 0);
-  const wanted = Object.fromEntries(SIDES.map((id) => [id, layout[id].size]));
-  if (shown.handout && shown.tutor && EDITOR_COMFORT_WIDTH + total({ ...wanted, handout: MIN_SIZES.handout }) > width)
-    shown[foldOrder.find((id) => id === 'handout' || id === 'tutor')] = false;
   for (const id of foldOrder) if (EDITOR_MIN_WIDTH + total(MIN_SIZES) > width) shown[id] = false;
 
   const sides = SIDES.filter((id) => shown[id]);
   const sizes = Object.fromEntries(sides.map((id) => [id, layout[id].size]));
-  const both = shown.handout && shown.tutor;
-  let over = (both ? EDITOR_COMFORT_WIDTH : EDITOR_MIN_WIDTH) + sides.reduce((sum, id) => sum + sizes[id], 0) - width;
-  // Beside the tutor, the handout gives up width first; then shown panels give up width in
-  // proportion to how far each is above its minimum.
-  if (both && over > 0) {
-    const given = Math.min(over, sizes.handout - MIN_SIZES.handout);
-    sizes.handout -= given;
-    over -= given;
-  }
+  const over = EDITOR_MIN_WIDTH + sides.reduce((sum, id) => sum + sizes[id], 0) - width;
+  // Shown panels give up width in proportion to how far each is above its minimum.
   const slack = sides.reduce((sum, id) => sum + sizes[id] - MIN_SIZES[id], 0);
   if (over > 0 && slack > 0) for (const id of sides) sizes[id] -= (over * (sizes[id] - MIN_SIZES[id])) / slack;
   for (const id of SIDES) show(id, shown[id], sizes[id] ?? layout[id].size);
@@ -141,10 +127,8 @@ export function restoreLayout(saved) {
     if (typeof choice?.open === 'boolean') layout[id].open = choice.open;
     if (Number.isFinite(choice?.size)) layout[id].size = Math.round(Math.min(MAX_SIZES[id], Math.max(MIN_SIZES[id], choice.size)));
   }
-  // Layouts saved before the handout existed name only the files and the tutor.
   const order = saved?.foldOrder;
-  const known = Array.isArray(order) && order.every((id) => SIDES.includes(id)) && new Set(order).size === order.length;
-  if (known && order.includes('files') && order.includes('tutor')) foldOrder = order.includes('handout') ? [...order] : [...order, 'handout'];
+  if (Array.isArray(order) && order.length === SIDES.length && SIDES.every((id) => order.includes(id))) foldOrder = [...order];
   fitLayout();
 }
 

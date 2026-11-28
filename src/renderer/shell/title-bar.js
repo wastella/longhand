@@ -1,5 +1,4 @@
-// The title bar: panel toggles, the folder's name, today's tutor use (which opens the student's
-// record) and whether the tutor is connected. The whole bar drags the window (data-tauri-drag-region="deep" in index.html);
+// The title bar: panel toggles, the folder's name and whether the tutor is connected. The whole bar drags the window (data-tauri-drag-region="deep" in index.html);
 // Tauri leaves buttons out of the drag, so they stay clickable and everything keeps its tooltip.
 
 import { h, spacer } from '../dom.js';
@@ -8,14 +7,6 @@ import { runCommand } from './commands.js';
 import { icon } from './icons.js';
 
 const name = h('span', { id: 'ws-name', class: 'truncate' }, 'Longhand');
-const usage = h('button', {
-  id: 'reliance',
-  type: 'button',
-  class: 'ghost',
-  hidden: true,
-  'data-tip': 'Your own record of tutor use in this folder, by day',
-  onclick: () => runCommand('show-record'),
-});
 const auth = h('span', { id: 'auth', 'data-tip': 'Tutor connection' });
 
 const toggles = {
@@ -48,15 +39,6 @@ function showToggle(id, visible) {
   button.dataset.tip = `${visible ? 'Hide' : 'Show'} ${toggles[id][1].toLowerCase()}`;
 }
 
-function showUsage(log) {
-  if (!log) return;
-  const t = log.today;
-  const parts = [`${t.ask} ${t.ask === 1 ? 'question' : 'questions'}`];
-  if (t.reveal) parts.push(`${t.reveal} code ${t.reveal === 1 ? 'reveal' : 'reveals'}`);
-  usage.textContent = `Today: ${parts.join(' · ')}`;
-  usage.hidden = false;
-}
-
 function showAuth(status) {
   // tooOld: Claude Code is installed but older than the tutor needs (the tutor's setup explains).
   const tooOld = status?.tooOld === true;
@@ -80,7 +62,6 @@ export function mountTitleBar(region) {
     toggleButtons.files,
     name,
     spacer(),
-    usage,
     auth,
     h('span', { class: 'titlebar-toggles' }, toggleButtons.handout, toggleButtons.bottom, toggleButtons.tutor),
   );
@@ -94,8 +75,6 @@ export function mountTitleBar(region) {
     for (const button of Object.values(toggleButtons)) button.hidden = false;
     name.textContent = ws.name;
     name.dataset.tip = ws.path;
-    showUsage(ws.log);
   });
-  on('usage:changed', showUsage);
   on('auth:changed', showAuth);
 }

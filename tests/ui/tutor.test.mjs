@@ -39,7 +39,7 @@ uiTest('code beyond the strict limit is hidden until revealed, and the reveal is
   assert.doesNotMatch(await text(page, '.msg.tutor'), /def push/);
   await page.click('.msg.tutor .withheld button');
   await page.waitForFunction(() => document.querySelectorAll('.msg.tutor pre').length === 2);
-  assert.match(await text(page, '#reliance'), /1 code reveal/);
+  assert.equal(await page.evaluate(() => window.__log.filter((e) => e.kind === 'reveal').length), 1);
 });
 
 // Each answer below carries three lines of a softmax past a check that looked only at fenced
@@ -255,25 +255,24 @@ uiTest(
   },
 );
 
-uiTest('the usage count in the title bar opens the record, even with the panel hidden', async (page) => {
+uiTest('Tutor > Show or Hide Record opens the record, even with the panel hidden', async (page) => {
   await askTutor(page, 'What is a residual stream?');
   await page.evaluate(() => window.__emit('menu', 'toggle-tutor'));
   assert.equal(await isHidden(page, '#tutor'), true);
-  await page.click('#reliance');
+  await page.evaluate(() => window.__emit('menu', 'show-record'));
   assert.equal(await isHidden(page, '#tutor'), false);
   await page.waitForSelector('#record .record-day');
   assert.equal(await isHidden(page, '#chat'), true);
   assert.doesNotMatch(await text(page, '#record'), /streak|score|great/i);
-  // The title bar and the record count the same log: the fixture's 3 earlier questions and this one.
+  // The fixture's 3 earlier questions and this one.
   assert.match(await text(page, '#record'), /Today4 questions/);
-  assert.equal(await text(page, '#reliance'), 'Today: 4 questions');
   assert.match(await text(page, '#record .storage-note'), /kept in this folder, in \.longhand\/threads\/.*Git ignores them.*delete/);
   await page.keyboard.press('Escape');
   assert.equal(await isHidden(page, '#chat'), false);
-  await page.click('#reliance');
+  await page.evaluate(() => window.__emit('menu', 'show-record'));
   assert.equal(await isHidden(page, '#record'), false);
-  await page.click('#reliance');
-  assert.equal(await isHidden(page, '#chat'), false, 'a second click goes back to the conversation');
+  await page.evaluate(() => window.__emit('menu', 'show-record'));
+  assert.equal(await isHidden(page, '#chat'), false, 'asking again goes back to the conversation');
 });
 
 uiTest('the panel header holds the policy, History and New, and nothing above the question box', async (page) => {
@@ -285,7 +284,7 @@ uiTest('the panel header holds the policy, History and New, and nothing above th
 uiTest(
   'hints asked for by older versions still show in the record',
   async (page) => {
-    await page.click('#reliance');
+    await page.evaluate(() => window.__emit('menu', 'show-record'));
     await page.waitForSelector('#record .record-day');
     assert.match(await text(page, '#record'), /2 hints/);
   },
@@ -305,7 +304,6 @@ uiTest('the lookup bar answers in a popover that is not part of the conversation
   assert.match(sent.thread, /^lookup-\d{4}-\d{2}-\d{2}$/, "today's lookup thread");
   await page.waitForFunction((id) => window.__threads[id]?.messages.length === 2, {}, sent.thread);
   assert.equal(await count(page, '#chat .msg'), 0);
-  assert.match(await text(page, '#reliance'), /question/, 'the usage counter was refreshed');
   await page.keyboard.press('Escape');
   assert.equal(await isHidden(page, '#lookup'), true);
 });
@@ -319,22 +317,22 @@ uiTest('Escape closes the lookup bar even when the focus is somewhere else', asy
   assert.equal(await isHidden(page, '#lookup'), true);
 });
 
-uiTest('every kind of question moves the title bar, which agrees with the record', async (page) => {
-  const header = () => text(page, '#reliance');
-  assert.equal(await header(), 'Today: 3 questions', "the fixture's log");
+uiTest('every kind of question is counted in the record', async (page) => {
+  const asks = () => window.__log.filter((e) => e.kind === 'ask').length;
+  assert.equal(await page.evaluate(asks), 3, "the fixture's log");
   await askTutor(page, 'What is a residual stream?');
-  await page.waitForFunction(() => document.querySelector('#reliance').textContent === 'Today: 4 questions');
+  await page.waitForFunction(() => window.__log.filter((e) => e.kind === 'ask').length === 4);
   await page.evaluate(() => window.__emit('menu', 'lookup'));
   await page.type('#lookup-input', 'what does torch.tril return');
   await page.keyboard.press('Enter');
-  await page.waitForFunction(() => document.querySelector('#reliance').textContent === 'Today: 5 questions');
+  await page.waitForFunction(() => window.__log.filter((e) => e.kind === 'ask').length === 5);
   await page.keyboard.press('Escape');
   assert.deepEqual(
     await page.evaluate(() => window.__log.filter((e) => e.kind === 'ask').map((e) => e.about)),
     ['question', 'question', 'question', 'question', 'lookup'],
     'each question is logged as an ask, whatever its kind',
   );
-  await page.click('#reliance');
+  await page.evaluate(() => window.__emit('menu', 'show-record'));
   await page.waitForSelector('#record .record-day');
   assert.match(await text(page, '#record'), /Today4 questions · 1 lookup/);
 });

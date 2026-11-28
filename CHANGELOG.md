@@ -28,7 +28,7 @@ Nothing has been released yet. This is what the first release will contain.
   under a failing test
 - Quick lookups (⇧⌘K), and a conversation panel with rendered math
 - Code over the policy's limit hidden behind a logged reveal, and a record of questions, lookups
-  and reveals by day, kept locally per folder and opened from the title bar's count
+  and reveals by day, kept locally per folder (Tutor > Show or Hide Record)
 - Welcome screen with recent folders, light and dark themes, settings, and a remembered layout
 - Setup steps in the tutor panel when Claude Code is missing or logged out
 - Jupyter notebooks open as cells: edit code and Markdown, add and delete cells, and run them
@@ -41,4 +41,3 @@ Nothing has been released yet. This is what the first release will contain.
   Handout, and the choice, width and page are remembered per folder
 - PDFs and pictures open read-only in a tab, and files Longhand cannot show say so calmly with
   Reveal in Finder
-- Clone Repository… on the welcome screen and in the File menu, using your own git

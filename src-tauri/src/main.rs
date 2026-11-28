@@ -1,6 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod clone;
 mod documents;
 mod feedback;
 mod files;
@@ -64,7 +63,6 @@ fn main() {
         )
         .manage(AppState::default())
         .manage(files::FilesState::default())
-        .manage(clone::Clones::default())
         .manage(notebook::Kernels::default())
         .setup(|app| {
             menu::build(app)?;
@@ -96,7 +94,6 @@ fn main() {
             workspace::workspace_open,
             workspace::config_set,
             workspace::log_record,
-            workspace::log_summary,
             files::fs_list,
             files::fs_read,
             files::fs_create,
@@ -156,13 +153,8 @@ fn main() {
             lsp::lsp_send,
             lsp::lsp_ack,
             lsp::lsp_stop,
-            // Opening the assignment: PDFs and pictures for the viewer (viewer.rs), and Clone
-            // Repository (clone.rs).
+            // Opening the assignment: PDFs and pictures for the viewer (viewer.rs).
             viewer::view_read,
-            clone::clone_start,
-            clone::clone_cancel,
-            clone::clone_choose,
-            clone::clone_location,
             // Notebooks: one kernel per open notebook (notebook.rs).
             notebook::notebook_start,
             notebook::notebook_send,

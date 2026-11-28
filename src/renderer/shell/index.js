@@ -2,7 +2,6 @@
 // notifications and the shared components. Other areas import from this file only.
 
 import { mountBottomPanel } from './bottom-panel.js';
-import { mountClone } from './clone.js';
 import { mountFocus } from './focus.js';
 import { folderPending, mountFolders, openFolder, refreshRecents, setRecents } from './folders.js';
 import { mountLayout, restoreLayout } from './layout.js';
@@ -30,7 +29,7 @@ export { registerFocusTarget } from './focus.js';
 export { openSheet } from './sheet.js';
 export { icon, iconNames } from './icons.js';
 export { formatKeys, kbd } from './keys.js';
-export { keysFor, withKeys } from './shortcuts.js';
+export { withKeys } from './shortcuts.js';
 export { openFolder } from './folders.js';
 
 export function mount({ titleBar, welcome, bottom, status }) {
@@ -42,7 +41,6 @@ export function mount({ titleBar, welcome, bottom, status }) {
   mountLayout();
   mountTitleBar(titleBar);
   mountFolders();
-  mountClone();
   mountWelcome(welcome);
   mountBottomPanel(bottom);
   mountStatusBar(status);

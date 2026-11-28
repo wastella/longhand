@@ -13,7 +13,6 @@
 //   tests:finished     the result object of the backend's tests:done event (see tests/index.js)
 //   tests:selected     a test result | null                       the test shown in the test panel changed
 //   tutor:finished     { ev: { type, cancelled?, code?, message? }, text }  a conversation answer ended (done, error or stopped)
-//   usage:changed      { today, total }                           the folder's usage counts changed
 //   auth:changed       { installed, loggedIn, plan }              the tutor's connection status is known
 //   panel:toggled      { id, visible }                            a side or bottom panel was shown or hidden
 //   panel:resized      { id, size }                               the student resized a panel (its splitter)

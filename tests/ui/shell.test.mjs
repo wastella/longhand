@@ -39,8 +39,8 @@ uiTest(
     await menu(page, 'open-folder');
     await page.waitForFunction(() => document.querySelector('#ws-name').textContent === 'other-course');
     assert.equal((await prefs(page)).recents[0].path, '/Users/ada/other-course');
-    // The welcome screen offers the folder that was open before as a recent one.
-    await page.waitForSelector('.recent[data-path="/demo/running-stats"]');
+    assert.equal((await prefs(page)).recents[1].path, '/demo/running-stats', 'the folder that was open before is kept as a recent one');
+    assert.equal(await count(page, '#welcome .recent'), 0, 'recent folders are offered only before a folder is open');
   },
   { pick: '/Users/ada/other-course' },
 );
@@ -168,10 +168,9 @@ uiTest('a small window folds the tutor, then the files, and brings them back', a
 // ---- title and status bars ----
 
 uiTest('title bar items show tooltips with their shortcut', async (page) => {
-  assert.equal(await page.$eval('#reliance', (n) => getComputedStyle(n).pointerEvents), 'auto');
   await page.hover('#toggle-files-panel');
   await page.waitForSelector('.tooltip:not([hidden])');
-  assert.match(await text(page, '.tooltip'), /^Hide files(⌘B|Ctrl\+B)$/);
+  assert.match(await text(page, '.tooltip'), /^Hide files⌘B$/);
   await page.mouse.move(700, 500);
   assert.equal(await isHidden(page, '.tooltip'), true);
 });
@@ -255,7 +254,7 @@ uiTest('the shortcut reference lists the menu shortcuts, and Escape returns focu
   const groups = await page.$$eval('.shortcut-group h3', (n) => n.map((x) => x.textContent));
   assert.deepEqual(groups, ['Longhand', 'File', 'Edit', 'View', 'Run', 'Tutor']);
   const tutorRow = await page.$$eval('.shortcut', (rows) => rows.map((r) => r.textContent).find((t) => t.startsWith('Go to Tutor')));
-  assert.match(tutorRow, /Go to Tutor(⌘4|Ctrl\+4)/);
+  assert.match(tutorRow, /Go to Tutor⌘4/);
   await page.keyboard.press('Escape');
   assert.equal(await count(page, '.sheet'), 0);
   assert.equal(await page.evaluate(() => document.activeElement.id), 'input');

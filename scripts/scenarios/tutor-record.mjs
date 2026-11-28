@@ -13,6 +13,6 @@ export const options = {
 
 export default async function (page) {
   await askTutor(page, 'What is a residual stream?');
-  await page.click('#reliance');
+  await page.evaluate(() => window.__emit('menu', 'show-record'));
   await page.waitForSelector('#record .record-day');
 }

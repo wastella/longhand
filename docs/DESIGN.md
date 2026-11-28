@@ -161,7 +161,7 @@ styles. `npm run preview -- --scenario kitchen-sink` shows every one in both the
 - **Badge** (`.badge`, `.accent`, `.success`, `.danger`). A short count or state beside a label.
   **Status dot** (`.status-dot` with a status class) for connected, failing and so on.
 - **Key cap** (`.kbd`, or `kbd('CmdOrCtrl+B')`). Shortcuts are written the way `menu.rs` gives
-  them to Tauri; `formatKeys()` draws them for the platform (⇧⌘F on a Mac).
+  them to Tauri; `formatKeys()` draws them with the Mac's symbols (⇧⌘F).
 - **Popover and menu** (`.popover` holding `.menu-item` rows, `.menu-separator`, and a
   `.kbd-text` hint inside an item). The highlighted item (`:hover` or `aria-selected="true"`)
   fills with the accent like a native menu.
@@ -208,8 +208,7 @@ busy.
 
 The window is a title bar, resizable regions (files, the editor over the bottom panel, the
 handout when it is open, the tutor) and a status bar. The handout, a document to read, sits on
-`--color-surface` like the editor; beside the tutor it gives up width first, keeping the editor
-at 480px, and only when that is not enough does the one shown less recently fold. `shell/layout.js` remembers which panels are open and their sizes. When
+`--color-surface` like the editor. `shell/layout.js` remembers which panels are open and their sizes. When
 the window is too small for every open panel at its minimum beside a 360px editor, the tutor folds
 away first, then the files; they return when the window grows. Before a folder is open only the
 welcome screen shows.

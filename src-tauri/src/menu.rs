@@ -76,7 +76,6 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
     let file = SubmenuBuilder::new(app, "File")
         // Shell
         .item(&item("open-folder", "Open Folder…", "CmdOrCtrl+O")?)
-        .item(&plain("clone-repository", "Clone Repository…")?)
         // Files
         .item(&item("new-file", "New File…", "CmdOrCtrl+N")?)
         .item(&item("quick-open", "Go to File…", "CmdOrCtrl+P")?)
@@ -160,6 +159,8 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
         .item(&item("ask-selection", "Explain Selection", "CmdOrCtrl+E")?)
         .item(&item("review-file", "Review Current File", "CmdOrCtrl+Shift+R")?)
         .item(&item("new-conversation", "New Conversation", "CmdOrCtrl+Shift+N")?)
+        .separator()
+        .item(&plain("show-record", "Show or Hide Record")?)
         .build()?;
 
     // Shell: the system's Close Window would take ⌘W, which closes a tab here. Ours takes ⇧⌘W and
