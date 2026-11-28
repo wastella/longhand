@@ -6,6 +6,7 @@ mod feedback;
 mod files;
 mod lsp;
 mod menu;
+mod notebook;
 mod prefs;
 mod pytest;
 mod system;
@@ -35,7 +36,7 @@ fn ensure_user_env() {
 
 /// Stops everything the app started, so nothing outlives it: every terminal's session, the
 /// tutor's runs and its warm lookup process, any test run (waiting for it, then removing the
-/// pytest reporter) and every language server. Runs once, from whichever comes first: the window being destroyed (closing
+/// pytest reporter), every language server and every notebook's kernel. Runs once, from whichever comes first: the window being destroyed (closing
 /// it) or the app exiting (Quit, which exits without destroying the window).
 fn stop_processes(app: &tauri::AppHandle) {
     static STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -47,6 +48,7 @@ fn stop_processes(app: &tauri::AppHandle) {
     tutor::cancel(&state);
     pytest::shutdown(&state);
     lsp::shutdown(&state);
+    notebook::shutdown(app);
 }
 
 fn main() {
@@ -63,6 +65,7 @@ fn main() {
         .manage(AppState::default())
         .manage(files::FilesState::default())
         .manage(clone::Clones::default())
+        .manage(notebook::Kernels::default())
         .setup(|app| {
             menu::build(app)?;
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
@@ -160,6 +163,11 @@ fn main() {
             clone::clone_cancel,
             clone::clone_choose,
             clone::clone_location,
+            // Notebooks: one kernel per open notebook (notebook.rs).
+            notebook::notebook_start,
+            notebook::notebook_send,
+            notebook::notebook_ack,
+            notebook::notebook_stop,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start Longhand")

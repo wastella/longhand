@@ -18,6 +18,18 @@ use tauri::State;
 /// Larger files open as a notice instead of text. Coursework folders hold multi-gigabyte data
 /// files and checkpoints, and nobody edits a file this size by hand.
 const MAX_TEXT_BYTES: u64 = 3 * 1024 * 1024;
+/// Notebooks carry their outputs (plots, tables) as text, so they get more room.
+const MAX_NOTEBOOK_BYTES: u64 = 20 * 1024 * 1024;
+
+/// The largest file at `path` that opens as text.
+fn text_limit(path: &Path) -> u64 {
+    if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("ipynb")) {
+        MAX_NOTEBOOK_BYTES
+    } else {
+        MAX_TEXT_BYTES
+    }
+}
+
 /// How much of a file is checked for NUL bytes when deciding whether it is binary.
 const BINARY_PROBE_BYTES: u64 = 8000;
 const BOM: &[u8] = b"\xEF\xBB\xBF";
@@ -136,12 +148,13 @@ fn read_document(path: &Path) -> io::Result<Value> {
     if !meta.is_file() {
         return Ok(json!({ "kind": "notFile", "size": 0, "mtime": stamp.mtime }));
     }
-    if stamp.size > MAX_TEXT_BYTES {
+    let limit = text_limit(path);
+    if stamp.size > limit {
         // Only the start is read, so a multi-gigabyte file costs no more than a small one.
         let mut start = Vec::new();
         File::open(path)?.take(BINARY_PROBE_BYTES).read_to_end(&mut start)?;
         let kind = if looks_binary(&start) { "binary" } else { "tooLarge" };
-        return Ok(json!({ "kind": kind, "size": stamp.size, "mtime": stamp.mtime }));
+        return Ok(json!({ "kind": kind, "size": stamp.size, "limit": limit, "mtime": stamp.mtime }));
     }
     Ok(classify(fs::read(path)?, stamp.mtime))
 }
@@ -341,6 +354,19 @@ mod tests {
         fs::write(&binary, bytes).unwrap();
         assert_eq!(read_document(&binary).unwrap()["kind"], "binary");
         assert_eq!(read_document(&dir.join("gone.py")).unwrap()["kind"], "missing");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn notebooks_may_be_larger_than_other_text() {
+        let dir = temp_dir("notebook-size");
+        let notebook = dir.join("hw.IPYNB");
+        fs::write(&notebook, "1".repeat(MAX_TEXT_BYTES as usize + 1)).unwrap();
+        assert_eq!(read_document(&notebook).unwrap()["kind"], "text");
+        fs::write(&notebook, "1".repeat(MAX_NOTEBOOK_BYTES as usize + 1)).unwrap();
+        let read = read_document(&notebook).unwrap();
+        assert_eq!(read["kind"], "tooLarge");
+        assert_eq!(read["limit"], MAX_NOTEBOOK_BYTES);
         fs::remove_dir_all(dir).unwrap();
     }
 

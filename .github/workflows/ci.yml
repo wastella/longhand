@@ -46,5 +46,12 @@ jobs:
         working-directory: src-tauri
       - run: cargo clippy --all-targets -- -D warnings
         working-directory: src-tauri
+      # The notebook tests run the kernel helper against a real ipykernel when one loads; a venv
+      # (this runner's Python refuses packages outside one) gives them one, so they run here.
+      - name: Python with ipykernel for the notebook tests
+        run: |
+          python3 -m venv "$RUNNER_TEMP/kernel"
+          "$RUNNER_TEMP/kernel/bin/python" -m pip install --quiet ipykernel
+          echo "LONGHAND_TEST_KERNEL_PYTHON=$RUNNER_TEMP/kernel/bin/python" >> "$GITHUB_ENV"
       - run: cargo test
         working-directory: src-tauri

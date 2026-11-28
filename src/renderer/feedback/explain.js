@@ -122,6 +122,7 @@ function askAbout(selection) {
 export function explainSelection() {
   const file = activeFile();
   if (!state.workspace) return;
+  if (file?.custom) return showStatus('Explain Selection does not work in notebooks yet');
   if (!file?.selection) return showStatus('Select some code in the editor first');
   const { fromLine, toLine, text } = file.selection;
   // A selection ending at the start of a line does not include that line, as with the actions.

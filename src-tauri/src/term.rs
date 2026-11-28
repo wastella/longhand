@@ -2,7 +2,7 @@
 //! folder. The interface names each terminal with its own id, so it can recognise the first
 //! output of a terminal before `term_start` has returned.
 
-mod output;
+pub(crate) mod output;
 mod process;
 
 use crate::workspace::{workspace, AppState, R};

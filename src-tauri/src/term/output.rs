@@ -50,13 +50,13 @@ impl Flow {
         self.room.notify_all();
     }
 
-    fn sent(&self, bytes: usize) {
+    pub(crate) fn sent(&self, bytes: usize) {
         *self.unacked.lock().unwrap() += bytes;
     }
 
     /// Blocks while too much output is waiting to be drawn. A lost acknowledgement (the page
     /// reloaded, say) must not freeze the terminal for good, so a long wait forgives the debt.
-    fn wait_for_room(&self) {
+    pub(crate) fn wait_for_room(&self) {
         let unacked = self.unacked.lock().unwrap();
         let (mut unacked, wait) = self.room.wait_timeout_while(unacked, ACK_TIMEOUT, |n| *n > MAX_UNACKED).unwrap();
         if wait.timed_out() {

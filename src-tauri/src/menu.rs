@@ -145,6 +145,12 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
         .item(&item("run-tests-file", "Run Tests in Current File", "CmdOrCtrl+T")?)
         .item(&item("run-tests", "Run All Tests", "CmdOrCtrl+Shift+T")?)
         .item(&item("rerun-failed-tests", "Rerun Failed Tests", "CmdOrCtrl+Shift+Y")?)
+        .separator()
+        // Notebooks: the keys are the notebook's own (notebook/view.js), so they only act in one.
+        .item(&hinted("notebook-run-cell", "Run Cell", "Shift+Enter", "⇧↩")?)
+        .item(&plain("notebook-run-all", "Run All Cells")?)
+        .item(&plain("notebook-interrupt", "Interrupt Kernel")?)
+        .item(&plain("notebook-restart", "Restart Kernel…")?)
         .build()?;
 
     // Tutor

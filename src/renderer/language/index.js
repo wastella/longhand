@@ -12,7 +12,7 @@ import { hoverTooltips, serverCompletion, signatureHelp } from '@codemirror/lsp-
 import { on } from '../state.js';
 import { activeFile, fileView, registerFileExtension } from '../editor/index.js';
 import { closeOnEscape } from '../shell/dismiss.js';
-import { addStatusItem, registerCommand, registerSetting, runCommand } from '../shell/index.js';
+import { addStatusItem, registerCommand, registerSetting, runCommand, showStatus } from '../shell/index.js';
 import { mentionChecking, showCheckingSheet } from './consent.js';
 import { clearTrail, clickToDefinition, goBack, goToDefinition, trailRenamed } from './definition.js';
 import { uriOf } from './documents.js';
@@ -86,6 +86,7 @@ const navigationKeys = keymap.of([
 
 function definitionOfSelection() {
   const file = activeFile();
+  if (file?.custom) return showStatus('Go to Definition does not work in notebooks yet');
   const view = file && fileView(file.path);
   if (!view) return;
   view.focus();

@@ -9,8 +9,24 @@
 import { confirm, invoke } from '../backend.js';
 import { emit, state as app } from '../state.js';
 import { showStatus } from '../shell/index.js';
-import { becomeNotice, close, fileGone, isWithin, refreshDirty, refreshView, renderChrome, session, stampOf, stateOf, updateDoc } from './session.js';
-import { fromDisk, replaceEndings, toDisk } from './line-endings.js';
+import {
+  becomeNotice,
+  close,
+  contentToWrite,
+  fileGone,
+  isEditable,
+  isWithin,
+  refreshDirty,
+  refreshView,
+  renderChrome,
+  sameVersion,
+  session,
+  stampOf,
+  stateOf,
+  updateDoc,
+  versionOf,
+} from './session.js';
+import { fromDisk, replaceEndings } from './line-endings.js';
 
 // How long a disk check may take before the student is told and checks pause until it answers.
 const CHECK_TIMEOUT_MS = 10000;
@@ -22,12 +38,12 @@ const CHECK_TIMEOUT_MS = 10000;
  */
 const differs = (onDisk, stamp) => !stamp || Math.abs(onDisk.mtime - stamp.mtime) > 1 || onDisk.size !== stamp.size;
 
-const isOpen = (doc) => session.docs.get(doc.path) === doc && doc.kind === 'text';
+const isOpen = (doc) => session.docs.get(doc.path) === doc && isEditable(doc);
 
 /** Saves `path` (the active file by default). Resolves true once it is on disk. */
 export function save(path = session.active) {
   const doc = session.docs.get(path);
-  if (doc?.kind !== 'text') return Promise.resolve(false);
+  if (!doc || !isEditable(doc)) return Promise.resolve(false);
   // Counted when asked for, so a disk check that overlaps a save knows to skip this file.
   doc.saves += 1;
   // One save at a time per file: a second Cmd+S waits for the first, then saves anything newer.
@@ -59,8 +75,8 @@ async function saveNow(doc) {
   // Each write takes the text as it is at that moment, which becomes the saved version.
   let written;
   const write = (expected) => {
-    written = stateOf(doc);
-    return invoke('doc_write', { rel: doc.path, text: toDisk(written), format: doc.format, expected });
+    written = contentToWrite(doc);
+    return invoke('doc_write', { rel: doc.path, text: written.text, format: doc.format, expected });
   };
   try {
     let result = await write(doc.missing ? null : doc.stamp);
@@ -80,7 +96,7 @@ async function saveNow(doc) {
       result = await write(null);
     }
     doc.stamp = stampOf(result);
-    doc.saved = written.doc;
+    written.saved();
     doc.missing = false;
     doc.banner = null;
     refreshDirty(doc);
@@ -119,7 +135,7 @@ export function minimalChange(before, after) {
  * is being read, the disk version is offered in the banner instead.
  */
 export async function reload(doc) {
-  const before = stateOf(doc).doc;
+  const before = versionOf(doc);
   const saves = doc.saves;
   doc.reloading = true;
   let file;
@@ -134,8 +150,16 @@ export async function reload(doc) {
   // A save started meanwhile wrote the student's text; the next check compares with that.
   if (doc.saves !== saves) return;
   if (file.kind === 'missing') return fileGone(doc);
-  if (!stateOf(doc).doc.eq(before)) return showChanged(doc, file.mtime == null ? null : stampOf(file));
+  if (!sameVersion(doc, before)) return showChanged(doc, file.mtime == null ? null : stampOf(file));
   if (file.kind !== 'text') return becomeNotice(doc, file);
+  if (doc.kind === 'custom') {
+    // The editor takes the disk version as its saved one.
+    const notice = doc.custom.load(file.text);
+    if (notice) return becomeNotice(doc, notice);
+    Object.assign(doc, { stamp: stampOf(file), format: file.format, missing: false, banner: null });
+    refreshDirty(doc);
+    return renderChrome();
+  }
   const { text, endings } = fromDisk(file.text, file.format);
   const current = before.toString();
   updateDoc(doc, { changes: current === text ? [] : minimalChange(current, text), effects: replaceEndings(endings), userEvent: 'reload' });
@@ -161,8 +185,7 @@ export async function checkDisk(paths) {
   checking = true;
   try {
     const docs = [...session.docs.values()].filter(
-      (doc) =>
-        (doc.kind === 'text' || doc.kind === 'view') && !doc.saving && !doc.reloading && (!paths || paths.some((p) => p === '' || isWithin(doc.path, p))),
+      (doc) => (isEditable(doc) || doc.kind === 'view') && !doc.saving && !doc.reloading && (!paths || paths.some((p) => p === '' || isWithin(doc.path, p))),
     );
     if (!docs.length) return;
     const asked = docs.map((doc) => ({ path: doc.path, saves: doc.saves }));

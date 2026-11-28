@@ -1,6 +1,6 @@
 // The CodeMirror configuration every open file gets, and the editor's key bindings.
 
-import { Compartment, EditorState } from '@codemirror/state';
+import { Compartment, EditorState, Prec } from '@codemirror/state';
 import {
   EditorView,
   crosshairCursor,
@@ -20,7 +20,7 @@ import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/sea
 import { fileExtensionSlot, fileExtensions } from './extensions.js';
 import { languageSupport } from './languages.js';
 import { lineEndingsFor } from './line-endings.js';
-import { currentThemeMode, editorTheme, themeMode } from './theme.js';
+import { currentThemeMode, editorTheme, isStale, themeMode } from './theme.js';
 import { createSearchPanel, openReplace } from './search-panel.js';
 import { goToLinePanel, openGoToLine } from './go-to-line.js';
 import { closeNotes, moveToNote, notesFor } from './notes.js';
@@ -49,6 +49,54 @@ const editorKeymap = [
   ...completionKeymap,
   indentWithTab,
 ];
+
+// A notebook cell's keys: the editor's own editing keys, without what belongs to a whole file
+// (find, go to line, notes, folding, the selection actions).
+const cellKeymap = [
+  ...closeBracketsKeymap,
+  ...defaultKeymap.filter((binding) => binding.key !== 'Shift-Mod-k'),
+  ...historyKeymap,
+  ...completionKeymap,
+  indentWithTab,
+];
+
+/**
+ * A state for a code or Markdown cell in a notebook: the same highlighting, indentation, theme
+ * and editing keys as a file of that `language` ('python', 'markdown' or 'text'). `keys` (a CodeMirror
+ * keymap) come first, so the notebook can take Shift+Enter and the like; `onUpdate(update)`
+ * runs after every change.
+ */
+export function createCellState(text, { language, keys = [], onUpdate }) {
+  return EditorState.create({
+    doc: text,
+    extensions: [
+      lineNumbers(),
+      highlightSpecialChars(),
+      history(),
+      drawSelection(),
+      dropCursor(),
+      EditorState.allowMultipleSelections.of(true),
+      indentOnInput(),
+      bracketMatching(),
+      closeBrackets(),
+      autocompletion(),
+      rectangularSelection(),
+      crosshairCursor(),
+      highlightSelectionMatches(),
+      Prec.highest(keymap.of(keys)),
+      keymap.of(cellKeymap),
+      languageSupport({ python: 'cell.py', markdown: 'cell.md' }[language] || 'cell.txt', text),
+      themeMode.of(currentThemeMode()),
+      editorTheme,
+      EditorView.updateListener.of(onUpdate),
+    ],
+  });
+}
+
+/** Brings a cell's view up to date with the colour theme, after theme:changed. */
+export function refreshCellTheme(view) {
+  if (isStale(view.state)) view.dispatch({ effects: themeMode.reconfigure(currentThemeMode()) });
+}
 
 /**
  * A fresh editor state for the file at `doc.path` (read again whenever it is needed, since a

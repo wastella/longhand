@@ -17,7 +17,7 @@ import { isConnected, setupBox, showSetup } from './setup.js';
 export { tutorRequest, prepareTutor, listThreads, loadThread, usageRecord } from './engine.js';
 export { ask } from './conversation.js';
 export { renderAnswer } from './markdown.js';
-// For other Markdown shown in the app (the handout, viewer/): the same math and code colours.
+// For notebooks' Markdown cells and the handout (viewer/), so math and Python look as they do in answers.
 export { drawFormulas, mathExtension } from './math.js';
 export { highlightBlocks } from './highlight.js';
 export { hideCodeAcross } from './hidden-code.js';
