@@ -17,7 +17,6 @@ effects, and a web interface in the system webview that owns everything on scree
 │  prefs.rs      app settings, recent folders, layout (app data directory)           │
 │  files.rs      file commands, in_workspace, quick open, find in files, watching    │
 │  viewer.rs     the bytes of PDFs and pictures for the viewer                       │
-│  clone.rs      Clone Repository: the student's own `git clone`                     │
 │  menu.rs       the native menu; item ids become `menu` events                      │
 │  system.rs     confirm dialog, opening links, window theme, self-test result       │
 │  term.rs       up to four login shells on pseudo-terminals                         │
@@ -138,9 +137,8 @@ const { status, text, error } = await done; // status: 'done' | 'cancelled' | 'e
   `message` is `{ revealed: new Set(), streaming }`.
 - **Every request is logged** as `kind: "ask"` in `.longhand/log.jsonl`, with `about` and
   `requestKind` (`tutor::log_ask`; `log_event` never lets a detail replace an entry's `kind`).
-  `usageRecord()` returns the folder's use by day. The Record view and the title bar's counts
-  both read the log through `tutor/record.rs`, so they cannot disagree; clicking the title bar's
-  count opens the Record (the `show-record` command). Entries from older versions (`about:
+  `usageRecord()` returns the folder's use by day. The Record view reads the log through
+  `tutor/record.rs`; Tutor > Show or Hide Record opens it (the `show-record` command). Entries from older versions (`about:
 "hint"`, a `rung`) are still counted, under their own label.
 - **Speed.** The CLI takes about 0.2–0.5 s to start and the first token follows about 0.5–1 s
   later on haiku. `prepareTutor('lookup')` starts the CLI ahead of a lookup (the lookup bar does
@@ -706,31 +704,7 @@ and the title bar's book button show and hide it. The pane follows its file: a n
 shown, a deleted one says so, and a rename in the tree keeps it chosen (`moveHandout`). Which file it shows, whether it is open and its width are kept per folder
 in the same local storage, so `shell/layout.js` leaves the handout out of the saved layout and
 the viewer applies them with `setPanel('handout', { open, size })`; the splitter reports sizes as
-`panel:resized`. With the handout and the tutor both shown the editor keeps 480px and the handout
-gives up width first, down to its 300px minimum; only when that is not enough does the one shown
-less recently fold. At 1440 pixels the files, the code, the handout and the tutor all fit; at
-1280 the tutor folds while the handout is open.
-
-## Clone Repository
-
-File > Clone Repository… and the welcome screen open a sheet (`shell/clone.js`) for an address, a
-folder name (from the address) and a location (the home folder, or the last one used). The
-backend (`clone.rs`, `clone_start({ id, url, parent, name })`) checks the address again: only
-`https://`, `ssh://` and `user@host:path`, nothing starting with `-`, no `::` (transport helpers
-such as `ext::` run commands), no whitespace. The clone is tracked from its first moment, so
-`clone_cancel({ id })` works while git is still being looked for (a Cancel that arrives before
-the clone does is kept). It makes the destination folder itself, refusing one that exists, so a
-failure removes only what it made. It runs the student's git (from the usual places, or through
-a login shell only when it is not there) as
-`git -c protocol.allow=never -c protocol.https.allow=always -c protocol.ssh.allow=always clone
---progress -- <url> <dest>`, never through a shell, with `GIT_TERMINAL_PROMPT=0` and
-`SSH_ASKPASS_REQUIRE=never` so it cannot wait for a password nobody can type, in a session of
-its own (`setsid`: no controlling terminal, and a process group Cancel stops with its helpers). Progress arrives as `clone:progress` (`{ id, stage, percent }`). A failure is
-`{ code, message }` with `code` one of `invalid-url`, `invalid-name`, `location`, `exists`,
-`git-missing`, `auth`, `not-found`, `offline`, `host-key`, `cancelled` or `failed`, and a sentence
-saying what to do. On success the interface opens the folder through `openFolder`. Closing the
-sheet cancels its clone; another sheet taking its place (Settings) does not, and the clone then
-reports its end in a notification with an Open button instead of opening the folder.
+`panel:resized`. It folds like the other side panels when the window is too narrow.
 
 ## App settings
 
@@ -766,7 +740,7 @@ committed by accident; the History and Record views say where it is and how to d
 ## Testing
 
 - `cargo test` covers path safety, settings, the log and pytest results (including a real
-  pytest run when `python3` has pytest), clones local bare repositories with the real git, and
+  pytest run when `python3` has pytest), and
   runs the notebook helper against a real ipykernel when one loads
   (`$LONGHAND_TEST_KERNEL_PYTHON`, or `python3`); each test sits next to the code it covers.
 - `npm run test:ui` runs `tests/ui/<area>.test.mjs` with `node --test`, against the built

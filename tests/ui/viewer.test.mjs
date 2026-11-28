@@ -416,20 +416,18 @@ uiTest(
   { views: { 'docs/notes.pdf': { pdf: ['First draft'] }, 'figures/plot.png': { png: true } } },
 );
 
-uiTest('beside the handout at 1440 pixels the tutor stays, and at 1280 it folds so the code keeps its room', async (page) => {
+uiTest('the handout is a side panel like the others: all fit at 1440 pixels, and the tutor folds first in a narrow window', async (page) => {
   await openInTree(page, 'stats/running.py');
   await menu(page, 'toggle-handout');
   await page.waitForSelector('#handout .md-doc');
   assert.deepEqual([await isHidden(page, '#files'), await isHidden(page, '#handout'), await isHidden(page, '#tutor')], [false, false, false]);
-  assert.ok((await page.$eval('#editor', (n) => n.offsetWidth)) >= 480);
+  assert.ok((await page.$eval('#editor', (n) => n.offsetWidth)) >= 360);
   assert.ok((await page.$eval('#handout', (n) => n.offsetWidth)) >= 300);
 
-  await page.setViewport({ width: 1280, height: 800 });
+  await page.setViewport({ width: 1000, height: 800 });
   await page.waitForFunction(() => document.querySelector('#tutor').hidden);
   assert.equal(await isHidden(page, '#handout'), false);
-  assert.ok((await page.$eval('#editor', (n) => n.offsetWidth)) >= 480);
-  await menu(page, 'toggle-tutor');
-  assert.deepEqual([await isHidden(page, '#tutor'), await isHidden(page, '#handout')], [false, true], 'the panel asked for last stays');
+  assert.ok((await page.$eval('#editor', (n) => n.offsetWidth)) >= 360);
   await page.setViewport({ width: 1920, height: 1080 });
   await page.waitForFunction(() => !document.querySelector('#tutor').hidden && !document.querySelector('#handout').hidden);
 });

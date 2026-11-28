@@ -1,12 +1,10 @@
 // Keyboard shortcuts as people read them. Shortcuts are written the way menu.rs gives them to
-// Tauri ("CmdOrCtrl+Shift+F") and drawn here: "⇧⌘F" on a Mac, "Ctrl+Shift+F" elsewhere.
+// Tauri ("CmdOrCtrl+Shift+F") and drawn here with the Mac's symbols: "⇧⌘F".
 
 import { h } from '../dom.js';
 
-const isMac = /Mac/.test(navigator.platform);
-
 // macOS orders modifier symbols Control, Option, Shift, Command.
-const MAC_MODIFIERS = [
+const MODIFIERS = [
   ['ctrl', '⌃'],
   ['alt', '⌥'],
   ['shift', '⇧'],
@@ -21,7 +19,7 @@ function parse(keys) {
   const mods = new Set(
     parts.map((mod) => {
       const lower = mod.toLowerCase();
-      if (lower === 'cmdorctrl' || lower === 'commandorcontrol') return isMac ? 'cmd' : 'ctrl';
+      if (lower === 'cmdorctrl' || lower === 'commandorcontrol') return 'cmd';
       if (lower === 'command' || lower === 'super' || lower === 'meta') return 'cmd';
       if (lower === 'control') return 'ctrl';
       if (lower === 'option') return 'alt';
@@ -31,15 +29,14 @@ function parse(keys) {
   return { mods, key: KEY_NAMES[key.toLowerCase()] || (key.length === 1 ? key.toUpperCase() : key) };
 }
 
-/** "CmdOrCtrl+Shift+F" as the platform writes it: "⇧⌘F" on a Mac, "Ctrl+Shift+F" elsewhere. */
+/** "CmdOrCtrl+Shift+F" as a Mac writes it: "⇧⌘F". */
 export function formatKeys(keys) {
   const { mods, key } = parse(keys);
-  if (isMac) {
-    const symbols = MAC_MODIFIERS.filter(([mod]) => mods.has(mod)).map(([, symbol]) => symbol);
-    return symbols.join('') + key;
-  }
-  const names = { ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', cmd: 'Win' };
-  return [...['ctrl', 'alt', 'shift', 'cmd'].filter((mod) => mods.has(mod)).map((mod) => names[mod]), key].join('+');
+  return (
+    MODIFIERS.filter(([mod]) => mods.has(mod))
+      .map(([, symbol]) => symbol)
+      .join('') + key
+  );
 }
 
 /** A key cap showing `keys` (see .kbd in base.css). */

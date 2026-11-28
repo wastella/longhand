@@ -1,22 +1,13 @@
 // The welcome screen, shown over the editor whenever no file is open. Before a folder is open it
 // says what Longhand is and offers Open Folder and the recent folders; once one is open it points
-// to the files and a few shortcuts worth knowing.
+// to the files.
 
 import { h } from '../dom.js';
 import { on, state } from '../state.js';
-import { openCloneSheet } from './clone.js';
 import { chooseFolder, forgetRecent, getRecents, onRecentsChanged, openFolder, refreshRecents } from './folders.js';
 import { icon } from './icons.js';
-import { kbd } from './keys.js';
-import { keysFor } from './shortcuts.js';
 
 const RECENTS_SHOWN = 6;
-const HINTS = [
-  ['find-in-files', 'Find in files'],
-  ['toggle-bottom', 'Terminal and tests'],
-  ['focus-tutor', 'Ask the tutor'],
-  ['settings', 'Settings'],
-];
 
 let region;
 
@@ -63,10 +54,8 @@ function recentRow(recent) {
   );
 }
 
-function recentList(exclude) {
-  const shown = getRecents()
-    .filter((recent) => recent.path !== exclude)
-    .slice(0, RECENTS_SHOWN);
+function recentList() {
+  const shown = getRecents().slice(0, RECENTS_SHOWN);
   if (!shown.length) return null;
   return h(
     'section',
@@ -88,7 +77,6 @@ function noFolder() {
       'div',
       { class: 'welcome-actions' },
       h('button', { id: 'open-folder', class: 'button primary large', onclick: chooseFolder }, 'Open Folder…'),
-      h('button', { id: 'clone-repository', class: 'button large', onclick: openCloneSheet }, 'Clone Repository…'),
       h('span', { class: 'dim' }, 'or drop a folder here'),
     ),
     recentList(),
@@ -96,15 +84,7 @@ function noFolder() {
 }
 
 function folderOpen(ws) {
-  const hints = HINTS.filter(([id]) => keysFor(id)).map(([id, label]) =>
-    h('div', { class: 'welcome-hint' }, h('dt', {}, label), h('dd', {}, kbd(keysFor(id)))),
-  );
-  return [
-    h('h1', { class: 'welcome-folder' }, ws.name),
-    h('p', { class: 'welcome-lede' }, 'Pick a file on the left to start writing.'),
-    hints.length && h('dl', { class: 'welcome-hints' }, hints),
-    recentList(ws.path),
-  ];
+  return [h('h1', { class: 'welcome-folder' }, ws.name), h('p', { class: 'welcome-lede' }, 'Pick a file on the left to start writing.')];
 }
 
 /** Draws the screen for the current state: no folder, or a folder with no file open. */
