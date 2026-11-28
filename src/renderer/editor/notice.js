@@ -48,11 +48,13 @@ export function renderBanner(host, doc, actions) {
   );
 }
 
+const isMac = navigator.platform.startsWith('Mac');
+
 /**
  * The notice shown instead of the editor for `doc.notice`: { kind, size?, limit?, message? }, or
  * { kind: 'custom', title, detail } from a custom editor, which offers to open the file as text.
  */
-export function renderFileNotice(host, doc, { onClose, onOpenAsText }) {
+export function renderFileNotice(host, doc, { onClose, onReveal, onOpenAsText }) {
   const name = nameOf(doc.path);
   const { kind, size, limit } = doc.notice;
   const notebook = doc.path.endsWith('.ipynb');
@@ -71,6 +73,7 @@ export function renderFileNotice(host, doc, { onClose, onOpenAsText }) {
           `It is ${formatSize(size)}. Longhand opens text files up to 3 MB so the editor stays responsive. To look inside, try head or less in the terminal.`,
         ],
     notText: [`${name} is not UTF-8 text`, 'Saving it from here could change its contents, so Longhand leaves it alone.'],
+    notFile: [`${name} is not a regular file`, 'It may be a pipe or a device, which could wait forever if Longhand read it.'],
     error: [`${name} could not be opened`, doc.notice.message],
     custom: [doc.notice.title, doc.notice.detail],
   }[kind];
@@ -82,6 +85,7 @@ export function renderFileNotice(host, doc, { onClose, onOpenAsText }) {
       'div',
       { class: 'notice-actions' },
       kind === 'custom' && h('button', { type: 'button', onclick: onOpenAsText }, 'Open as Text'),
+      kind !== 'custom' && h('button', { type: 'button', onclick: onReveal }, isMac ? 'Reveal in Finder' : 'Show in File Manager'),
       h('button', { type: 'button', onclick: onClose }, 'Close tab'),
     ),
   );

@@ -5,6 +5,7 @@
 // sizes them and colours them with the text colour. Add one by copying its shapes from Lucide.
 
 export const iconShapes = {
+  minus: [['path', { d: 'M5 12h14' }]],
   plus: [
     ['path', { d: 'M5 12h14' }],
     ['path', { d: 'M12 5v14' }],
@@ -12,6 +13,10 @@ export const iconShapes = {
   x: [
     ['path', { d: 'M18 6 6 18' }],
     ['path', { d: 'm6 6 12 12' }],
+  ],
+  'book-open': [
+    ['path', { d: 'M12 7v14' }],
+    ['path', { d: 'M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z' }],
   ],
   'chevron-left': [['path', { d: 'm15 18-6-6 6-6' }]],
   'chevron-right': [['path', { d: 'm9 18 6-6-6-6' }]],

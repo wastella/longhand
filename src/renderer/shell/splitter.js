@@ -14,7 +14,7 @@ export function setupSplitter(element, { id, size, resize, limits }) {
   const vertical = id === 'bottom';
   // Panels right of or below their splitter grow as it moves left or up.
   const sign = id === 'files' ? 1 : -1;
-  const label = { files: 'Resize files', bottom: 'Resize terminal and tests', tutor: 'Resize tutor' }[id];
+  const label = { files: 'Resize files', bottom: 'Resize terminal and tests', handout: 'Resize handout', tutor: 'Resize tutor' }[id];
   Object.assign(element, { tabIndex: 0, role: 'separator' });
   element.setAttribute('aria-orientation', vertical ? 'horizontal' : 'vertical');
   element.setAttribute('aria-label', label);

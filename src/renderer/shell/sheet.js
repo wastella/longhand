@@ -21,12 +21,13 @@ function isolate(keep) {
 
 /**
  * Opens a sheet titled `title` around `body` (nodes), with an optional `footer`. `className`
- * is added to the sheet; `onClose` runs once it closes. Returns { close, element }.
+ * is added to the sheet; `onClose(replaced)` runs once it closes, `replaced` true when another
+ * sheet took its place rather than the student closing it. Returns { close, element }.
  * The sheet itself takes focus, so no control shows a focus ring until Tab reaches it; focus
  * returns where it was on close.
  */
 export function openSheet({ title, body, footer, className = '', onClose }) {
-  current?.close();
+  current?.close(true);
   const returnFocus = document.activeElement;
   const titleId = `sheet-title-${++nextId}`;
   const closeButton = h('button', { class: 'button ghost icon-button', 'aria-label': 'Close', 'data-tip': 'Close', onclick: () => close() }, icon('x'));
@@ -57,14 +58,14 @@ export function openSheet({ title, body, footer, className = '', onClose }) {
   }
 
   const restore = isolate(backdrop);
-  function close() {
+  function close(replaced = false) {
     if (current?.element !== element) return;
     current = null;
     backdrop.remove();
     restore();
     document.removeEventListener('keydown', onKey, true);
     if (returnFocus?.isConnected) returnFocus.focus();
-    onClose?.();
+    onClose?.(replaced === true);
   }
 
   document.addEventListener('keydown', onKey, true);

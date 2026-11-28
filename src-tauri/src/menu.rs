@@ -76,6 +76,7 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
     let file = SubmenuBuilder::new(app, "File")
         // Shell
         .item(&item("open-folder", "Open Folder…", "CmdOrCtrl+O")?)
+        .item(&plain("clone-repository", "Clone Repository…")?)
         // Files
         .item(&item("new-file", "New File…", "CmdOrCtrl+N")?)
         .item(&item("quick-open", "Go to File…", "CmdOrCtrl+P")?)
@@ -118,6 +119,8 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
         .item(&item("toggle-files", "Show or Hide Files", "CmdOrCtrl+B")?)
         .item(&item("toggle-bottom", "Show or Hide Terminal and Tests", "CmdOrCtrl+J")?)
         .item(&item("toggle-tutor", "Show or Hide Tutor", "CmdOrCtrl+L")?)
+        // Viewer: the handout pane. ⇧⌘H, which no CodeMirror keymap the editor uses binds.
+        .item(&item("toggle-handout", "Show or Hide Handout", "CmdOrCtrl+Shift+H")?)
         .separator()
         // Shell: focus
         .item(&item("focus-files", "Go to Files", "CmdOrCtrl+1")?)

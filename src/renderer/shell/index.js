@@ -2,6 +2,7 @@
 // notifications and the shared components. Other areas import from this file only.
 
 import { mountBottomPanel } from './bottom-panel.js';
+import { mountClone } from './clone.js';
 import { mountFocus } from './focus.js';
 import { folderPending, mountFolders, openFolder, refreshRecents, setRecents } from './folders.js';
 import { mountLayout, restoreLayout } from './layout.js';
@@ -18,7 +19,7 @@ import { mountTooltips } from './tooltip.js';
 import { mountWelcome, renderWelcome } from './welcome.js';
 
 export { registerCommand, runCommand } from './commands.js';
-export { showPanel, isPanelShown } from './layout.js';
+export { showPanel, hidePanel, setPanel, isPanelShown } from './layout.js';
 export { addBottomPane, showBottomPane } from './bottom-panel.js';
 export { addStatusItem, showStatus } from './status-bar.js';
 export { confirmLeave, registerLeaveGuard } from './leave-guards.js';
@@ -41,6 +42,7 @@ export function mount({ titleBar, welcome, bottom, status }) {
   mountLayout();
   mountTitleBar(titleBar);
   mountFolders();
+  mountClone();
   mountWelcome(welcome);
   mountBottomPanel(bottom);
   mountStatusBar(status);

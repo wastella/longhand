@@ -282,7 +282,7 @@ uiTest(
     await page.click('#tree .node[data-path="data/latin1.txt"]');
     await page.waitForFunction(() => /not UTF-8 text/.test(document.querySelector('.editor-notice').textContent));
     assert.equal(await count(page, '#tabs .tab.notice'), 3);
-    await page.click('.editor-notice button');
+    await page.click('.editor-notice .notice-actions button:last-child');
     assert.equal(await count(page, '#tabs .tab'), 2);
   },
   {

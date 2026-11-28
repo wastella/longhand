@@ -2,6 +2,13 @@
 
 Longhand includes material from the projects below, under their own licences.
 
+## PDF.js
+
+PDFs are drawn with [PDF.js](https://mozilla.github.io/pdf.js/) (`pdfjs-dist`), copied unchanged
+into `dist/pdfjs/` by `build.mjs` with its licence header in place. Copyright Mozilla Foundation,
+licensed under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). The text
+layer rules in `src/renderer/styles/viewer.css` are adapted from its `pdf_viewer.css`.
+
 ## Lucide
 
 The icons in `src/renderer/shell/icons.js` are copied from [Lucide](https://lucide.dev).

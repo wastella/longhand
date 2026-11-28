@@ -20,6 +20,7 @@ const auth = h('span', { id: 'auth', 'data-tip': 'Tutor connection' });
 
 const toggles = {
   files: ['panel-left', 'Files', 'toggle-files'],
+  handout: ['book-open', 'Handout', 'toggle-handout'],
   bottom: ['panel-bottom', 'Terminal and tests', 'toggle-bottom'],
   tutor: ['panel-right', 'Tutor', 'toggle-tutor'],
 };
@@ -75,7 +76,14 @@ function showAuth(status) {
 }
 
 export function mountTitleBar(region) {
-  region.append(toggleButtons.files, name, spacer(), usage, auth, h('span', { class: 'titlebar-toggles' }, toggleButtons.bottom, toggleButtons.tutor));
+  region.append(
+    toggleButtons.files,
+    name,
+    spacer(),
+    usage,
+    auth,
+    h('span', { class: 'titlebar-toggles' }, toggleButtons.handout, toggleButtons.bottom, toggleButtons.tutor),
+  );
   // The panels, and so their toggles, appear once a folder is open.
   for (const id of Object.keys(toggles)) {
     showToggle(id, false);

@@ -36,3 +36,9 @@ Nothing has been released yet. This is what the first release will contain.
   run something. Outputs include colours, progress bars, tables, plots and math; nothing in a
   notebook can run script or load from the web. Saving writes the file exactly as Jupyter would.
   When ipykernel is missing, the notebook shows the one command that installs it
+- Handout pane beside the code (⇧⌘H) for an assignment's PDF or Markdown handout: the likely
+  handout is offered when a folder opens, any PDF or Markdown file can be chosen with Open as
+  Handout, and the choice, width and page are remembered per folder
+- PDFs and pictures open read-only in a tab, and files Longhand cannot show say so calmly with
+  Reveal in Finder
+- Clone Repository… on the welcome screen and in the File menu, using your own git

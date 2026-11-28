@@ -17,6 +17,7 @@ import {
   isEditable,
   isWithin,
   refreshDirty,
+  refreshView,
   renderChrome,
   sameVersion,
   session,
@@ -184,7 +185,7 @@ export async function checkDisk(paths) {
   checking = true;
   try {
     const docs = [...session.docs.values()].filter(
-      (doc) => isEditable(doc) && !doc.saving && !doc.reloading && (!paths || paths.some((p) => p === '' || isWithin(doc.path, p))),
+      (doc) => (isEditable(doc) || doc.kind === 'view') && !doc.saving && !doc.reloading && (!paths || paths.some((p) => p === '' || isWithin(doc.path, p))),
     );
     if (!docs.length) return;
     const asked = docs.map((doc) => ({ path: doc.path, saves: doc.saves }));
@@ -208,9 +209,21 @@ export async function checkDisk(paths) {
     for (const [i, doc] of docs.entries()) {
       const onDisk = stats[i];
       // Skip a file renamed, closed, saved or reloading while its version was looked up.
-      if (doc.path !== asked[i].path || !isOpen(doc) || doc.saving || doc.reloading || doc.saves !== asked[i].saves || onDisk.error) continue;
+      if (
+        doc.path !== asked[i].path ||
+        session.docs.get(doc.path) !== doc ||
+        doc.kind === 'notice' ||
+        doc.saving ||
+        doc.reloading ||
+        doc.saves !== asked[i].saves ||
+        onDisk.error
+      )
+        continue;
       if (onDisk.missing) {
         if (!doc.missing) await fileGone(doc);
+      } else if (doc.kind === 'view') {
+        // A PDF or picture is never edited here, so a new version is simply shown.
+        if (differs(onDisk, doc.stamp)) refreshView(doc, onDisk);
       } else if (doc.missing || differs(onDisk, doc.stamp)) {
         // This change is already on the banner.
         if (doc.banner?.kind === 'changed' && !(doc.banner.stamp && differs(onDisk, doc.banner.stamp))) continue;

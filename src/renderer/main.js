@@ -12,6 +12,7 @@ import * as tutor from './tutor/index.js';
 import * as feedback from './feedback/index.js';
 import * as language from './language/index.js';
 import * as notebook from './notebook/index.js';
+import * as viewer from './viewer/index.js';
 import { runSmoke } from './smoke.js';
 
 const region = (id) => document.getElementById(id);
@@ -28,6 +29,7 @@ async function main() {
   editor.mount(region('editor'));
   notebook.mount();
   files.mount(region('files'));
+  viewer.mount(region('handout'));
   // The terminal mounts before the tests so its tab comes first in the bottom panel.
   terminal.mount();
   tests.mount();

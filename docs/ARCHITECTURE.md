@@ -6,7 +6,7 @@ effects, and a web interface in the system webview that owns everything on scree
 ```
 ┌───────────────────────────── interface (src/renderer) ─────────────────────────────┐
 │  shell/  layout, panels, title and status bars, welcome, text size, commands       │
-│  editor/ · files/ · terminal/ · tests/ · tutor/ · language/   one directory each   │
+│  editor/ · files/ · viewer/ · terminal/ · tests/ · tutor/ · language/   one each   │
 │  state.js  shared state + event bus          backend.js  the only door to Rust     │
 └───────────────────┬────────────────────────────────────────────▲───────────────────┘
             commands (invoke)                               events (emit)
@@ -16,6 +16,8 @@ effects, and a web interface in the system webview that owns everything on scree
 │  workspace.rs  the open folder, per-folder config, usage log                       │
 │  prefs.rs      app settings, recent folders, layout (app data directory)           │
 │  files.rs      file commands, in_workspace, quick open, find in files, watching    │
+│  viewer.rs     the bytes of PDFs and pictures for the viewer                       │
+│  clone.rs      Clone Repository: the student's own `git clone`                     │
 │  menu.rs       the native menu; item ids become `menu` events                      │
 │  system.rs     confirm dialog, opening links, window theme, self-test result       │
 │  term.rs       up to four login shells on pseudo-terminals                         │
@@ -28,7 +30,7 @@ effects, and a web interface in the system webview that owns everything on scree
 ## The interface
 
 `index.html` holds only the root regions: `#titlebar`, `#files`, `#editor`, `#welcome`,
-`#bottom`, `#tutor` and `#status`. `main.js` mounts each area into its region, then asks the
+`#bottom`, `#handout`, `#tutor` and `#status`. `main.js` mounts each area into its region, then asks the
 backend for start-up state. Each area builds its own markup in its `mount()`.
 
 | Area        | Owns                                                                                                                                                                                             |
@@ -36,6 +38,7 @@ backend for start-up state. Each area builds its own markup in its `mount()`.
 | `shell/`    | Layout and splitters, panel toggles, bottom panel tabs, title and status bars, welcome and folders, settings, theme, notifications, focus, shortcuts, the command registry and shared components |
 | `editor/`   | CodeMirror setup and languages, tabs, saving, reloading files changed on disk, the unsaved-changes quit prompt                                                                                   |
 | `files/`    | File tree, its context menu and naming field, quick open, find in files, watching the folder                                                                                                     |
+| `viewer/`   | Read-only views (PDFs, pictures, rendered Markdown) in editor tabs, and the handout pane                                                                                                         |
 | `terminal/` | xterm.js and the shell session                                                                                                                                                                   |
 | `tests/`    | Running pytest and showing results                                                                                                                                                               |
 | `language/` | Language servers: starting them, keeping them in step with the open files, problems, definitions and the status-bar item                                                                         |
@@ -44,8 +47,9 @@ backend for start-up state. Each area builds its own markup in its `mount()`.
 How areas talk to each other:
 
 - **Events** (`on`, `once`, `emit` in `state.js`) say what happened: `workspace:opened`,
-  `editor:active`, `editor:cursor`, `editor:opened`, `editor:changed`, `tests:finished`, `tutor:finished`, `usage:changed`,
-  `auth:changed`, `panel:toggled`, `text-size:changed`, `theme:changed`, `settings:changed`. The
+  `editor:active`, `editor:cursor`, `editor:opened`, `editor:changed`, `tests:finished`,
+  `tutor:finished`, `usage:changed`, `auth:changed`, `panel:toggled`, `panel:resized`,
+  `text-size:changed`, `theme:changed`, `settings:changed`. The
   list with payloads is at the top of `state.js`.
 - **Commands** (`registerCommand`, `runCommand` from `shell/`) are named actions. Menu items in
   `menu.rs` send their id as a `menu` event and `main.js` runs the command with that id, so an
@@ -73,8 +77,9 @@ components; then one file per area. `build.mjs` joins them into `dist/styles.css
 - **The user's login, never a key.** `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` are removed
   from the tutor's environment so a stray key cannot be billed by accident.
 - **The window shows only the app.** Navigation away from the bundled page is refused, the content
-  security policy allows no remote or inline script, and tutor answers are sanitized before they
-  are rendered (`tutor/markdown.js`). Links open in the browser.
+  security policy allows no remote or inline script, and tutor answers and Markdown from the
+  folder are sanitized before they are rendered (`tutor/markdown.js`, `viewer/markdown.js`).
+  Links open in the browser.
 
 ## The tutor engine
 
@@ -644,6 +649,89 @@ The request kinds `review` and `failure` have their own instructions in `tutor/p
 Record view labels requests by `about` (`review`, `review-reply`, `explain`, `failure`,
 `checkpoint`). `evals/` has cases for both kinds.
 
+## The viewer and the handout
+
+`src/renderer/viewer/` shows files read-only. Clicking a PDF or a picture (png, jpg, gif, webp,
+svg) in the tree opens a `view` tab: the editor asks `viewKind(path)` and, for those, keeps a doc
+of kind `view` and hands `#file-view` (over the code) to `showFile(host, path)`. A view tab
+follows its file like a text tab: `checkDisk` compares it with the disk, shows a new version and
+closes the tab of a deleted file, and a rename that changes the kind (notes.pdf to notes.txt)
+reopens the tab as the new kind. A Markdown file opens as text; to read it rendered, the student
+chooses Open as Handout in the tree's menu and reads it beside its source.
+
+- **Bytes** come from `view_read(rel)` (`viewer.rs`), raw (a `tauri::ipc::Response`, not JSON),
+  inside the open folder. It reads only PDFs (up to 200 MB) and pictures (up to 40 MB), and
+  refuses anything else, and anything that is not a regular file, with `{ code, message, size? }`
+  (`missing`, `tooLarge`, `notFile`, `failed`). It opens the file once, without blocking, and
+  checks the open handle (`fstat`), reading at most one byte past the limit, so nothing swapped
+  in after a check is read instead. `doc_read` likewise answers `notFile` for a pipe
+  or a device instead of reading it forever.
+- **Pictures** become `data:` URLs typed by their extension, so an SVG is only ever an image (no
+  script, nothing loaded). The CSP already allows `data:` images.
+- **PDFs** are drawn by PDF.js (`pdfjs-dist`), copied to `dist/pdfjs/` and imported the first
+  time a PDF opens, with its worker from the same folder. It gets the bytes, never a URL, and
+  runs with eval, WebAssembly and XFA off, so it needs no change to the CSP (rare JPEG 2000 and
+  JBIG2 images, which need its WebAssembly decoders, are left blank). The pages are laid out at
+  once and drawn when they come near the view; far ones give their canvas back. Each drawn page
+  has PDF.js's text layer, so text can be selected and copied. A page's canvas, and any picture
+  inside the PDF, is held to 16 million pixels (a page that would need more is drawn at a lower
+  resolution), and fitting a tiny page to the width zooms at most 400%. WKWebView can show a PDF itself,
+  but gives the page no way to know or set the page, so the page could not be remembered or
+  controlled.
+- **Markdown** (`viewer/markdown.js`) is untrusted: a handout comes from the internet. Marked
+  (GFM, with the tutor's math extension) is sanitized by DOMPurify with no styles, forms, frames,
+  image maps, SVG or MathML, no URL attributes such as `background`, and no data attributes but
+  the math placeholders (the shared policy is `purify.js`, which tutor answers use too). An
+  element keeps only the classes our own rendering gives it (`language-*` on code, `math`), so a
+  document cannot borrow the app's (a `sheet-backdrop` over the window), and `.md-doc` (like
+  `.answer-body`) has `contain: layout paint`, so nothing in it reaches outside its box. Before
+  the nodes join the page, a hook moves every `src`, `href`, `id` and `name` into data
+  attributes, so nothing loads, points anywhere or shadows an element of the app. A link or
+  picture whose path has a malformed `%` escape is inert. GFM task boxes are drawn as ☐ and ☑. Then pictures inside the folder are read
+  through `view_read` (others are named, "not loaded"); `#anchor` links scroll to headings
+  (GitHub's slugs) or to the old `id`/`name`; links to files in the folder open them in
+  Longhand; `http(s)` links go to `open_external`; any other link is inert. No link has an
+  `href`, so none can navigate the window. Math and Python code are drawn as in tutor answers.
+- **Places** are remembered per folder in local storage (`viewer/memory.js`): a PDF's page and
+  zoom, a Markdown file's scroll.
+
+The handout pane (`#handout`, between the editor and the tutor) shows one PDF or Markdown file
+beside the code. When a folder opens, `find.js` looks at its top level for a PDF or Markdown file
+whose name says handout, assignment, writeup, spec or instructions (a PDF first), else the
+README. The words must stand alone (hw1_handout.pdf and Assignment1.pdf match, inspect.md does
+not), and extensions are compared in any case. A named match is offered once per folder in a
+notification; the pane never opens by itself. Any PDF or Markdown file can be chosen with Open as
+Handout in the tree's menu. View > Show or Hide Handout (⇧⌘H, which no CodeMirror keymap binds)
+and the title bar's book button show and hide it. The pane follows its file: a new version is
+shown, a deleted one says so, and a rename in the tree keeps it chosen (`moveHandout`). Which file it shows, whether it is open and its width are kept per folder
+in the same local storage, so `shell/layout.js` leaves the handout out of the saved layout and
+the viewer applies them with `setPanel('handout', { open, size })`; the splitter reports sizes as
+`panel:resized`. With the handout and the tutor both shown the editor keeps 480px and the handout
+gives up width first, down to its 300px minimum; only when that is not enough does the one shown
+less recently fold. At 1440 pixels the files, the code, the handout and the tutor all fit; at
+1280 the tutor folds while the handout is open.
+
+## Clone Repository
+
+File > Clone Repository… and the welcome screen open a sheet (`shell/clone.js`) for an address, a
+folder name (from the address) and a location (the home folder, or the last one used). The
+backend (`clone.rs`, `clone_start({ id, url, parent, name })`) checks the address again: only
+`https://`, `ssh://` and `user@host:path`, nothing starting with `-`, no `::` (transport helpers
+such as `ext::` run commands), no whitespace. The clone is tracked from its first moment, so
+`clone_cancel({ id })` works while git is still being looked for (a Cancel that arrives before
+the clone does is kept). It makes the destination folder itself, refusing one that exists, so a
+failure removes only what it made. It runs the student's git (from the usual places, or through
+a login shell only when it is not there) as
+`git -c protocol.allow=never -c protocol.https.allow=always -c protocol.ssh.allow=always clone
+--progress -- <url> <dest>`, never through a shell, with `GIT_TERMINAL_PROMPT=0` and
+`SSH_ASKPASS_REQUIRE=never` so it cannot wait for a password nobody can type, in a session of
+its own (`setsid`: no controlling terminal, and a process group Cancel stops with its helpers). Progress arrives as `clone:progress` (`{ id, stage, percent }`). A failure is
+`{ code, message }` with `code` one of `invalid-url`, `invalid-name`, `location`, `exists`,
+`git-missing`, `auth`, `not-found`, `offline`, `host-key`, `cancelled` or `failed`, and a sentence
+saying what to do. On success the interface opens the folder through `openFolder`. Closing the
+sheet cancels its clone; another sheet taking its place (Settings) does not, and the clone then
+reports its end in a notification with an Open button instead of opening the folder.
+
 ## App settings
 
 App-wide data lives in the app data directory, handled in `prefs.rs`: `settings.json` holds the
@@ -678,9 +766,9 @@ committed by accident; the History and Record views say where it is and how to d
 ## Testing
 
 - `cargo test` covers path safety, settings, the log and pytest results (including a real
-  pytest run when `python3` has pytest), and the notebook helper against a real ipykernel when
-  one loads (`$LONGHAND_TEST_KERNEL_PYTHON`, or `python3`); each test sits next to the code it
-  covers.
+  pytest run when `python3` has pytest), clones local bare repositories with the real git, and
+  runs the notebook helper against a real ipykernel when one loads
+  (`$LONGHAND_TEST_KERNEL_PYTHON`, or `python3`); each test sits next to the code it covers.
 - `npm run test:ui` runs `tests/ui/<area>.test.mjs` with `node --test`, against the built
   interface in headless Chrome. `tests/mock/` implements the same commands and events as the
   Rust backend, one file per area, over a shared fixture folder (`fixture.js`).
