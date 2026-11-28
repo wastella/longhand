@@ -47,7 +47,7 @@ How areas talk to each other:
 
 - **Events** (`on`, `once`, `emit` in `state.js`) say what happened: `workspace:opened`,
   `editor:active`, `editor:cursor`, `editor:opened`, `editor:changed`, `tests:finished`,
-  `tutor:finished`, `usage:changed`, `auth:changed`, `panel:toggled`, `panel:resized`,
+  `tutor:finished`, `auth:changed`, `panel:toggled`, `panel:resized`,
   `text-size:changed`, `theme:changed`, `settings:changed`. The
   list with payloads is at the top of `state.js`.
 - **Commands** (`registerCommand`, `runCommand` from `shell/`) are named actions. Menu items in

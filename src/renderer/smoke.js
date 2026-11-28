@@ -8,7 +8,7 @@ import { once, state } from './state.js';
 import { activeFile, openFile, save } from './editor/index.js';
 import { runCommand, showBottomPane } from './shell/index.js';
 import { sendToTerminal, terminalSize } from './terminal/index.js';
-import { ask, renderAnswer, tutorRequest } from './tutor/index.js';
+import { ask, renderAnswer, tutorRequest, usageRecord } from './tutor/index.js';
 
 const $ = (selector) => document.querySelector(selector);
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -21,6 +21,12 @@ async function until(check, ms, what) {
     await wait(100);
   }
   throw new Error(`timed out waiting for ${what}`);
+}
+
+/** Today's tutor use from the folder's log: { questions, reveals }. */
+async function usedToday() {
+  const day = (await usageRecord()).days[0];
+  return { questions: Object.values(day?.asks || {}).reduce((a, b) => a + b, 0), reveals: day?.reveals || 0 };
 }
 
 const box = (selector) => {
@@ -92,12 +98,12 @@ async function checkTutor(r) {
     withheld: document.querySelectorAll('.withheld').length,
     hasFence: a.text.includes('```'),
   };
-  r.reliance = $('#reliance').textContent;
+  r.questions = (await usedToday()).questions;
   // A lookup runs with no tools at all and is counted like any other question.
   const lookup = await tutorRequest({ thread: 'lookup-smoke', kind: 'lookup', prompt: 'In one sentence: what does len() return for a Python list?' }).done;
   r.lookup = { status: lookup.status, text: lookup.text.slice(0, 200), error: lookup.error };
   await wait(400);
-  r.relianceAfterLookup = $('#reliance').textContent;
+  r.questionsAfterLookup = (await usedToday()).questions;
 }
 
 async function checkFiles(r) {
@@ -116,7 +122,7 @@ async function checkHiddenCode(r) {
   r.withhold.afterReveal = {
     hidden: probe.querySelectorAll('.withheld').length,
     shownPre: probe.querySelectorAll('pre').length,
-    reliance: $('#reliance').textContent,
+    reveals: (await usedToday()).reveals,
   };
   probe.remove();
 }
@@ -171,9 +177,9 @@ export async function runSmoke(dir) {
         (r.tutor1.type === 'done' &&
           r.tutor1.text.length > 0 &&
           r.tutor2.type === 'done' &&
-          r.reliance.includes('2 questions') &&
+          r.questions === 2 &&
           r.lookup.status === 'done' &&
-          r.relianceAfterLookup.includes('3 questions')));
+          r.questionsAfterLookup === 3));
   } catch (e) {
     r.ok = false;
     r.error = String(e && e.stack ? e.stack : e);

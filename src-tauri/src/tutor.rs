@@ -233,12 +233,6 @@ fn log_ask(ws: &Path, kind: Kind, about: Option<&str>, model: &str, chars: usize
     log_event(ws, "ask", json!({ "about": about, "requestKind": kind.name(), "model": model, "chars": chars }));
 }
 
-/// The title bar's counts for the folder: see `record::summary`.
-pub fn log_summary(ws: &Path) -> Value {
-    let text = std::fs::read_to_string(ws.join(".longhand/log.jsonl")).unwrap_or_default();
-    record::summary(&text, chrono::Local::now().date_naive())
-}
-
 #[derive(Deserialize)]
 pub struct Request {
     /// Chosen by the caller; every event for this request carries it.
@@ -537,13 +531,12 @@ mod tests {
         assert_eq!(text.lines().filter(|l| l.contains(r#""kind":"ask""#)).count(), 5, "{text}");
         assert!(text.contains(r#""requestKind":"lookup""#));
 
-        let summary = log_summary(&ws);
-        assert_eq!(summary["today"], json!({ "ask": 5, "reveal": 1, "tests": 0 }));
         let record = record::from_log(&text);
         let today = &record.days[0].tally;
         let expected = [("explain", 1), ("failure", 1), ("lookup", 1), ("question", 1), ("review", 1)];
         assert_eq!(today.asks, expected.iter().map(|(k, n)| (k.to_string(), *n)).collect());
-        assert_eq!(today.asks.values().sum::<u32>(), 5, "the record's Today is the title bar's");
+        assert_eq!(today.asks.values().sum::<u32>(), 5);
+        assert_eq!(today.reveals, 1);
         std::fs::remove_dir_all(ws).unwrap();
     }
 

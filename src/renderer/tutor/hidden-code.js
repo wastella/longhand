@@ -10,7 +10,7 @@
 
 import { invoke } from '../backend.js';
 import { h } from '../dom.js';
-import { emit, state } from '../state.js';
+import { state } from '../state.js';
 import { formulaTex } from './math.js';
 
 const LINE_LIMIT = { strict: 2, guided: 12 };
@@ -159,7 +159,7 @@ export function hideCodeAcross(nodes, message, rerender, what = '') {
   const reveal = async () => {
     if (message.revealed.size) return;
     message.revealed.add('all');
-    emit('usage:changed', await invoke('log_record', { kind: 'reveal', detail: { lines, policy } }));
+    await invoke('log_record', { kind: 'reveal', detail: { lines, policy } });
     rerender();
   };
   const said = what

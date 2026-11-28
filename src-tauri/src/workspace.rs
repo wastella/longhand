@@ -69,11 +69,6 @@ pub fn log_event(ws: &Path, kind: &str, detail: Value) {
     }
 }
 
-/// The title bar's counts, from the same reader as the tutor's Record view (`tutor/record.rs`).
-fn log_summary_for(ws: &Path) -> Value {
-    tutor::log_summary(ws)
-}
-
 // ---- opening a folder ----
 
 /// Why `dir` cannot be opened as a folder, in words a student can act on.
@@ -105,7 +100,6 @@ fn open_workspace(app: &AppHandle, dir: PathBuf) -> R<()> {
             "name": ws.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
             "config": read_config(&ws),
             "courseRules": tutor::read_course_rules(&ws).map(|r| r.0),
-            "log": log_summary_for(&ws),
         }),
     );
     Ok(())
@@ -161,15 +155,9 @@ pub fn config_set(state: State<AppState>, patch: Value) -> R<Value> {
 }
 
 #[tauri::command]
-pub fn log_record(state: State<AppState>, kind: String, detail: Value) -> R<Value> {
-    let ws = workspace(&state)?;
-    log_event(&ws, &kind, detail);
-    Ok(log_summary_for(&ws))
-}
-
-#[tauri::command]
-pub fn log_summary(state: State<AppState>) -> R<Value> {
-    Ok(log_summary_for(&workspace(&state)?))
+pub fn log_record(state: State<AppState>, kind: String, detail: Value) -> R<()> {
+    log_event(&workspace(&state)?, &kind, detail);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -207,15 +195,15 @@ pub mod tests {
     }
 
     #[test]
-    fn log_counts_questions_reveals_and_test_runs() {
+    fn the_log_keeps_one_line_per_event_and_git_ignores_it() {
         let ws = temp_dir("log");
         log_event(&ws, "ask", json!({ "about": "question" }));
         log_event(&ws, "ask", json!({ "about": "review" }));
         log_event(&ws, "reveal", json!({ "lines": 4 }));
         log_event(&ws, "config", json!({ "policy": "guided" }));
-        let summary = log_summary_for(&ws);
-        assert_eq!(summary["today"], json!({ "ask": 2, "reveal": 1, "tests": 0 }));
-        assert_eq!(summary["total"]["ask"], 2);
+        let text = fs::read_to_string(ws.join(".longhand/log.jsonl")).unwrap();
+        assert_eq!(text.lines().count(), 4);
+        assert_eq!(text.lines().filter(|l| l.contains(r#""kind":"ask""#)).count(), 2);
         // Transcripts and the log live here, so Git is told to leave all of it alone.
         assert_eq!(fs::read_to_string(ws.join(".longhand/.gitignore")).unwrap(), "*\n");
         fs::remove_dir_all(ws).unwrap();

@@ -76,8 +76,7 @@ Object.assign(mock.commands, {
   workspace_open: ({ dir }) => openFolder(dir),
   app_quit: () => void (window.__quit = true),
   config_set: ({ patch }) => ({ ...mock.workspace.config, ...patch }),
-  log_summary: () => ({ today: { ask: 4, reveal: 0, tests: 5 }, total: { ask: 4, reveal: 0, tests: 5 } }),
-  log_record: () => ({ today: { ask: 4, reveal: 1, tests: 5 }, total: { ask: 4, reveal: 1, tests: 5 } }),
+  log_record: () => null,
   // Tests set `confirm: false` to play a student who backs out of a confirmation.
   confirm: ({ message }) => ((window.__confirmed = message), mock.options.confirm !== false),
   settings_set: ({ patch }) => Object.assign(prefs.settings, patch),

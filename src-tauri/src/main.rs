@@ -94,7 +94,6 @@ fn main() {
             workspace::workspace_open,
             workspace::config_set,
             workspace::log_record,
-            workspace::log_summary,
             files::fs_list,
             files::fs_read,
             files::fs_create,

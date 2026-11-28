@@ -138,7 +138,7 @@ function start(request) {
 }
 
 // The usage log, as entries. It starts with what the fixture says today already holds. Requests
-// and log_record append to it, and the title bar's summary and the record are both counted from
+// and log_record append to it, and the record is counted from
 // it with the app's rules, so a request the counts miss shows up in the interface tests.
 const localDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const log = (window.__log = []);
@@ -169,17 +169,6 @@ function tallies() {
 }
 
 const questions = (day) => Object.values(day?.asks || {}).reduce((a, b) => a + b, 0);
-
-/** record.rs's `summary`. */
-function summary() {
-  const days = tallies();
-  const counts = (ds) => ({
-    ask: ds.reduce((n, d) => n + questions(d), 0),
-    reveal: ds.reduce((n, d) => n + d.reveals, 0),
-    tests: ds.reduce((n, d) => n + d.tests, 0),
-  });
-  return { today: counts(days.filter((d) => d.date === localDate())), total: counts(days) };
-}
 
 Object.assign(mock.commands, {
   tutor_request: ({ request }) => {
@@ -217,12 +206,10 @@ Object.assign(mock.commands, {
     }
     return { days, total };
   },
-  log_summary: summary,
   log_record: (args) => {
     // As workspace.rs's log_event: the detail never changes the entry's kind.
     const { kind: _ignored, t: _time, ...detail } = args.detail || {};
     logEntry(args.kind, detail);
     window.__logged = [...(window.__logged || []), args];
-    return summary();
   },
 });

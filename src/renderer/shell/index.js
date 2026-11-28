@@ -29,7 +29,7 @@ export { registerFocusTarget } from './focus.js';
 export { openSheet } from './sheet.js';
 export { icon, iconNames } from './icons.js';
 export { formatKeys, kbd } from './keys.js';
-export { keysFor, withKeys } from './shortcuts.js';
+export { withKeys } from './shortcuts.js';
 export { openFolder } from './folders.js';
 
 export function mount({ titleBar, welcome, bottom, status }) {
