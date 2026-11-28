@@ -53,7 +53,7 @@ async function changePolicy(value) {
 }
 
 // The panel shows the conversation, the list of earlier ones, or the student's record (opened
-// from the usage count in the title bar).
+// from the Tutor menu).
 const views = { history: historyView, record: recordView };
 const historyButton = h('button', { class: 'ghost', id: 'show-history', 'aria-pressed': 'false', title: 'Earlier conversations in this folder' }, 'History');
 let view = 'chat';

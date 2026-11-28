@@ -1,6 +1,5 @@
 //! The student's own record of tutor use in a folder, read from `.longhand/log.jsonl`. This is
-//! the one reader of the log: the Record view (`from_log`) and the title bar's counts
-//! (`summary`) both count through `counted`, so they cannot disagree.
+//! the one reader of the log.
 
 use serde::Serialize;
 use serde_json::Value;
@@ -15,14 +14,12 @@ const LEGACY_ASK_KINDS: [&str; 4] = ["conversation", "lookup", "review", "failur
 pub enum Counted {
     Ask,
     Reveal,
-    Tests,
 }
 
 pub fn counted(entry: &Value) -> Option<Counted> {
     match entry["kind"].as_str()? {
         "ask" => Some(Counted::Ask),
         "reveal" => Some(Counted::Reveal),
-        "tests" => Some(Counted::Tests),
         k if LEGACY_ASK_KINDS.contains(&k) && entry["about"].is_string() => Some(Counted::Ask),
         _ => None,
     }
@@ -35,9 +32,6 @@ pub struct Tally {
     /// in logs from before the hint ladder was removed).
     pub asks: BTreeMap<String, u32>,
     pub reveals: u32,
-    /// Test runs. Not tutor use, so not shown in the record, but counted in the title bar.
-    #[serde(skip)]
-    pub tests: u32,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -62,16 +56,7 @@ impl Tally {
                 *self.asks.entry(about).or_default() += 1;
             }
             Counted::Reveal => self.reveals += 1,
-            Counted::Tests => self.tests += 1,
         }
-    }
-
-    fn questions(&self) -> u32 {
-        self.asks.values().sum()
-    }
-
-    fn is_tutor_use(&self) -> bool {
-        self.questions() > 0 || self.reveals > 0
     }
 }
 
@@ -97,7 +82,7 @@ fn tally(text: &str) -> (BTreeMap<String, Tally>, Tally) {
 /// The Record view: days with tutor use, newest first.
 pub fn from_log(text: &str) -> Record {
     let (days, total) = tally(text);
-    let days = days.into_iter().rev().filter(|(_, t)| t.is_tutor_use()).map(|(date, tally)| Day { date, tally }).collect();
+    let days = days.into_iter().rev().map(|(date, tally)| Day { date, tally }).collect();
     Record { days, total }
 }
 
@@ -150,9 +135,9 @@ mod tests {
         ]
         .join("\n");
         let record = from_log(&log);
-        assert_eq!(record.days[0].tally.questions(), 3);
+        assert_eq!(record.days[0].tally.asks.values().sum::<u32>(), 3);
         assert_eq!(record.days[0].tally.reveals, 1);
-        // The 26th had only a test run: not tutor use, so not a day in the record.
+        // The 26th had only a test run: not tutor use, so not counted and not a day in the record.
         assert_eq!(record.days.len(), 1);
     }
 
